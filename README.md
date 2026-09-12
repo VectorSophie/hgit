@@ -5,20 +5,20 @@ HolyC, native to TempleOS — with persistent file/symbol identity,
 executable DolDoc reconciliation, truthful non-destructive history, and a
 consistent modern CLI.
 
-**Status: M0 complete (7/7 acceptance items, real evidence); all five
-M1 command targets built and verified.** See
-`docs/research/10-product-proposal.md`. The full object storage layer —
-canonical encoding, BLAKE2b-512 (single-block and streaming), typed
-objects (blob/tree/commit), a hash→offset index — is built and verified
-running natively on real TempleOS under QEMU, not simulated.
-`hgit init`, `hgit status` (new/modified/unchanged/deleted, against a
-real HEAD tree), `hgit offer` (real files → blobs → tree → commit →
-HEAD, with a verified parent chain), `hgit history` (walks the parent
-chain), and `hgit see` (one commit's full detail) all exist and work —
-each demonstrated against a real, persisted repository, including
-across QEMU reboots between sessions. What's left for M1: composing
-these behind one real argv-driven entry point (they're currently
-independently-callable functions, not yet a program).
+**Status: M0 complete (7/7 acceptance items); M1 complete, including
+command-surface polish.** See `docs/research/10-product-proposal.md`.
+The full object storage layer — canonical encoding, BLAKE2b-512
+(single-block and streaming), typed objects (blob/tree/commit), a
+hash→offset index — is built and verified running natively on real
+TempleOS under QEMU, not simulated. All five M1 commands
+(`init`/`status`/`offer`/`history`/`see`) exist, are independently
+verified, and are composed behind a real entry point: one dispatcher
+function, `Hgit(cmdline)`, called exactly the way TempleOS's own native
+commands are (`Hgit("init \"C:/Home/My Repo.hgs\"");` — quoted
+arguments with spaces work) — there is no argv/shell syntax in TempleOS
+to build a traditional CLI around, confirmed from primary source, so
+this is the idiomatic shape, not a workaround. The whole toolchain
+packages into one file, loadable with a single `#include`.
 
 ## What's here
 
@@ -42,22 +42,25 @@ independently-callable functions, not yet a program).
   streaming, matches RFC 7693), `Archive.HC`/`Hgs.HC` (the `.HGS` record
   format and file header), `Object.HC`/`Tree.HC`/`Commit.HC` (typed
   objects: blob/tree/commit content), `Index.HC` (hash→offset lookup).
-- `src/hgit-cli/` — the command surface: `Init.HC` (`hgit init`),
-  `WorkDir.HC` (working-directory enumeration), `Head.HC` (the
-  current-offering pointer), `Offer.HC` (`hgit offer`), `Status.HC`
-  (`hgit status`), `History.HC` (`hgit history`), `See.HC` (`hgit see`).
+- `src/hgit-cli/` — the command surface: `Init.HC`, `WorkDir.HC`,
+  `Head.HC`, `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
+  (hex string ↔ hash bytes), and `Hgit.HC` — the real entry point
+  (`Hgit(cmdline)`) composing all of the above behind one dispatcher.
   Every file in both directories verified running on real TempleOS via
   `experiments/01-temple-repl/`'s injection channel — see each probe's
   README for exact evidence, and each source file's own comments for
   which probe verified it.
-- `tests/`, `tools/`, `packaging/` — still scaffolded/empty.
+- `tools/build-package.sh` — concatenates every `src/hgit-core/` and
+  `src/hgit-cli/` file, in dependency order, into `packaging/HgitAll.HC`
+  — the actual distributable: verified loadable on real TempleOS with a
+  single `#include "C:/Home/HgitAll.HC";`, followed by a working
+  `Hgit(...)` call, in a session that never pushed any individual
+  source file directly (`experiments/28-hgit-package/`).
+- `tests/` — still scaffolded/empty.
 
 ## Next steps
 
 See `docs/research/10-product-proposal.md` for the live risk register
-and milestone checklist. With all five M1 commands built, the concrete
-next work is composing them behind one real argv-driven `hgit` entry
-point (including the hex-string↔hash-bytes parsing none of them have
-needed yet, since every function so far takes raw 64-byte hashes), then
-moving into M2 territory (paths/branches, the operation log, portable
-`.HGS` archives, a real DolDoc history view).
+and milestone checklist. With M1 complete, the concrete next work is M2
+territory: paths/branches, the operation log, portable `.HGS` archives,
+and a real DolDoc history view.

@@ -157,9 +157,82 @@ safer failure mode than probe 05/12's silent-corruption quirks, but a
 real difference from C-shaped assumptions). Fixed and documented
 directly in `Hgit.HC`'s comments.
 
-`offer` (free-text message field) and `see` (hex-string→hash parsing)
-remain the two genuinely harder cases, deliberately deferred — real
-next work, not a small addition.
+`see` is now also wired (`experiments/25-hex-hash/`,
+`experiments/26-hgit-see-dispatch/`) — hex-string↔hash conversion
+(`src/hgit-cli/Hex.HC`) verified via round-trip on a real hash plus
+rejection of invalid hex, then composed into `Hgit()`'s `see` branch and
+verified end-to-end against the real repository.
+
+**`offer` is now wired too** (`experiments/27-hgit-offer-dispatch/`) —
+**all five M1 commands (`init`/`status`/`history`/`see`/`offer`) now
+dispatch through `Hgit(cmdline)`, verified against a real repository.**
+`offer`'s free-text message (spaces preserved, not token-split) and
+`cnts.jiffies`-based timestamp both round-tripped correctly through a
+real commit and back out via `see`. Along the way, corrected a wrong
+diagnosis from probe 26: a "silent no-output, not fully root-caused"
+failure was actually the same missing-dependency mistake both times
+(every branch of `Hgit()`'s single function body needs every other
+branch's dependencies present to compile, not just the one under test)
+— not session-state weirdness, as originally guessed. Corrected
+honestly in `failed-approaches.md` rather than left standing.
+
+**M1's command-surface milestone is functionally complete, and now
+packaged** (`tools/build-package.sh`, `packaging/HgitAll.HC`,
+`experiments/28-hgit-package/`): all 16 `src/hgit-core`/`src/hgit-cli`
+files concatenated in dependency order into one file, verified loadable
+on real TempleOS with a single `#include "C:/Home/HgitAll.HC";` followed
+by a working `Hgit("status ...")` call — in a session that never
+directly pushed any individual source file. Getting the file onto disk
+surfaced two more real HolyC ordering lessons (a follow-up push
+overwrites the daemon's own receive buffer before a same-buffer
+`FileWrite` can run; a global referenced inside an earlier-defined
+function must still be declared before that function textually) plus
+one unexplained one (a compile error appeared inside long-stable
+`Canon.HC` code after the fourth consecutive full-package redefinition
+in one session — fixed by a clean reboot, cause not determined).
+
+**Quoting is now also done** (`experiments/29-hgit-quoting/`) —
+`ExtractToken` supports `"quoted tokens with spaces"`, verified against
+a real RedSea file created at a space-containing path (confirmed from
+primary source that RedSea allows spaces in filenames before testing
+against one). Found and fixed a real bug along the way: `init`'s
+dispatch branch never routed its argument through `ExtractToken` at all
+(unlike every other command), so a quoted path silently became the
+*wrong* filename (quote characters included literally) rather than an
+error. Fixed and verified against the real, final `Hgit()`. Also hit one
+genuinely unexplained daemon hang (distinct from every prior failure —
+no output or error at all, not even a reply to a trivial ping; resolved
+by a clean reboot, cause not determined) and one self-inflicted
+string-escaping mistake in the test harness itself (not a HolyC issue).
+
+**M1 is now complete, including its command-surface polish.**
+
+**First M2 milestone done: the operation log + single-level undo**
+(`src/hgit-cli/OpLog.HC`, `experiments/30-oplog-undo/`) — a sidecar
+append-only log of HEAD before/after values, separate from project
+history per the brief's own design; verified with two real offerings
+logged and two successive undos correctly walking HEAD back through
+both commits to a "no commit yet" sentinel, plus a third undo correctly
+reporting nothing left to undo. Also confirmed `FileWrite` can shrink
+an existing file (needed for undo's truncation), not just grow one.
+Hit HolyC's lack of a `?:` ternary operator — already documented in
+`holyc-parser`'s own bug-compat corpus, not a new discovery, but a real
+gap this session hit independently.
+
+**`OpLogAppend` wired into `Offer.HC` itself, and an `undo` dispatch
+branch added to `Hgit.HC` — source-level done, QEMU verification
+BLOCKED, not yet obtained** (`experiments/31-oplog-in-offer/`). The
+change is small and built directly on probe 30's already-verified
+functions, but two real attempts to run it on TempleOS (including a
+fresh reboot and a smaller split push) never produced a `D_DONE` or
+any error — logged honestly as blocked
+(`docs/research/failed-approaches.md`, 2026-09-13 entry), not claimed
+as passing. Retry once host resources allow is the immediate next
+step, before anything else in M2.
+
+Still not yet done either way: `redo`, and the brief's
+`hgit operation history`/`hgit operation restore <op>` commands. Then
+the rest of M2 (paths/branches, portable `.HGS` archives).
 
 ## Estimated line counts (very rough, will move once real code exists)
 

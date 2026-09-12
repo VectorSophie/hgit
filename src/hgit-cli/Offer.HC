@@ -22,7 +22,12 @@
 // files" (no self-exclusion logic yet).
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC (the whole hgit-core object layer) and Head.HC.
+// Tree.HC, Commit.HC (the whole hgit-core object layer), Head.HC, and
+// OpLog.HC. Every offer now logs its own HEAD before/after transition
+// via OpLogAppend before moving HEAD, so `hgit undo` (OpLogUndo) can
+// revert it - wired in and verified in experiments/31-oplog-in-offer/
+// (probe 30 had only called OpLogAppend manually, alongside offer, not
+// from within it).
 
 U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
              U64 timestamp)
@@ -95,5 +100,18 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   // rcount existing + entry_count blobs + 1 tree + 1 commit).
   HgsWriteHeader(archive, rver, rcount + entry_count + 2);
   FileWrite(repo_path, archive, alen);
+
+  // Log this offer's HEAD transition before moving HEAD, so `undo` can
+  // revert it. No-parent case logs an all-zero prev_head sentinel
+  // (parent_hash is uninitialized stack garbage when has_parent is
+  // FALSE - never read it in that case).
+  U8 log_prev_head[64];
+  if (has_parent) {
+    for (i=0; i<64; i++) log_prev_head[i] = parent_hash[i];
+  } else {
+    for (i=0; i<64; i++) log_prev_head[i] = 0;
+  }
+  OpLogAppend(repo_path, log_prev_head, commit_hash, timestamp);
+
   HeadWrite(repo_path, commit_hash);
 }

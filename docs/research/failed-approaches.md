@@ -307,3 +307,174 @@ exclusive and the variable is never live in both.
 directly in `Hgit.HC`'s own comments (not only here): every branch's
 locals need distinctly-named variables in HolyC — don't assume
 `if`/`else if` blocks give a fresh scope the way they do in C.**
+
+## 2026-09-13 — Long multi-push daemon session produced a silent no-output failure — ~~not fully root-caused~~ **CORRECTED below, see probe 27**
+
+**Tried:** While building `experiments/26-hgit-see-dispatch/`, reused an
+already-running daemon session across several pushes, re-including some
+files inconsistently between them (one push omitted `Init.HC` and
+correctly errored; the next included it and compiled, but a separate
+push after that produced zero output from new test code with no
+compile error either — the code simply appeared not to run, or ran
+without any of its `CommPrint` calls landing in the log).
+
+**Happened:** No error, no crash, no test output.
+
+**Why (original, wrong, guess):** Speculated the cause was redefining
+several already-loaded top-level test variables/functions a second
+time, inconsistently, across a long sequence of pushes in one daemon
+session — logged as an unconfirmed hypothesis.
+
+**Why (actual, confirmed in probe 27):** That guess was wrong. Building
+`experiments/27-hgit-offer-dispatch/` hit the *identical* silent
+symptom **on a freshly rebooted, single-push session** — ruling out any
+session-history effect entirely, since there was no prior push to
+interfere. The real, confirmed cause: `Hgit()`'s dispatcher compiles
+all its `if`/`else if` branches as one function body, so HolyC must
+resolve every symbol *any* branch calls at compile time — testing one
+command still requires every other branch's dependencies present
+(`Init.HC`, `Status.HC`+`WorkDir.HC`, `History.HC`, `See.HC`+`Hex.HC`,
+`Offer.HC` — all of them, every time). The silent-no-output case in
+probe 27 was simply one more missing file (`Status.HC`) that hadn't
+produced a *visible* screen error yet when first checked; a second
+screendump found the real `Compiler Parse Error at 'HgitStatus'`.
+Probe 26 almost certainly hit the same thing and the compile error was
+missed rather than genuinely absent.
+
+**Worked instead:** Include every file `Hgit()`'s body references, every
+time — not "the file being tested," the complete set. **Rule replacing
+the wrong one above: a silent no-output result from `Hgit()` (or any
+function with untested branches) is not a mysterious session-state
+issue — check for a missed compile error (screendump again) and for a
+missing dependency before assuming anything more exotic.** Rebooting to
+a clean session is still good hygiene, but it wasn't what actually fixed
+either case — completing the dependency list was.
+
+## 2026-09-13 — Packaging (probe 28): three distinct bugs stacked on top of each other
+
+**Tried:** Saving the ~54KB combined hgit package to a real file on the
+TempleOS disk, via three attempts, each fixing one real bug and
+uncovering the next:
+
+1. Push the package, then push a follow-up `FileWrite("...", Db, len)`
+   referencing the daemon's own receive buffer. **Failed silently** (no
+   error, file never created) — the follow-up push overwrites `Db`
+   starting at byte 0 before the write executes, so by the time
+   `FileWrite` runs, `Db` no longer holds the original package.
+2. Fix: copy `Db` into a separately-allocated stable buffer, in the
+   *same* push, then `FileWrite` from that. **Failed with `Undefined
+   identifier` on the copy buffer** — its `U8 *x = MAlloc(...)`
+   declaration came *after* the function using it, textually, in the
+   pushed source. HolyC resolves top-level declarations in the order
+   they appear, not via a two-pass scheme — confirmed again, this time
+   for a global referenced inside a function defined earlier in the
+   same chunk (the earlier-confirmed cases were all about `if`/`else
+   if` branches; this is the same underlying sequential-processing
+   behavior showing up in an ordinary declare-before-use way).
+3. Fix: move the declaration first. **Still failed** — this time with a
+   compile error *inside `Canon.HC`'s `PutU32LE`*, a function that had
+   compiled cleanly in every one of probes 03 through 27. This was the
+   fourth consecutive redefinition of the entire package within one
+   daemon session.
+
+**Worked instead:** A full VM reboot, then pushing the (already-fixed)
+source exactly once. Worked immediately — `SAVED`, file confirmed on
+disk at the exact expected byte count.
+
+**Why the third failure happened:** Not determined. Logged as an open
+question rather than a false confidence: possibly JIT redefinition
+fatigue after several large (~54KB, ~40-symbol) pushes in one session,
+possibly memory fragmentation from repeated large `MAlloc`s, possibly
+something else. **Practical rule, stated honestly as a heuristic, not
+an explanation: if a compile error appears inside code that has been
+stable across many prior probes, try a clean reboot before assuming the
+new code broke it.**
+
+## 2026-09-13 — A genuine, unexplained daemon hang (probe 29)
+
+**Tried:** Pushed the rebuilt `HgitAll.HC` package (~55KB) with a short
+test tail appended in the same chunk, to verify quoting support
+end-to-end in one push.
+
+**Happened:** No `D_OK`, no `D_DONE`, ever — and the daemon didn't even
+respond to a trivial follow-up `CommPrint` ping sent minutes later. This
+is qualitatively different from every other failure logged in this
+file: those all produced *some* signal (a compile error, garbage
+output, or at minimum a `D_DONE`). This looked like a genuine hang.
+
+**Why:** Not determined at all. Re-pushing the exact same package
+**alone** (no test tail) immediately after a clean reboot worked
+quickly and cleanly; the test code then worked fine as a separate,
+smaller follow-up push. Whether the hang was caused by the combined
+push's specific size/shape, a QEMU/TCG scheduling hiccup unrelated to
+the guest code, or something else was not investigated further.
+
+**Worked instead:** Reboot, then push the package and the test as two
+separate chunks rather than one combined one. **Logged as an open
+question, not a resolved mystery** — if a future push produces no
+signal at all (not even an error), don't assume it's "still compiling"
+indefinitely; treat a genuinely unresponsive daemon (no reply to a
+trivial ping) as reason to reboot rather than wait longer.
+
+## 2026-09-13 — Self-inflicted string-escaping confusion, not a HolyC quirk
+
+**Tried:** Testing a HolyC fix by embedding the test source directly in
+a Python string literal, manually escaping the double quotes the
+HolyC code itself needed (`Hgit5("init \"...\"")` required as bytes,
+constructed via nested Python `\"`/`\\\"` escapes).
+
+**Happened:** Cascading, confusing compiler errors that didn't obviously
+match anything wrong with the actual HolyC logic being tested.
+
+**Why:** The manual multi-layer escaping (shell → Python → HolyC) had
+produced the wrong bytes on the wire - a mistake in the test harness,
+not a HolyC behavior.
+
+**Worked instead:** Wrote the test as a plain `.hc` file (via the normal
+file-editing tool, no manual escaping needed) and pushed its raw bytes
+- this project's standard pattern everywhere else. The confusion
+disappeared immediately. **Reinforced: when a test itself needs to
+contain quote characters, write a real file - never hand-construct the
+escaped bytes through multiple layers of string literals.**
+
+## 2026-09-13 — Probe 31 (wire OpLog into Offer): QEMU verification blocked, not obtained
+
+**Tried:** Verifying `Offer.HC`'s new internal `OpLogAppend` call (see
+`experiments/31-oplog-in-offer/README.md`) the normal way - boot,
+bootstrap the stage-1 daemon, push real HolyC, read `serial.log`.
+Two full attempts, including a fresh reboot specifically to rule out
+leftover state, and splitting the push into a smaller (27KB,
+function-definitions-only) chunk the second time.
+
+**Happened:** Neither attempt ever produced a `D_DONE`, a compile
+error, or any other signal after the daemon's own `D_OK` - not even
+after ~11 minutes of real wall-clock waiting on the second attempt,
+far past every prior probe's compile time for a similar or larger
+chunk (probe 28 loaded 55238 bytes as one push successfully). QEMU's
+own CPU-time counter kept advancing throughout (so it wasn't simply
+paused), but no output ever appeared and no error window showed up in
+repeated screendumps.
+
+**Why:** Not determined. A real confound was found and is logged
+honestly rather than assumed to be the cause: the host was under
+severe memory pressure during the second attempt (swap 1.9/2.0 GiB
+used, ~2 GiB RAM free, several unrelated heavy processes competing),
+and this session's own background shell wait-loops were killed twice
+by the host's low-memory watchdog mid-probe. That's a real constraint,
+but it doesn't fully explain an 11-minute silence with active CPU
+usage and zero guest-side error output - it may be the same class of
+unexplained hang logged in the 2026-09-12 combined-push entry above,
+or it may be purely host resource starvation. Both are logged as open,
+neither is claimed as the answer.
+
+**Worked instead:** Nothing yet - this is the first probe in the
+project logged as **blocked rather than resolved**. The source change
+itself (`Offer.HC` calling the already-verified `OpLogAppend`/`OpLogUndo`
+from probe 30, plus a new `undo` dispatch branch) was committed with
+an explicit "not yet QEMU-verified" status rather than claimed as
+tested, per this project's non-negotiable rule against fabricating
+results. **Next step, not done here:** retry against a fresh boot once
+host memory pressure has cleared; if the hang reproduces under normal
+host conditions, bisect by pushing progressively smaller pieces of
+`hgit-core` to localize which file/function actually stalls, rather
+than assuming host contention a second time.

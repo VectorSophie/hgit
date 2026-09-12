@@ -123,6 +123,13 @@ doc-mirror prose:
   mode, but still a real difference from C-shaped assumptions. Fix:
   give every branch's locals distinctly-named variables; don't reuse a
   name across sibling `if`/`else if` blocks in one function.
+- **Confirmed (probe 30, `experiments/30-oplog-undo/`)**: the `?:`
+  ternary operator is not supported — `I64 x = cond ? 1 : 2;` fails to
+  parse (`ERROR: Missing '(' at ','`). Not a new discovery: already
+  documented in `holyc-parser`'s own bug-compatibility corpus
+  (`experiments/templeos-devkit/holyc-parser/tests/corpus/failing/`
+  `009-bug-compat-bug-ternary-not-supported.hc`), found and hit
+  independently here. Use plain `if`/`else` for conditional assignment.
 
 ## Facts confirmed in source (the actual `cia-foundation/TempleOS` mirror, cloned and read directly)
 
