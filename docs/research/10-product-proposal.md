@@ -297,9 +297,74 @@ making undo/redo path-aware before that log is path-scoped would let
 an undo on one path revert a HEAD hash belonging to a different path's
 history (a real correctness bug, not just missing scope).
 
-Remaining M2 work: making the operation log path-scoped (prerequisite
-for path-aware undo/redo), portable `.HGS` archives, and a real DolDoc
-history view.
+**Operation log made path-scoped, closing the undo/redo gap — done and
+verified** (`experiments/36-path-scoped-oplog/`, PASS, after a real
+`FAIL` was investigated and root-caused, not adjusted-until-green).
+`undo`/`redo` now correctly affect only the current path's own history.
+
+This probe also found a genuine, previously-undocumented TempleOS/
+RedSea constraint: **a full path string longer than 33 characters is
+silently rejected by `FileWrite`/`FileRead`** (no error - the call
+just no-ops). Pinned exactly via binary search. This directly caused
+the initial `FAIL` (a per-path oplog filename came out to 34
+characters) and is a real, load-bearing risk for **every**
+sidecar-file-per-concern design this project has used so far - a
+sufficiently long repo path plus a reasonably long path name will
+eventually hit it regardless of how short an individual suffix is
+made. Worked around for now (shortened suffixes), not resolved at the
+architecture level - a durable fix (single combined metadata file, or
+hash-derived short suffixes) is real future design work, flagged for a
+future ADR. Full story: `docs/research/01-templeos-holyc.md`'s "Path
+length limit" section and `docs/research/failed-approaches.md`'s
+second-to-last 2026-09-13 entry.
+
+**Proactive length guard on `hgit path new` — done and verified**
+(`experiments/37-path-length-guard/`, PASS). `PathNameFits` checks a
+new path name against the measured 33-char ceiling *before* creating
+anything, so a name that would push its own HEAD file over the limit
+is refused immediately and loudly instead of silently leaving behind a
+path whose HEAD can never be written or read back. Verified at the
+exact boundary (12-char name accepted, 13-char name refused, nothing
+partial left in the path list). This is a guard on the symptom nearest
+the user, not the underlying architectural fix — a repo whose own path
+is already very long, or `main`'s own sidecar files, aren't covered by
+this check.
+
+**`hgit operation restore <op>` done and verified**
+(`experiments/38-operation-restore/`, PASS) — the last of the brief's
+explicitly-named operation-log vocabulary (`undo`/`redo`/
+`operation history`/`operation restore <op>`); all four now exist.
+Jumps HEAD directly to any logged operation's recorded state by index,
+verified as a genuine two-step jump (not secretly repeated undo/redo)
+in both directions, with out-of-range indices refused and HEAD left
+untouched. Deliberately doesn't reconcile with the undo/redo stacks
+afterward — flagged as a known simplification, not an oversight.
+
+**`.HGS` object-layer portability confirmed** (`experiments/39-portable-hgs/`,
+PASS) — a raw byte copy of a `.hgs` file, with no sidecar files carried
+along, correctly resolves the full commit → tree → entry chain via
+`hgit see` given only a hash noted before the copy. Real evidence the
+content-addressed design (ADR 0001/0002) holds on disk, not just on
+paper. **Scoped honestly**: this is the object layer only — `HEAD`,
+the operation log, and named paths are separate sidecar files keyed to
+the exact repo path, so a copied `.hgs` file alone has no current
+offering/history/paths of its own. A real `hgit export`/`import` that
+bundles or reconstructs that tool-state too is still real future work.
+
+**Path-length ceiling: architectural decision made** (`docs/adr/0003-path-length-ceiling.md`,
+not yet implemented). Decided: consolidate every per-repo tool-metadata
+concern (HEAD, oplog/redolog, path list, current-path) into one
+combined metadata file per repo (`<repo_path>.m`), so path names live
+inside the file's own structure rather than growing filenames —
+removing the part of the ceiling this project's own sidecar-per-concern
+design was making worse, without removing the underlying TempleOS/
+RedSea constraint itself. Real migration work (touching `Head.HC`,
+`Paths.HC`, `OpLog.HC`, and re-verifying every probe that depends on
+today's file layout) is the next concrete M2 step, not done yet.
+
+Remaining M2 work: implementing ADR 0003's combined-metadata-file
+migration, a real `hgit export`/`import` for whole-repo (not just
+object-layer) portability, and a real DolDoc history view.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

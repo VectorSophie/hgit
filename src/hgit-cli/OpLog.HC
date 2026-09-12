@@ -13,8 +13,19 @@
 // semantics. `OpLogAppend` (called by every real mutating operation,
 // e.g. `offer`) clears the redo log: doing new work after an undo
 // invalidates whatever was undone, same as any other tool's undo/redo.
-// `hgit operation history`/`hgit operation restore <op>` are still not
-// built yet.
+//
+// Path-scoped (probe 36): both logs now live per current path, same
+// "main" convention as Paths.HC's PathHeadFilePath — main's logs stay
+// at the original bare `<repo_path>.oplog`/`.redolog`, any other path
+// gets its own `.oplog.<name>`/`.redolog.<name>`. This was NOT true as
+// of probe 35, which deliberately left undo/redo on the plain HeadWrite
+// (main only) specifically because a single shared-across-paths log
+// made path-aware undo/redo unsafe (an undo while on path B could
+// revert a HEAD hash that actually belonged to path A's history). Now
+// that each path's log is its own file, OpLogUndo/OpLogRedo switch to
+// CurrentHeadWrite - closing that gap.
+//
+// `hgit operation restore <op>` is still not built.
 //
 // Entry format (136 bytes, both `.oplog` and `.redolog`):
 //   U64 timestamp
@@ -40,24 +51,68 @@
 // operator is not supported. Use plain if/else for conditional
 // assignment.
 //
-// Depends on Canon.HC (PutU64LE) and Head.HC (HeadWrite).
+// Depends on Canon.HC (PutU64LE) and Paths.HC (CurrentPathGet,
+// CurrentHeadWrite, HGIT_MAX_PATH_NAME).
 
-U0 OpLogPath(U8 *repo_path, U8 *out_path)
+// `<repo_path>.oplog` for "main" (unchanged from probes 30/31, byte-
+// identical location - so a repo that never touches paths sees no
+// difference); `<repo_path>.ol.<name>` for anything else. Uses the
+// short "ol" suffix (not "oplog.<name>") for non-main paths because
+// probe 36 found a real, previously-undocumented TempleOS/RedSea
+// limit: a full path string longer than 33 characters is silently
+// rejected by FileWrite/FileRead - no error, the call just no-ops -
+// see doc 01's "Path length limit" section. Every extra character in
+// a per-path sidecar suffix eats directly into that same 33-char
+// budget shared with the repo's own path and the path name itself, so
+// this suffix is kept as short as it can be while staying readable.
+U0 OpLogPathFor(U8 *repo_path, U8 *name, U8 *out_path)
 {
   I64 i = 0;
   while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
-  out_path[i++]='.'; out_path[i++]='o'; out_path[i++]='p';
-  out_path[i++]='l'; out_path[i++]='o'; out_path[i++]='g';
+  if (StrCmp(name, "main") == 0) {
+    out_path[i++]='.'; out_path[i++]='o'; out_path[i++]='p';
+    out_path[i++]='l'; out_path[i++]='o'; out_path[i++]='g';
+  } else {
+    out_path[i++] = '.'; out_path[i++] = 'o'; out_path[i++] = 'l';
+    out_path[i++] = '.';
+    I64 j = 0;
+    while (name[j]) { out_path[i++] = name[j]; j++; }
+  }
   out_path[i] = 0;
+}
+
+U0 RedoLogPathFor(U8 *repo_path, U8 *name, U8 *out_path)
+{
+  I64 i = 0;
+  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
+  if (StrCmp(name, "main") == 0) {
+    out_path[i++]='.'; out_path[i++]='r'; out_path[i++]='e';
+    out_path[i++]='d'; out_path[i++]='o'; out_path[i++]='l';
+    out_path[i++]='o'; out_path[i++]='g';
+  } else {
+    out_path[i++] = '.'; out_path[i++] = 'r'; out_path[i++] = 'l';
+    out_path[i++] = '.';
+    I64 j = 0;
+    while (name[j]) { out_path[i++] = name[j]; j++; }
+  }
+  out_path[i] = 0;
+}
+
+// Convenience wrappers resolving whichever path is CURRENT right now
+// (CurrentPathGet, from Paths.HC) - what every real call site below
+// actually uses.
+U0 OpLogPath(U8 *repo_path, U8 *out_path)
+{
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  OpLogPathFor(repo_path, cur_name, out_path);
 }
 
 U0 RedoLogPath(U8 *repo_path, U8 *out_path)
 {
-  I64 i = 0;
-  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
-  out_path[i++]='.'; out_path[i++]='r'; out_path[i++]='e';
-  out_path[i++]='d'; out_path[i++]='o'; out_path[i++]='l';
-  out_path[i++]='o'; out_path[i++]='g'; out_path[i] = 0;
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  RedoLogPathFor(repo_path, cur_name, out_path);
 }
 
 // Shared by OpLogAppend/OpLogUndo/OpLogRedo: appends one 136-byte
@@ -111,7 +166,7 @@ Bool OpLogUndo(U8 *repo_path)
   U8 *new_head = buf + last_off + 8 + 64;
   U64 timestamp = GetU64LE(buf, last_off);
 
-  HeadWrite(repo_path, prev_head);
+  CurrentHeadWrite(repo_path, prev_head);
 
   U8 redo_path[256];
   RedoLogPath(repo_path, redo_path);
@@ -147,6 +202,34 @@ U0 OpLogHistory(U8 *repo_path)
   }
 }
 
+// Jumps CURRENT path's HEAD directly to the `new_head` recorded by
+// the operation at `index` (0-based, oldest first - same numbering
+// OpLogHistory prints as "OP <index>"), regardless of how many steps
+// away that is. Returns FALSE if index is out of range or the log is
+// empty/missing.
+//
+// Deliberately simpler than undo/redo: this does NOT touch either the
+// undo or redo log - no popping, no pushing, just a direct HEAD set.
+// Restoring to an arbitrary point and then expecting undo/redo to
+// still make sense relative to it would need real reconciliation
+// logic (what happens to the entries "between" old and new HEAD?)
+// that's out of scope here - a known, flagged simplification, not an
+// oversight. `hgit operation restore <op>` is meant for "jump to a
+// known-good point," not for composing with undo/redo afterward.
+Bool OpLogRestore(U8 *repo_path, I64 index)
+{
+  U8 log_path[256];
+  OpLogPath(repo_path, log_path);
+  I64 size;
+  U8 *buf = FileRead(log_path, &size);
+  if (buf==NULL || size < 136) return FALSE;
+  I64 count = size / 136;
+  if (index < 0 || index >= count) return FALSE;
+  U8 *new_head = buf + index*136 + 8 + 64;
+  CurrentHeadWrite(repo_path, new_head);
+  return TRUE;
+}
+
 // Re-applies the most recently undone operation: sets HEAD back to
 // that entry's new_head, removes it from the redo log, and pushes it
 // back onto the undo log. Returns FALSE if there's nothing to redo
@@ -164,7 +247,7 @@ Bool OpLogRedo(U8 *repo_path)
   U8 *new_head = buf + last_off + 8 + 64;
   U64 timestamp = GetU64LE(buf, last_off);
 
-  HeadWrite(repo_path, new_head);
+  CurrentHeadWrite(repo_path, new_head);
 
   U8 log_path[256];
   OpLogPath(repo_path, log_path);

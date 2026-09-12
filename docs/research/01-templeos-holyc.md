@@ -204,6 +204,40 @@ Resolving a risk flagged since this dossier's first draft:
   be assembled at a lower level not in this checkout). Treat `full_name`/
   `next`/`datetime` as confirmed; anything else needs testing before use.
 
+## Path length limit, confirmed by binary search (probe 36)
+
+A real, previously-undocumented RedSea/TempleOS constraint, found
+while debugging a genuine test failure (`experiments/36-path-scoped-oplog/`):
+**a full path string longer than 33 characters is silently rejected by
+`FileWrite`/`FileRead`** — no error, no exception, the call simply
+does nothing (a subsequent read finds nothing). Pinned exactly via a
+dedicated probe that wrote/read back paths of lengths 28, 30, 31, 32,
+33, 34, 36 (fixed `C:/Home/` prefix + `'a'`-padded filename): **33
+round-trips correctly, 34 does not**, reproduced consistently. (First
+attempt at this same probe used a bare top-level `for` loop with local
+declarations and produced nonsense `len=0` output for every case —
+exactly the pre-existing documented quirk below about bare top-level
+loops corrupting data; the correct result only appeared once the same
+logic was wrapped in a real function.)
+
+This silently broke `OpLog.HC`'s new per-path sidecar files
+(`<repo_path>.oplog.<name>`) the first time a moderately-long repo path
+was combined with a path name — e.g. `C:/Home/P36Repo.hgs.oplog.feature`
+is 34 characters, one over the limit, and simply never got created;
+`C:/Home/P34Repo.hgs.head.feature` (32 characters, the shape used in
+earlier probes) fit and worked. Worked around in probe 36 by shortening
+the non-main suffix (`.oplog.<name>`/`.redolog.<name>` →
+`.ol.<name>`/`.rl.<name>`), which buys headroom but does not remove the
+ceiling — this is a real, load-bearing constraint on **every**
+sidecar-file-per-concern design this project has used (`.head`,
+`.oplog`, `.redolog`, `.paths`, `.currentpath`, and their per-path
+variants): a sufficiently long repository path combined with a
+reasonably long path/branch name will eventually exceed it regardless
+of how short an individual suffix is made. A durable fix (a single
+combined per-repo metadata file instead of N growing sidecar files, or
+short hash-derived suffixes instead of literal names) is real future
+design work, not decided or built yet — flagged here for a future ADR.
+
 ## Unresolved risk
 
 - ~~How does an **AOT-compiled, argv-taking** `hgit` executable fit into

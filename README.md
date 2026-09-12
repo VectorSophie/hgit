@@ -35,8 +35,12 @@ packages into one file, loadable with a single `#include`.
 - `FORMAT.md` — the `.HGS` repository/archive format, documented
   byte-for-byte, matched to what's actually implemented.
 - `docs/adr/` — 0001 (repository model) and 0002 (canonical encoding),
-  each backed by working, tested `src/` code, updated as that code grew.
-  No further ADR should be written before its own evidence exists.
+  each backed by working, tested `src/` code, updated as that code grew;
+  0003 (the real 33-character path-length ceiling found in probe 36 —
+  decided: one combined per-repo metadata file instead of one sidecar
+  file per concern, not yet implemented). No ADR should be written
+  before its own evidence exists — 0003 is backed by probes 36/37's
+  real, binary-searched measurements.
 - `src/hgit-core/` — the object storage layer: `Canon.HC` (canonical
   little-endian encoding), `Blake2b.HC` (BLAKE2b-512, single-block +
   streaming, matches RFC 7693), `Archive.HC`/`Hgs.HC` (the `.HGS` record
@@ -61,22 +65,38 @@ packages into one file, loadable with a single `#include`.
 - `tests/` — still scaffolded/empty.
 
 **M2 in progress**: the operation log (`src/hgit-cli/OpLog.HC`) is
-built, wired into `hgit offer` itself, and real `hgit undo`/`hgit redo`/
-`hgit operation history` commands all exist (a proper undo/redo stack,
-not just single-level); named paths (`hgit path list/new/go/close`,
-`src/hgit-cli/Paths.HC`) exist and are now wired into `offer`/`status`/
-`history` — switching the current path genuinely changes what those
-commands see (`undo`/`redo` remain main-only for now, deliberately,
-until the operation log itself becomes path-scoped) — all verified
-end-to-end through the real `Hgit(cmdline)` entry point on TempleOS
-(`experiments/30-oplog-undo/`, `experiments/31-oplog-in-offer/`,
-`experiments/32-oplog-redo/`, `experiments/33-operation-history/`,
-`experiments/34-hgit-paths/`, `experiments/35-path-aware-offer/`).
+built, path-scoped, and wired into `hgit offer` itself; real
+`hgit undo`/`hgit redo`/`hgit operation history` commands all exist (a
+proper undo/redo stack, not just single-level) and are now genuinely
+path-aware; named paths (`hgit path list/new/go/close`,
+`src/hgit-cli/Paths.HC`) are wired into `offer`/`status`/`history`/
+`undo`/`redo` — switching the current path changes what all of those
+commands see — all verified end-to-end through the real `Hgit(cmdline)`
+entry point on TempleOS (`experiments/30-oplog-undo/`,
+`experiments/31-oplog-in-offer/`, `experiments/32-oplog-redo/`,
+`experiments/33-operation-history/`, `experiments/34-hgit-paths/`,
+`experiments/35-path-aware-offer/`, `experiments/36-path-scoped-oplog/`).
+
+Along the way, a genuine, previously-undocumented TempleOS/RedSea
+constraint was found: **a full path string longer than 33 characters
+is silently rejected by `FileWrite`/`FileRead`** — a real risk for
+every sidecar-file design this project uses. `hgit path new` now
+proactively refuses a name that would cross this ceiling instead of
+silently leaving behind an unreadable path (`experiments/37-path-length-guard/`),
+though the underlying architectural constraint isn't resolved. See
+`docs/research/01-templeos-holyc.md`.
+
+`hgit operation restore <op>` (jump HEAD directly to any logged
+operation by index) is also done, closing out the brief's full
+operation-log vocabulary (`undo`/`redo`/`operation history`/
+`operation restore <op>`). `.HGS` object-layer portability is confirmed
+(a raw file copy, no sidecars, still resolves its full commit history
+via a known hash) — whole-repo portability (bundling HEAD/oplog/paths
+too) is still future work.
 
 ## Next steps
 
 See `docs/research/10-product-proposal.md` for the live risk register
-and milestone checklist. Remaining M2 work: making the operation log
-path-scoped (so `undo`/`redo`/`hgit operation restore <op>` can safely
-become path-aware too), portable `.HGS` archives, and a real DolDoc
-history view.
+and milestone checklist. Remaining M2 work: a durable architectural
+fix for the path-length ceiling itself, a real `hgit export`/`import`
+for whole-repo portability, and a real DolDoc history view.

@@ -29,6 +29,26 @@
 
 #define HGIT_MAX_PATH_NAME 64
 
+// The real, previously-undocumented TempleOS/RedSea limit found in
+// probe 36: a full path string longer than this is silently rejected
+// by FileWrite/FileRead - no error, the call just no-ops. Not caught
+// after the fact (there's nothing to catch - it doesn't fail loudly),
+// so PathNameFits below must be checked proactively before ever
+// creating a path whose sidecar filenames could cross it.
+#define HGIT_MAX_SAFE_PATH_LEN 33
+
+// TRUE if every per-path sidecar file this project creates for `name`
+// under `repo_path` - `.head.<name>` (6-char tag, the widest of the
+// three currently in use), `.ol.<name>`/`.rl.<name>` (4-char tags) -
+// would stay at or under HGIT_MAX_SAFE_PATH_LEN. Checked against the
+// widest shape (".head.") since that's the actual binding constraint;
+// if that fits, the shorter oplog/redolog suffixes fit too.
+Bool PathNameFits(U8 *repo_path, U8 *name)
+{
+  I64 total = StrLen(repo_path) + 6 + StrLen(name);
+  return total <= HGIT_MAX_SAFE_PATH_LEN;
+}
+
 U0 PathListFilePath(U8 *repo_path, U8 *out_path)
 {
   I64 i = 0;
@@ -132,11 +152,16 @@ U0 PathListPrint(U8 *repo_path)
 // Creates a new path named `name`, pointing its HEAD at whatever the
 // CURRENT path's HEAD is right now (all-zero if the current path has
 // no offerings yet). Returns FALSE if `name` already exists (including
-// "main", which can't be recreated) or is too long.
+// "main", which can't be recreated), is too long, or - per probe 36's
+// real path-length ceiling - would push one of its own sidecar
+// filenames past the safe limit (checked proactively here rather than
+// silently creating a path whose HEAD file can never actually be
+// written or found afterward).
 Bool PathNew(U8 *repo_path, U8 *name)
 {
   I64 name_len = StrLen(name);
   if (name_len <= 0 || name_len >= HGIT_MAX_PATH_NAME) return FALSE;
+  if (!PathNameFits(repo_path, name)) return FALSE;
   if (PathExists(repo_path, name)) return FALSE;
 
   U8 cur_name[HGIT_MAX_PATH_NAME];

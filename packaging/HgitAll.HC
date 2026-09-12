@@ -898,6 +898,26 @@ U0 HeadWrite(U8 *repo_path, U8 *hash)
 
 #define HGIT_MAX_PATH_NAME 64
 
+// The real, previously-undocumented TempleOS/RedSea limit found in
+// probe 36: a full path string longer than this is silently rejected
+// by FileWrite/FileRead - no error, the call just no-ops. Not caught
+// after the fact (there's nothing to catch - it doesn't fail loudly),
+// so PathNameFits below must be checked proactively before ever
+// creating a path whose sidecar filenames could cross it.
+#define HGIT_MAX_SAFE_PATH_LEN 33
+
+// TRUE if every per-path sidecar file this project creates for `name`
+// under `repo_path` - `.head.<name>` (6-char tag, the widest of the
+// three currently in use), `.ol.<name>`/`.rl.<name>` (4-char tags) -
+// would stay at or under HGIT_MAX_SAFE_PATH_LEN. Checked against the
+// widest shape (".head.") since that's the actual binding constraint;
+// if that fits, the shorter oplog/redolog suffixes fit too.
+Bool PathNameFits(U8 *repo_path, U8 *name)
+{
+  I64 total = StrLen(repo_path) + 6 + StrLen(name);
+  return total <= HGIT_MAX_SAFE_PATH_LEN;
+}
+
 U0 PathListFilePath(U8 *repo_path, U8 *out_path)
 {
   I64 i = 0;
@@ -1001,11 +1021,16 @@ U0 PathListPrint(U8 *repo_path)
 // Creates a new path named `name`, pointing its HEAD at whatever the
 // CURRENT path's HEAD is right now (all-zero if the current path has
 // no offerings yet). Returns FALSE if `name` already exists (including
-// "main", which can't be recreated) or is too long.
+// "main", which can't be recreated), is too long, or - per probe 36's
+// real path-length ceiling - would push one of its own sidecar
+// filenames past the safe limit (checked proactively here rather than
+// silently creating a path whose HEAD file can never actually be
+// written or found afterward).
 Bool PathNew(U8 *repo_path, U8 *name)
 {
   I64 name_len = StrLen(name);
   if (name_len <= 0 || name_len >= HGIT_MAX_PATH_NAME) return FALSE;
+  if (!PathNameFits(repo_path, name)) return FALSE;
   if (PathExists(repo_path, name)) return FALSE;
 
   U8 cur_name[HGIT_MAX_PATH_NAME];
@@ -1524,8 +1549,19 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 // semantics. `OpLogAppend` (called by every real mutating operation,
 // e.g. `offer`) clears the redo log: doing new work after an undo
 // invalidates whatever was undone, same as any other tool's undo/redo.
-// `hgit operation history`/`hgit operation restore <op>` are still not
-// built yet.
+//
+// Path-scoped (probe 36): both logs now live per current path, same
+// "main" convention as Paths.HC's PathHeadFilePath — main's logs stay
+// at the original bare `<repo_path>.oplog`/`.redolog`, any other path
+// gets its own `.oplog.<name>`/`.redolog.<name>`. This was NOT true as
+// of probe 35, which deliberately left undo/redo on the plain HeadWrite
+// (main only) specifically because a single shared-across-paths log
+// made path-aware undo/redo unsafe (an undo while on path B could
+// revert a HEAD hash that actually belonged to path A's history). Now
+// that each path's log is its own file, OpLogUndo/OpLogRedo switch to
+// CurrentHeadWrite - closing that gap.
+//
+// `hgit operation restore <op>` is still not built.
 //
 // Entry format (136 bytes, both `.oplog` and `.redolog`):
 //   U64 timestamp
@@ -1551,24 +1587,68 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 // operator is not supported. Use plain if/else for conditional
 // assignment.
 //
-// Depends on Canon.HC (PutU64LE) and Head.HC (HeadWrite).
+// Depends on Canon.HC (PutU64LE) and Paths.HC (CurrentPathGet,
+// CurrentHeadWrite, HGIT_MAX_PATH_NAME).
 
-U0 OpLogPath(U8 *repo_path, U8 *out_path)
+// `<repo_path>.oplog` for "main" (unchanged from probes 30/31, byte-
+// identical location - so a repo that never touches paths sees no
+// difference); `<repo_path>.ol.<name>` for anything else. Uses the
+// short "ol" suffix (not "oplog.<name>") for non-main paths because
+// probe 36 found a real, previously-undocumented TempleOS/RedSea
+// limit: a full path string longer than 33 characters is silently
+// rejected by FileWrite/FileRead - no error, the call just no-ops -
+// see doc 01's "Path length limit" section. Every extra character in
+// a per-path sidecar suffix eats directly into that same 33-char
+// budget shared with the repo's own path and the path name itself, so
+// this suffix is kept as short as it can be while staying readable.
+U0 OpLogPathFor(U8 *repo_path, U8 *name, U8 *out_path)
 {
   I64 i = 0;
   while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
-  out_path[i++]='.'; out_path[i++]='o'; out_path[i++]='p';
-  out_path[i++]='l'; out_path[i++]='o'; out_path[i++]='g';
+  if (StrCmp(name, "main") == 0) {
+    out_path[i++]='.'; out_path[i++]='o'; out_path[i++]='p';
+    out_path[i++]='l'; out_path[i++]='o'; out_path[i++]='g';
+  } else {
+    out_path[i++] = '.'; out_path[i++] = 'o'; out_path[i++] = 'l';
+    out_path[i++] = '.';
+    I64 j = 0;
+    while (name[j]) { out_path[i++] = name[j]; j++; }
+  }
   out_path[i] = 0;
+}
+
+U0 RedoLogPathFor(U8 *repo_path, U8 *name, U8 *out_path)
+{
+  I64 i = 0;
+  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
+  if (StrCmp(name, "main") == 0) {
+    out_path[i++]='.'; out_path[i++]='r'; out_path[i++]='e';
+    out_path[i++]='d'; out_path[i++]='o'; out_path[i++]='l';
+    out_path[i++]='o'; out_path[i++]='g';
+  } else {
+    out_path[i++] = '.'; out_path[i++] = 'r'; out_path[i++] = 'l';
+    out_path[i++] = '.';
+    I64 j = 0;
+    while (name[j]) { out_path[i++] = name[j]; j++; }
+  }
+  out_path[i] = 0;
+}
+
+// Convenience wrappers resolving whichever path is CURRENT right now
+// (CurrentPathGet, from Paths.HC) - what every real call site below
+// actually uses.
+U0 OpLogPath(U8 *repo_path, U8 *out_path)
+{
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  OpLogPathFor(repo_path, cur_name, out_path);
 }
 
 U0 RedoLogPath(U8 *repo_path, U8 *out_path)
 {
-  I64 i = 0;
-  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
-  out_path[i++]='.'; out_path[i++]='r'; out_path[i++]='e';
-  out_path[i++]='d'; out_path[i++]='o'; out_path[i++]='l';
-  out_path[i++]='o'; out_path[i++]='g'; out_path[i] = 0;
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  RedoLogPathFor(repo_path, cur_name, out_path);
 }
 
 // Shared by OpLogAppend/OpLogUndo/OpLogRedo: appends one 136-byte
@@ -1622,7 +1702,7 @@ Bool OpLogUndo(U8 *repo_path)
   U8 *new_head = buf + last_off + 8 + 64;
   U64 timestamp = GetU64LE(buf, last_off);
 
-  HeadWrite(repo_path, prev_head);
+  CurrentHeadWrite(repo_path, prev_head);
 
   U8 redo_path[256];
   RedoLogPath(repo_path, redo_path);
@@ -1658,6 +1738,34 @@ U0 OpLogHistory(U8 *repo_path)
   }
 }
 
+// Jumps CURRENT path's HEAD directly to the `new_head` recorded by
+// the operation at `index` (0-based, oldest first - same numbering
+// OpLogHistory prints as "OP <index>"), regardless of how many steps
+// away that is. Returns FALSE if index is out of range or the log is
+// empty/missing.
+//
+// Deliberately simpler than undo/redo: this does NOT touch either the
+// undo or redo log - no popping, no pushing, just a direct HEAD set.
+// Restoring to an arbitrary point and then expecting undo/redo to
+// still make sense relative to it would need real reconciliation
+// logic (what happens to the entries "between" old and new HEAD?)
+// that's out of scope here - a known, flagged simplification, not an
+// oversight. `hgit operation restore <op>` is meant for "jump to a
+// known-good point," not for composing with undo/redo afterward.
+Bool OpLogRestore(U8 *repo_path, I64 index)
+{
+  U8 log_path[256];
+  OpLogPath(repo_path, log_path);
+  I64 size;
+  U8 *buf = FileRead(log_path, &size);
+  if (buf==NULL || size < 136) return FALSE;
+  I64 count = size / 136;
+  if (index < 0 || index >= count) return FALSE;
+  U8 *new_head = buf + index*136 + 8 + 64;
+  CurrentHeadWrite(repo_path, new_head);
+  return TRUE;
+}
+
 // Re-applies the most recently undone operation: sets HEAD back to
 // that entry's new_head, removes it from the redo log, and pushes it
 // back onto the undo log. Returns FALSE if there's nothing to redo
@@ -1675,7 +1783,7 @@ Bool OpLogRedo(U8 *repo_path)
   U8 *new_head = buf + last_off + 8 + 64;
   U64 timestamp = GetU64LE(buf, last_off);
 
-  HeadWrite(repo_path, new_head);
+  CurrentHeadWrite(repo_path, new_head);
 
   U8 log_path[256];
   OpLogPath(repo_path, log_path);
@@ -1889,6 +1997,21 @@ I64 ExtractToken(U8 *s, I64 pos, U8 *out, I64 out_max)
   return pos;
 }
 
+// Parses a non-negative decimal integer from a NUL-terminated string
+// (digits only - no sign, no whitespace skipping beyond what
+// ExtractToken already stripped). Just enough for a small index like
+// `hgit operation restore <op>`'s <op> argument; not a general atoi.
+I64 ParseI64(U8 *s)
+{
+  I64 v = 0;
+  I64 i = 0;
+  while (s[i] >= '0' && s[i] <= '9') {
+    v = v*10 + (s[i]-'0');
+    i++;
+  }
+  return v;
+}
+
 U0 Hgit(U8 *cmdline)
 {
   I64 i = 0;
@@ -1961,6 +2084,14 @@ U0 Hgit(U8 *cmdline)
       ExtractToken(rest, op_p, op_hist_repo_path, 256);
       OpLogHistory(op_hist_repo_path);
       CommPrint(1, "DISPATCH_OK operation_history\n");
+    } else if (StrCmp(op_sub, "restore") == 0) {
+      U8 op_rest_repo_path[256], op_rest_idx_str[32];
+      I64 op_rest_p = ExtractToken(rest, op_p, op_rest_repo_path, 256);
+      ExtractToken(rest, op_rest_p, op_rest_idx_str, 32);
+      I64 op_rest_idx = ParseI64(op_rest_idx_str);
+      Bool op_rest_ok = OpLogRestore(op_rest_repo_path, op_rest_idx);
+      if (op_rest_ok) CommPrint(1, "DISPATCH_OK operation_restore %d\n", op_rest_idx);
+      else CommPrint(1, "DISPATCH_ERR operation_restore_failed %d\n", op_rest_idx);
     } else {
       CommPrint(1, "DISPATCH_ERR unknown_operation_subcommand %s\n", op_sub);
     }

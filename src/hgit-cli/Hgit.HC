@@ -86,6 +86,21 @@ I64 ExtractToken(U8 *s, I64 pos, U8 *out, I64 out_max)
   return pos;
 }
 
+// Parses a non-negative decimal integer from a NUL-terminated string
+// (digits only - no sign, no whitespace skipping beyond what
+// ExtractToken already stripped). Just enough for a small index like
+// `hgit operation restore <op>`'s <op> argument; not a general atoi.
+I64 ParseI64(U8 *s)
+{
+  I64 v = 0;
+  I64 i = 0;
+  while (s[i] >= '0' && s[i] <= '9') {
+    v = v*10 + (s[i]-'0');
+    i++;
+  }
+  return v;
+}
+
 U0 Hgit(U8 *cmdline)
 {
   I64 i = 0;
@@ -158,6 +173,14 @@ U0 Hgit(U8 *cmdline)
       ExtractToken(rest, op_p, op_hist_repo_path, 256);
       OpLogHistory(op_hist_repo_path);
       CommPrint(1, "DISPATCH_OK operation_history\n");
+    } else if (StrCmp(op_sub, "restore") == 0) {
+      U8 op_rest_repo_path[256], op_rest_idx_str[32];
+      I64 op_rest_p = ExtractToken(rest, op_p, op_rest_repo_path, 256);
+      ExtractToken(rest, op_rest_p, op_rest_idx_str, 32);
+      I64 op_rest_idx = ParseI64(op_rest_idx_str);
+      Bool op_rest_ok = OpLogRestore(op_rest_repo_path, op_rest_idx);
+      if (op_rest_ok) CommPrint(1, "DISPATCH_OK operation_restore %d\n", op_rest_idx);
+      else CommPrint(1, "DISPATCH_ERR operation_restore_failed %d\n", op_rest_idx);
     } else {
       CommPrint(1, "DISPATCH_ERR unknown_operation_subcommand %s\n", op_sub);
     }

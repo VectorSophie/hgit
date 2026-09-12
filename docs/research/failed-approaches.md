@@ -521,3 +521,43 @@ than one call. Re-pushing the identical 46KB chunk with this script
 produced a clean, fast `COMPILE_OK` on the very next attempt. **New
 standing practice: use paced_push.py, not a single sendall(), for any
 push over ~10KB.** Full writeup: `experiments/34-hgit-paths/README.md`.
+
+## 2026-09-13 — Probe 36: path-scoped oplog test genuinely FAILED, root cause a real 33-char path limit (RESOLVED)
+
+**Tried:** Making `OpLog.HC`'s undo/redo logs path-scoped
+(`<repo_path>.oplog.<name>`/`.redolog.<name>`), verified with a real
+test through the `Hgit(cmdline)` dispatcher (offer on main, branch to
+`feature`, offer/undo/redo on `feature`, confirm main untouched).
+
+**Happened:** A real `FAIL`, reported honestly rather than adjusted
+until it passed: `feature_head_restored_by_own_redo=0` and
+`feature_untouched_by_main_undo=0`. `feature`'s own undo *had* worked
+(reverted the right HEAD, left main alone) but its `.redolog` file
+didn't exist afterward.
+
+**Why:** Chased with five diagnostic pushes, narrowing from "does
+`OpLogUndo` write the redo log" down to "does a bare literal
+`FileWrite` to this exact path string work at all" (it didn't - ruling
+out every layer of this project's own code). Cross-checking a
+previously-working sibling shape (`.head.feature`, from probes 34/35)
+against a longer suffix (`.head.feature2`) showed it *also* failed -
+the common factor was total path length, not the word "oplog". A
+dedicated binary-search probe pinned it exactly: **a full path string
+of 33 characters round-trips through FileWrite/FileRead correctly; 34
+characters silently fails** - no error, the file is simply never
+created/found. (That probe's first version used a bare top-level `for`
+loop with local declarations and printed nonsense `len=0` for every
+case - the pre-existing documented quirk about bare top-level loops
+corrupting data, not a new bug; wrapping it in a real function fixed
+it immediately.) `C:/Home/P36Repo.hgs.oplog.feature` is 34 characters -
+one over the limit.
+
+**Worked instead:** Shortened the non-main sidecar suffix from
+`.oplog.<name>`/`.redolog.<name>` to `.ol.<name>`/`.rl.<name>`. Re-ran
+the identical test after the fix: real `PASS`. This is a genuine,
+previously-undocumented TempleOS/RedSea constraint (now in
+`docs/research/01-templeos-holyc.md`'s "Path length limit" section),
+not fully resolved at the architecture level - it constrains every
+sidecar-file-per-concern design this project uses, and shortening one
+suffix only buys headroom, not a removed ceiling. Full writeup:
+`experiments/36-path-scoped-oplog/README.md`.

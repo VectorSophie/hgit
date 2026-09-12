@@ -1,0 +1,156 @@
+D_OK
+D_DONE
+D_DONE
+D_EXIT
+D2_OK
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+COMPILE_ERR_BEGIN
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'PathExists'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'PathListPrint'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'PathClose'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'obj_type' in 'HgitHistory'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'hi' in 'HexToHash'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'lo' in 'HexToHash'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'obj_type' in 'HgitSee'
+PrsFun PrsGlblVarLst PrsStmt &LexStmt2Bin WARNING: Unused var
+  'tree_len' in 'HgitSee'
+&LexExcept PrsStmt &LexStmt2Bin &ExeCmdLine ERROR: Undefined identifier at "("  Hgit("init \"C:/Home/P34Repo.hgs\"");
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+SANITY_RECHECK
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P34Repo.hgs
+PATH main
+DISPATCH_OK path_list
+DISPATCH_OK offer
+main_head=75e707bcb8f10a44abde14d0cee16db8c6880b3a09c8c60bcd74ecda57f991a6cc036e03f432f7f7a4bfe2f01b685438328810a5044884dde7be72094230d9ba
+DISPATCH_OK path_new feature
+feature_head_exists=1 feature_head_matches_main=1
+DISPATCH_ERR path_new_failed feature
+PATH main
+PATH feature
+DISPATCH_OK path_list
+DISPATCH_OK path_go feature
+current_after_go=feature
+DISPATCH_ERR path_go_failed doesnotexist
+current_unchanged_after_bad_go=1
+DISPATCH_ERR path_close_failed main
+main_still_exists=1
+DISPATCH_OK path_close feature
+feature_gone=1 current_reset_to_main=1
+PATH main
+DISPATCH_OK path_list
+PASS hgit_paths
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P35Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+main_unchanged_after_feature_offer=1
+feature_head_differs_from_main=1
+commit ts=1083036 msg=feature commit 1
+commit ts=1081763 msg=main commit 1
+HISTORY_END shown=2
+DISPATCH_OK path_go main
+commit ts=1081763 msg=main commit 1
+HISTORY_END shown=1
+STATUS_MODIFIED P35FileA.txt
+STATUS_END
+DISPATCH_OK path_go feature
+STATUS_UNCHANGED P35FileA.txt
+STATUS_END
+PASS path_aware_offer
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P36Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+DISPATCH_OK undo
+feature_head_reverted_by_own_undo=1
+main_untouched_by_feature_undo=1
+DISPATCH_ERR nothing_to_redo
+feature_head_restored_by_own_redo=0
+DISPATCH_OK path_go main
+DISPATCH_OK undo
+feature_untouched_by_main_undo=0
+FAIL path_scoped_oplog
+COMPILE_OK
+D_DONE
+current_path_now=main
+redo_path_direct=C:/Home/P36Repo.hgs.redolog.feature
+redo_path_via_current=C:/Home/P36Repo.hgs.redolog
+redolog_feature_exists=0 size=0
+oplog_feature_exists=1 size=0
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/DiagRepo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+diag_current_before_offer=feature
+DISPATCH_OK offer
+diag_oplog_path=C:/Home/DiagRepo.hgs.oplog.feature exists=0 size=0
+diag_current_before_undo=feature
+diag_undo_ok=0
+diag_redo_path=C:/Home/DiagRepo.hgs.redolog.feature exists=0 size=0
+COMPILE_OK
+D_DONE
+DISPATCH_OK path_go feature
+diag3_current=feature
+diag3_oplog_path=C:/Home/DiagRepo.hgs.oplog.feature exists=0 size=0
+diag3_direct_path=C:/Home/DiagRepo.hgs.oplog.feature
+diag3_direct_exists=0 size=0
+COMPILE_OK
+D_DONE
+diag4_literal_write_exists=0 size=0
+diag4_built=C:/Home/DiagRepo.hgs.oplog.feature (len=34)
+diag4_built_write_exists=0 size=0
+COMPILE_OK
+D_DONE
+diag5_head_feature2_exists=0 size=0
+diag5_oplog_feature2_exists=0 size=0
+diag5_oplogX_exists=1 size=136
+diag5_shortname_exists=1 size=136
+COMPILE_OK
+D_DONE
+len=0 exists=0 size=0
+len=0 exists=0 size=0
+len=0 exists=0 size=0
+len=0 exists=0 size=0
+len=0 exists=0 size=0
+len=0 exists=0 size=0
+len=0 exists=0 size=0
+COMPILE_OK
+D_DONE
+len=28 exists=1 size=8
+len=30 exists=1 size=8
+len=31 exists=1 size=8
+len=32 exists=1 size=8
+len=33 exists=1 size=8
+len=34 exists=0 size=0
+len=36 exists=0 size=0
+COMPILE_OK
+D_DONE
