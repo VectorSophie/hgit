@@ -112,6 +112,17 @@ doc-mirror prose:
   function fixed it. This is a broader, more dangerous cousin of the
   boot-phase-only top-level-loop restriction above: it doesn't error,
   it just quietly computes garbage.
+- **Confirmed (probe 24, `experiments/24-hgit-dispatch-more/`)**: local
+  variables declared in different `else if` branches of the *same*
+  function do not appear to get separate block scope the way they
+  would in C — declaring the same name (e.g. `repo_path`) in two
+  sibling branches threw `ERROR: Duplicate member`, even though the
+  branches are mutually exclusive and the variable is never live in
+  both at once. Unlike the two quirks above, this one *does* error at
+  compile time rather than silently corrupting — the safer failure
+  mode, but still a real difference from C-shaped assumptions. Fix:
+  give every branch's locals distinctly-named variables; don't reuse a
+  name across sibling `if`/`else if` blocks in one function.
 
 ## Facts confirmed in source (the actual `cia-foundation/TempleOS` mirror, cloned and read directly)
 
@@ -147,12 +158,24 @@ Resolving a risk flagged since this dossier's first draft:
 
 ## Unresolved risk
 
-- How does an **AOT-compiled, argv-taking** `hgit` executable fit into a
-  system whose native command line is described purely as a live
-  line-by-line JIT REPL? The doc mentions AOT executables exist in
-  TempleOS but the argument-passing convention for them hasn't been read
-  yet (need `Doc/` and `Compiler/` source, and the "AOT executables and
-  command-line argument handling" item from the brief).
+- ~~How does an **AOT-compiled, argv-taking** `hgit` executable fit into
+  a system whose native command line is described purely as a live
+  line-by-line JIT REPL?~~ **Resolved, and the premise was wrong**:
+  confirmed directly from primary source (`Doc/CmdLineOverview.DD`) —
+  TempleOS has **no argv/space-separated shell syntax at all**. Every
+  native "command" is a literal HolyC function call with normal
+  parens and string-literal arguments: `Dir("*.DD.Z");`, `Cd("B:/Tmp");`,
+  `Ed("NewFile.HC.Z");`. There is no traditional `main(argc, argv)`
+  convention to design around, because the cmd line already *is* the
+  full language. The actual entry-point question for hgit was never
+  "how do we parse argv" — it's "what's the idiomatic function-call
+  shape for a git-like vocabulary in a system with no shell syntax,"
+  and the answer that was actually built and verified
+  (`experiments/23-hgit-dispatch/`) is a single dispatcher function
+  (`Hgit(cmdline)`) taking one string, splitting its first word as a
+  command name (`init`, `status`, ...) and dispatching to the
+  already-verified `Hgit*()` functions — called at the cmd line exactly
+  like any other TempleOS command: `Hgit("init C:/Home/MyRepo.hgs");`.
 - ~~Contiguous-file-only allocation (RedSea) directly constrains the
   archive format~~ **Resolved, and turns out to be a non-issue at the
   API level**: `Doc/RedSea.DD` confirms the underlying filesystem

@@ -110,9 +110,56 @@ read back across a QEMU reboot boundary). Repeated probe 12's
 index-offset mistake while building it — documenting a mistake in a
 research file didn't prevent repeating it in new code — fixed the same
 way, this time with the warning written directly into `History.HC`'s
-own source at the point of use. Next concrete step: wire HEAD +
-tree-walking into `Status.HC`'s `STATUS_UNIMPLEMENTED` branch, and build
-`hgit see <offering>` on top of the now-real parent chain.
+own source at the point of use.
+
+**`hgit status` now has its real comparison logic too**
+(`src/hgit-cli/Status.HC`, `experiments/20-hgit-status-diff/`) — walks
+HEAD's tree and classifies each working-directory file as new,
+modified, or unchanged via real content-hash comparison, verified
+against the actual probe-18 repository (one unchanged file, one
+modified, one brand-new — all three classified correctly). `hgit`'s
+core M1 loop (`init`/`status`/`offer`/`history`) is now complete and
+internally consistent.
+
+**Deleted-file detection is also done** (`experiments/21-status-deleted/`)
+— a second pass over HEAD's tree checking each entry still exists on
+disk, verified against the real repo (deleted a previously-unchanged
+file, correctly reported `STATUS_DELETED`, other files unaffected).
+`hgit status` is now feature-complete for a flat, single-tree repo at
+M1 scope.
+
+**`hgit see <offering>` is also done** (`src/hgit-cli/See.HC`,
+`experiments/22-hgit-see/`) — shows a commit's message/timestamp/parent
+count and its tree's entries, verified against both real commits in
+the probe-18 repository plus a clean not-found error for a bogus hash.
+
+**All five of doc 10's M1 command targets now exist and are verified:
+`init`, `status`, `offer`, `history`, `see`.**
+
+**The real entry point also now exists** (`src/hgit-cli/Hgit.HC`,
+`experiments/23-hgit-dispatch/`) — and resolved a question flagged since
+doc 01's first draft in the process: TempleOS has no argv/shell syntax
+at all (confirmed from primary source, `Doc/CmdLineOverview.DD` — every
+native command is a literal function call, `Dir("*.DD.Z")`-style). So
+hgit's entry point is a single dispatcher function, `Hgit(cmdline)`,
+called exactly like any other TempleOS command
+(`Hgit("init C:/Home/MyRepo.hgs");`), splitting the first word as a
+command name.
+
+**`status` and `history` are now wired too**
+(`experiments/24-hgit-dispatch-more/`) — both verified through the
+dispatcher against the real repository, matching direct-call results
+exactly. Found a genuinely new HolyC quirk while wiring them: local
+variables declared in sibling `else if` branches of one function don't
+get separate block scope the way C's do — same-named locals in two
+branches collided as `ERROR: Duplicate member` at compile time (a
+safer failure mode than probe 05/12's silent-corruption quirks, but a
+real difference from C-shaped assumptions). Fixed and documented
+directly in `Hgit.HC`'s comments.
+
+`offer` (free-text message field) and `see` (hex-string→hash parsing)
+remain the two genuinely harder cases, deliberately deferred — real
+next work, not a small addition.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

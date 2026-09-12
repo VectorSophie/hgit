@@ -282,3 +282,28 @@ the fix that actually sticks is the one placed at the exact call site
 where the mistake is possible, where the next reader (human or a future
 version of this same agent) hits the warning before hitting the bug,
 not after.
+
+## 2026-09-13 — Same-named locals in sibling `else if` branches: "Duplicate member"
+
+**Tried:** Extending `Hgit()`'s dispatcher (`experiments/24-hgit-dispatch-more/`)
+with a `history` branch that declared `U8 repo_path[256];` — the same
+name already declared in the earlier `status` branch of the same
+function, inside a different `else if` block.
+
+**Happened:** Compile error: `ERROR: Duplicate member at ';'`. No test
+output at all for that push; a screendump was needed to find the
+error.
+
+**Why:** In C, `if`/`else if` blocks are separate scopes, so reusing a
+local variable's name across sibling branches is completely normal and
+common. HolyC does not appear to treat `if`/`else if` branches within
+one function as separate scopes for this purpose — both declarations
+apparently land in one flat per-function namespace, so the second one
+collides with the first even though the two branches are mutually
+exclusive and the variable is never live in both.
+
+**Worked instead:** Renamed the second declaration to a distinct name
+(`hist_repo_path`). Compiled and ran correctly. **Rule now recorded
+directly in `Hgit.HC`'s own comments (not only here): every branch's
+locals need distinctly-named variables in HolyC — don't assume
+`if`/`else if` blocks give a fresh scope the way they do in C.**
