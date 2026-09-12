@@ -1,0 +1,12 @@
+# Large redistributable downloads - re-fetch via experiments/*/README.md instructions
+*.ISO
+*.iso
+*.qcow2
+*.ppm
+
+# Third-party reference clones - reproducible via the clone command cited
+# in the docs that reference them; not vendored to keep the repo small.
+experiments/templeos-devkit/
+# Per-experiment scratch output (pids, sockets, serial logs)
+experiments/*/build/
+.claude/
