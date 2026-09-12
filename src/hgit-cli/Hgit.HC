@@ -140,6 +140,59 @@ U0 Hgit(U8 *cmdline)
     Bool undo_ok = OpLogUndo(undo_repo_path);
     if (undo_ok) CommPrint(1, "DISPATCH_OK undo\n");
     else CommPrint(1, "DISPATCH_ERR nothing_to_undo\n");
+  } else if (StrCmp(cmd, "redo") == 0) {
+    U8 redo_repo_path[256];
+    ExtractToken(rest, 0, redo_repo_path, 256);
+    Bool redo_ok = OpLogRedo(redo_repo_path);
+    if (redo_ok) CommPrint(1, "DISPATCH_OK redo\n");
+    else CommPrint(1, "DISPATCH_ERR nothing_to_redo\n");
+  } else if (StrCmp(cmd, "operation") == 0) {
+    // Two-word command ("operation history ...") - `cmd` above only
+    // captured "operation", so pull the sub-command as the next token
+    // of `rest` before treating whatever follows as the sub-command's
+    // own arguments.
+    U8 op_sub[32];
+    I64 op_p = ExtractToken(rest, 0, op_sub, 32);
+    if (StrCmp(op_sub, "history") == 0) {
+      U8 op_hist_repo_path[256];
+      ExtractToken(rest, op_p, op_hist_repo_path, 256);
+      OpLogHistory(op_hist_repo_path);
+      CommPrint(1, "DISPATCH_OK operation_history\n");
+    } else {
+      CommPrint(1, "DISPATCH_ERR unknown_operation_subcommand %s\n", op_sub);
+    }
+  } else if (StrCmp(cmd, "path") == 0) {
+    U8 path_sub[32];
+    I64 path_p = ExtractToken(rest, 0, path_sub, 32);
+    if (StrCmp(path_sub, "list") == 0) {
+      U8 path_list_repo[256];
+      ExtractToken(rest, path_p, path_list_repo, 256);
+      PathListPrint(path_list_repo);
+      CommPrint(1, "DISPATCH_OK path_list\n");
+    } else if (StrCmp(path_sub, "new") == 0) {
+      U8 path_new_repo[256], path_new_name[HGIT_MAX_PATH_NAME];
+      I64 path_new_p = ExtractToken(rest, path_p, path_new_repo, 256);
+      ExtractToken(rest, path_new_p, path_new_name, HGIT_MAX_PATH_NAME);
+      Bool path_new_ok = PathNew(path_new_repo, path_new_name);
+      if (path_new_ok) CommPrint(1, "DISPATCH_OK path_new %s\n", path_new_name);
+      else CommPrint(1, "DISPATCH_ERR path_new_failed %s\n", path_new_name);
+    } else if (StrCmp(path_sub, "go") == 0) {
+      U8 path_go_repo[256], path_go_name[HGIT_MAX_PATH_NAME];
+      I64 path_go_p = ExtractToken(rest, path_p, path_go_repo, 256);
+      ExtractToken(rest, path_go_p, path_go_name, HGIT_MAX_PATH_NAME);
+      Bool path_go_ok = PathGo(path_go_repo, path_go_name);
+      if (path_go_ok) CommPrint(1, "DISPATCH_OK path_go %s\n", path_go_name);
+      else CommPrint(1, "DISPATCH_ERR path_go_failed %s\n", path_go_name);
+    } else if (StrCmp(path_sub, "close") == 0) {
+      U8 path_close_repo[256], path_close_name[HGIT_MAX_PATH_NAME];
+      I64 path_close_p = ExtractToken(rest, path_p, path_close_repo, 256);
+      ExtractToken(rest, path_close_p, path_close_name, HGIT_MAX_PATH_NAME);
+      Bool path_close_ok = PathClose(path_close_repo, path_close_name);
+      if (path_close_ok) CommPrint(1, "DISPATCH_OK path_close %s\n", path_close_name);
+      else CommPrint(1, "DISPATCH_ERR path_close_failed %s\n", path_close_name);
+    } else {
+      CommPrint(1, "DISPATCH_ERR unknown_path_subcommand %s\n", path_sub);
+    }
   } else {
     CommPrint(1, "DISPATCH_ERR unknown_command %s\n", cmd);
   }

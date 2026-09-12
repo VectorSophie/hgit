@@ -33,6 +33,7 @@ cat \
   src/hgit-core/Index.HC \
   src/hgit-cli/Init.HC \
   src/hgit-cli/Head.HC \
+  src/hgit-cli/Paths.HC \
   src/hgit-cli/WorkDir.HC \
   src/hgit-cli/Status.HC \
   src/hgit-cli/History.HC \

@@ -1,0 +1,26 @@
+D_OK
+D_DONE
+D_DONE
+D_EXIT
+D2_OK
+D_EXIT
+D2_OK
+SANITY_V2
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P31Repo.hgs
+DISPATCH_OK offer
+log_exists_after_1=1 log_size_after_1_ok=1 (size=136)
+DISPATCH_OK offer
+heads_differ_31=1 log_size_after_2_ok=1 (size=272)
+DISPATCH_OK undo
+found_after_undo_31=1 matches_head1_31=1
+DISPATCH_OK undo
+found_after_undo2_31=1 matches_zero_31=1
+PASS oplog_wired_into_offer
+COMPILE_OK
+D_DONE

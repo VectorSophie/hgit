@@ -1,0 +1,60 @@
+D_OK
+D_DONE
+D_DONE
+D_EXIT
+D2_OK
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+COMPILE_ERR_BEGIN
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'PathExists'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'PathListPrint'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'PathClose'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'obj_type' in 'HgitHistory'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'hi' in 'HexToHash'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'lo' in 'HexToHash'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'obj_type' in 'HgitSee'
+PrsFun PrsGlblVarLst PrsStmt &LexStmt2Bin WARNING: Unused var
+  'tree_len' in 'HgitSee'
+&LexExcept PrsStmt &LexStmt2Bin &ExeCmdLine ERROR: Undefined identifier at "("  Hgit("init \"C:/Home/P34Repo.hgs\"");
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+SANITY_RECHECK
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P34Repo.hgs
+PATH main
+DISPATCH_OK path_list
+DISPATCH_OK offer
+main_head=75e707bcb8f10a44abde14d0cee16db8c6880b3a09c8c60bcd74ecda57f991a6cc036e03f432f7f7a4bfe2f01b685438328810a5044884dde7be72094230d9ba
+DISPATCH_OK path_new feature
+feature_head_exists=1 feature_head_matches_main=1
+DISPATCH_ERR path_new_failed feature
+PATH main
+PATH feature
+DISPATCH_OK path_list
+DISPATCH_OK path_go feature
+current_after_go=feature
+DISPATCH_ERR path_go_failed doesnotexist
+current_unchanged_after_bad_go=1
+DISPATCH_ERR path_close_failed main
+main_still_exists=1
+DISPATCH_OK path_close feature
+feature_gone=1 current_reset_to_main=1
+PATH main
+DISPATCH_OK path_list
+PASS hgit_paths
+COMPILE_OK
+D_DONE

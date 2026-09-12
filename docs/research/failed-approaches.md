@@ -437,7 +437,7 @@ disappeared immediately. **Reinforced: when a test itself needs to
 contain quote characters, write a real file - never hand-construct the
 escaped bytes through multiple layers of string literals.**
 
-## 2026-09-13 — Probe 31 (wire OpLog into Offer): QEMU verification blocked, not obtained
+## 2026-09-13 — Probe 31 (wire OpLog into Offer): QEMU verification blocked, not obtained (RESOLVED below)
 
 **Tried:** Verifying `Offer.HC`'s new internal `OpLogAppend` call (see
 `experiments/31-oplog-in-offer/README.md`) the normal way - boot,
@@ -467,14 +467,57 @@ unexplained hang logged in the 2026-09-12 combined-push entry above,
 or it may be purely host resource starvation. Both are logged as open,
 neither is claimed as the answer.
 
-**Worked instead:** Nothing yet - this is the first probe in the
-project logged as **blocked rather than resolved**. The source change
-itself (`Offer.HC` calling the already-verified `OpLogAppend`/`OpLogUndo`
-from probe 30, plus a new `undo` dispatch branch) was committed with
-an explicit "not yet QEMU-verified" status rather than claimed as
-tested, per this project's non-negotiable rule against fabricating
-results. **Next step, not done here:** retry against a fresh boot once
-host memory pressure has cleared; if the hang reproduces under normal
-host conditions, bisect by pushing progressively smaller pieces of
-`hgit-core` to localize which file/function actually stalls, rather
-than assuming host contention a second time.
+**Worked instead (RESOLVED, same session, next iteration):** The real
+cause was found by deliberately reproducing the exact symptom rather
+than accepting "blocked": stage-1's `D()` daemon has **no compile-error
+capture** in its `ExePutS(Db)` call. A malformed hand-typed sanity
+payload (a self-inflicted shell/Python escaping mistake - not a HolyC
+bug) produced this exact signature on demand - `D_OK`, then silence,
+forever - while the screen (checked via screendump, not assumed)
+showed a live HolyC debugger stopped on a real parse error. Headless
+and with no one to dismiss it, that's indistinguishable from a hang by
+`serial.log` alone. **Fix, now standard practice:** bootstrap straight
+through to the devkit's stage-2 daemon (`D2()`/`_DRun`, using
+`Fs->catch_except` to capture and report `COMPILE_OK`/`COMPILE_FAIL`
+instead of dropping to the debugger) before pushing anything with new
+or changed source. Full writeup: `experiments/31-oplog-in-offer/README.md`
+(updated from its own original "blocked" version once this was found).
+Whether this also explains the 2026-09-12 combined-push hang logged
+above is a strong plausible explanation, not a confirmed re-diagnosis
+of that specific incident - left as originally written there.
+
+## 2026-09-13 — Probe 34: large unpaced pushes can silently drop bytes (RESOLVED)
+
+**Tried:** Pushing the ~46KB `hgit-cli` chunk (with the new `Paths.HC`
+added) as one `sendall()` over the COM2 socket, reusing a long-lived
+stage-2 session already proven working in probes 31-33.
+
+**Happened:** The push took over 10 minutes with no `COMPILE_OK`/
+`COMPILE_FAIL` - the first time stage-2 itself (which reports both
+quickly, by design) seemed stuck. A fresh reboot was done to rule out
+the long-lived session degrading; the retry (still one unpaced
+`sendall()`) appeared, from a `tail` check, to succeed - but that check
+was reading stale output from an *earlier*, smaller push, and the real
+chunk's own result hadn't landed yet. The next push (a small test
+driver) sent immediately after produced a **combined, garbled compile**:
+warnings from mid-way through the cli chunk's own functions, then the
+test driver's first statement failing with `Undefined identifier` -
+with no `COMPILE_OK`/`COMPILE_FAIL` for the cli chunk ever appearing.
+This means the cli chunk's own trailing EOT byte (`0x04`) never reached
+the guest; both pushes' bytes were treated as one continuous stream.
+
+**Why:** The 46KB file itself was confirmed byte-clean (no stray `0x04`
+inside it). The likely cause: a single large, unpaced `sendall()` over
+the emulated serial line can have bytes dropped somewhere between the
+host socket and the guest's software FIFO under host memory pressure -
+a real, distinct reliability gap from the compile-error-capture finding
+logged just above (that one was about *executing* a chunk that fully
+arrived; this one is about the chunk not fully arriving in the first
+place).
+
+**Worked instead:** `experiments/01-temple-repl/paced_push.py` - sends
+the file in small (2KB) pieces with a short delay between each, rather
+than one call. Re-pushing the identical 46KB chunk with this script
+produced a clean, fast `COMPILE_OK` on the very next attempt. **New
+standing practice: use paced_push.py, not a single sendall(), for any
+push over ~10KB.** Full writeup: `experiments/34-hgit-paths/README.md`.

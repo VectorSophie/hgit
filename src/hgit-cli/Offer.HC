@@ -84,7 +84,7 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
 
   // Commit: parent = current HEAD, if any.
   U8 parent_hash[64];
-  Bool has_parent = HeadRead(repo_path, parent_hash);
+  Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
   U8 commit_content[512];
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
@@ -113,5 +113,5 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   }
   OpLogAppend(repo_path, log_prev_head, commit_hash, timestamp);
 
-  HeadWrite(repo_path, commit_hash);
+  CurrentHeadWrite(repo_path, commit_hash);
 }

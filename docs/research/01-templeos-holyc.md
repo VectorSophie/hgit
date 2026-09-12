@@ -63,6 +63,47 @@ with zero patches, `-m 512`, no KVM. Full detail and screenshots:
 "cmd line is the compiler" doc claim against the running system, not just
 the manual.
 
+## Test-harness quirk, confirmed by deliberate reproduction: stage-1 `ExePutS` has no compile-error capture
+
+Found while chasing down two "hangs" during probe 31
+(`experiments/31-oplog-in-offer/README.md`,
+`docs/research/failed-approaches.md` 2026-09-13): this project's
+stage-1 COM2 injection daemon (`D()`, see `experiments/01-temple-repl/`)
+calls `ExePutS(Db)` directly with no error handling. When the pushed
+source has a real compile error, TempleOS drops into its own
+interactive debugger on the framebuffer — headlessly, with no one to
+dismiss it, this parks `D()`'s receive loop forever with **zero**
+host-visible signal (no error, no `D_DONE`, COM1 gets nothing). This
+was confirmed by deliberately reproducing it: a malformed test payload
+produced exactly this symptom, and a screendump (not `serial.log`)
+showed the live debugger stopped on `ERROR: Undefined identifier`.
+Without a screendump, this is indistinguishable from a genuine hang —
+which is exactly how it was first logged (twice, in failed-approaches.md,
+before this was understood).
+
+**Fix / standing practice going forward:** upgrade from stage-1 `D()`
+to the stage-2 daemon (`D2()`/`_DRun`, from
+`templeos-devkit/scripts/temple-run.py`'s `DAEMON_V2_SOURCE`) before
+pushing any new or changed source. `_DRun` wraps `ExePutS` with
+`Fs->catch_except`/a redirected `put_doc`, and reports
+`COMPILE_OK`/`COMPILE_FAIL` (with the actual compiler error text)
+instead of silently freezing. One gotcha hit live while switching over:
+the handshake reuses the same `_D_exit` variable to break stage-1's
+loop and to gate stage-2's — it must be reset to `FALSE` before calling
+`D2()`, or `D2()` observes it still `TRUE` and exits immediately
+(printing `D_EXIT` right after `D2_OK`).
+
+A second, distinct test-harness reliability gap found in probe 34: a
+large push (~46KB) sent as one unpaced `sendall()` over the COM2 socket
+can have bytes dropped somewhere between the host and the guest's
+software FIFO under host memory pressure — the chunk's own trailing
+EOT byte never arrived, so its content silently concatenated with the
+*next* push instead of producing its own compile result (confirmed:
+the 46KB file itself had no stray EOT byte inside it). Fix, now
+standard practice for any push over ~10KB:
+`experiments/01-temple-repl/paced_push.py` sends the file in small
+(2KB) chunks with a short delay between each rather than one call.
+
 ## Facts confirmed in source (via `experiments/templeos-devkit`, ZealOS fork — close enough to stock HolyC to be informative, flagged where TempleOS-specific)
 
 Reading `NOTES.md`/`Daemon.ZC`/`temple-run.py` (see doc 08 for full

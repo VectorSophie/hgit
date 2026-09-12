@@ -867,6 +867,270 @@ U0 HeadWrite(U8 *repo_path, U8 *hash)
   HeadPath(repo_path, hp);
   FileWrite(hp, hash, 64);
 }
+// Paths.HC — named paths (hgit's branch equivalent), per the brief's
+// `hgit path list/new/go/close` vocabulary.
+//
+// Deliberately minimal, first slice: path bookkeeping only (create,
+// list, switch "current path," close) — NOT yet wired into
+// Offer.HC/Status.HC/History.HC/See.HC/OpLog.HC, so creating or
+// switching paths doesn't yet change what those commands operate on.
+// That's the natural next step, not done here — same pattern this
+// project already used for OpLog.HC (built and verified standalone in
+// probe 30, wired into Offer.HC in probe 31).
+//
+// Design:
+//   - "main" is the implicit default path — it always exists, is never
+//     stored in the path list, and its HEAD is exactly `<repo_path>.head`
+//     (byte-identical location to every already-verified probe, so this
+//     adds nothing new for repos that never touch paths).
+//   - `<repo_path>.paths`: every OTHER path's name, as a flat list of
+//     [U8 name_len][name bytes] entries, read until EOF. No count
+//     prefix — same "read until end of buffer" pattern as OpLog.HC's
+//     fixed-size entries, just variable-length here.
+//   - `<repo_path>.currentpath`: raw bytes = the current path's name
+//     (no NUL terminator, no length prefix). Missing/empty means "main".
+//   - `<repo_path>.head.<name>`: HEAD storage for any non-main path
+//     (same 64-byte format as Head.HC's `.head` file).
+//
+// Depends on Head.HC (HeadRead/HeadWrite, for the "main" case) and
+// Canon.HC only for the general style; no BLAKE2b/object-layer
+// dependency, this is pure bookkeeping.
+
+#define HGIT_MAX_PATH_NAME 64
+
+U0 PathListFilePath(U8 *repo_path, U8 *out_path)
+{
+  I64 i = 0;
+  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
+  out_path[i++]='.'; out_path[i++]='p'; out_path[i++]='a';
+  out_path[i++]='t'; out_path[i++]='h'; out_path[i++]='s';
+  out_path[i] = 0;
+}
+
+U0 CurrentPathFilePath(U8 *repo_path, U8 *out_path)
+{
+  I64 i = 0;
+  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
+  out_path[i++]='.'; out_path[i++]='c'; out_path[i++]='u';
+  out_path[i++]='r'; out_path[i++]='r'; out_path[i++]='e';
+  out_path[i++]='n'; out_path[i++]='t'; out_path[i++]='p';
+  out_path[i++]='a'; out_path[i++]='t'; out_path[i++]='h';
+  out_path[i] = 0;
+}
+
+// HEAD storage location for `name` under this repo. "main" reuses
+// Head.HC's own `<repo_path>.head` unchanged; anything else gets its
+// own `<repo_path>.head.<name>` sidecar.
+U0 PathHeadFilePath(U8 *repo_path, U8 *name, U8 *out_path)
+{
+  if (StrCmp(name, "main") == 0) {
+    HeadPath(repo_path, out_path);
+    return;
+  }
+  U8 base[256];
+  HeadPath(repo_path, base); // "<repo_path>.head"
+  I64 i = 0;
+  while (base[i]) { out_path[i] = base[i]; i++; }
+  out_path[i++] = '.';
+  I64 j = 0;
+  while (name[j]) { out_path[i++] = name[j]; j++; }
+  out_path[i] = 0;
+}
+
+// Writes out_name = the current path's name (defaults to "main" if the
+// `.currentpath` sidecar is missing or empty).
+U0 CurrentPathGet(U8 *repo_path, U8 *out_name)
+{
+  U8 cp_path[256];
+  CurrentPathFilePath(repo_path, cp_path);
+  I64 size;
+  U8 *buf = FileRead(cp_path, &size);
+  if (buf == NULL || size <= 0) {
+    out_name[0]='m'; out_name[1]='a'; out_name[2]='i'; out_name[3]='n'; out_name[4]=0;
+    return;
+  }
+  I64 i;
+  for (i=0; i<size && i<HGIT_MAX_PATH_NAME-1; i++) out_name[i] = buf[i];
+  out_name[i] = 0;
+}
+
+// TRUE if `name` is "main" or already appears in the path list.
+Bool PathExists(U8 *repo_path, U8 *name)
+{
+  if (StrCmp(name, "main") == 0) return TRUE;
+  U8 list_path[256];
+  PathListFilePath(repo_path, list_path);
+  I64 size;
+  U8 *buf = FileRead(list_path, &size);
+  if (buf == NULL) return FALSE;
+  I64 target_len = StrLen(name);
+  I64 pos = 0;
+  while (pos < size) {
+    U8 name_len = buf[pos]; pos += 1;
+    Bool same = (name_len == target_len);
+    I64 i;
+    if (same) for (i=0; i<name_len; i++) if (name[i] != buf[pos+i]) same = FALSE;
+    pos += name_len;
+    if (same) return TRUE;
+  }
+  return FALSE;
+}
+
+// Prints every path name, "main" first, then each entry in the path
+// list file (creation order).
+U0 PathListPrint(U8 *repo_path)
+{
+  CommPrint(1, "PATH main\n");
+  U8 list_path[256];
+  PathListFilePath(repo_path, list_path);
+  I64 size;
+  U8 *buf = FileRead(list_path, &size);
+  if (buf == NULL) return;
+  I64 pos = 0;
+  while (pos < size) {
+    U8 name_len = buf[pos]; pos += 1;
+    U8 name[HGIT_MAX_PATH_NAME];
+    I64 i;
+    for (i=0; i<name_len; i++) name[i] = buf[pos+i];
+    name[name_len] = 0;
+    pos += name_len;
+    CommPrint(1, "PATH %s\n", name);
+  }
+}
+
+// Creates a new path named `name`, pointing its HEAD at whatever the
+// CURRENT path's HEAD is right now (all-zero if the current path has
+// no offerings yet). Returns FALSE if `name` already exists (including
+// "main", which can't be recreated) or is too long.
+Bool PathNew(U8 *repo_path, U8 *name)
+{
+  I64 name_len = StrLen(name);
+  if (name_len <= 0 || name_len >= HGIT_MAX_PATH_NAME) return FALSE;
+  if (PathExists(repo_path, name)) return FALSE;
+
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  U8 cur_head_path[256];
+  PathHeadFilePath(repo_path, cur_name, cur_head_path);
+  I64 cur_size;
+  U8 *cur_buf = FileRead(cur_head_path, &cur_size);
+  U8 head[64];
+  I64 i;
+  if (cur_buf != NULL && cur_size == 64) {
+    for (i=0; i<64; i++) head[i] = cur_buf[i];
+  } else {
+    for (i=0; i<64; i++) head[i] = 0;
+  }
+
+  U8 new_head_path[256];
+  PathHeadFilePath(repo_path, name, new_head_path);
+  FileWrite(new_head_path, head, 64);
+
+  // Append to the path list.
+  U8 list_path[256];
+  PathListFilePath(repo_path, list_path);
+  I64 old_size;
+  U8 *old_buf = FileRead(list_path, &old_size);
+  I64 total_old;
+  if (old_buf == NULL) total_old = 0; else total_old = old_size;
+  U8 new_buf[4096];
+  I64 j;
+  for (j=0; j<total_old; j++) new_buf[j] = old_buf[j];
+  I64 pos = total_old;
+  new_buf[pos] = name_len; pos += 1;
+  for (j=0; j<name_len; j++) new_buf[pos+j] = name[j];
+  pos += name_len;
+  FileWrite(list_path, new_buf, pos);
+  return TRUE;
+}
+
+// Switches the current path to `name`. Returns FALSE if `name` doesn't
+// exist (callers should create it with PathNew first).
+Bool PathGo(U8 *repo_path, U8 *name)
+{
+  if (!PathExists(repo_path, name)) return FALSE;
+  U8 cp_path[256];
+  CurrentPathFilePath(repo_path, cp_path);
+  FileWrite(cp_path, name, StrLen(name));
+  return TRUE;
+}
+
+// Reads HEAD for whichever path is CURRENT right now (same
+// TRUE/FALSE-if-no-offerings-yet convention as Head.HC's HeadRead).
+// This is the first thing that makes `path go` actually mean
+// something: everything that used to call HeadRead(repo_path, ...)
+// directly only ever saw "main"'s HEAD regardless of current path.
+Bool CurrentHeadRead(U8 *repo_path, U8 *hash_out)
+{
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  U8 hp[256];
+  PathHeadFilePath(repo_path, cur_name, hp);
+  I64 size;
+  U8 *buf = FileRead(hp, &size);
+  if (buf == NULL || size != 64) return FALSE;
+  I64 i;
+  for (i=0; i<64; i++) hash_out[i] = buf[i];
+  return TRUE;
+}
+
+// Writes HEAD for whichever path is CURRENT right now.
+U0 CurrentHeadWrite(U8 *repo_path, U8 *hash)
+{
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  U8 hp[256];
+  PathHeadFilePath(repo_path, cur_name, hp);
+  FileWrite(hp, hash, 64);
+}
+
+// Removes `name` from the path list (its .head.<name> sidecar is left
+// on disk, orphaned but unreachable through this API — not deleted;
+// TempleOS's Del() exists but deleting it isn't exercised here, kept
+// out of scope for this probe). If the closed path was current,
+// switches current back to "main". Refuses to close "main" itself.
+Bool PathClose(U8 *repo_path, U8 *name)
+{
+  if (StrCmp(name, "main") == 0) return FALSE;
+  U8 list_path[256];
+  PathListFilePath(repo_path, list_path);
+  I64 size;
+  U8 *buf = FileRead(list_path, &size);
+  if (buf == NULL) return FALSE;
+
+  U8 new_buf[4096];
+  I64 new_len = 0, pos = 0;
+  Bool found = FALSE;
+  I64 name_len_target = StrLen(name);
+  while (pos < size) {
+    U8 name_len = buf[pos];
+    I64 entry_start = pos;
+    pos += 1;
+    Bool same = (name_len == name_len_target);
+    I64 i;
+    if (same) for (i=0; i<name_len; i++) if (buf[pos+i] != name[i]) same = FALSE;
+    pos += name_len;
+    if (same) {
+      found = TRUE;
+    } else {
+      I64 entry_len = pos - entry_start;
+      for (i=0; i<entry_len; i++) new_buf[new_len+i] = buf[entry_start+i];
+      new_len += entry_len;
+    }
+  }
+  if (!found) return FALSE;
+  FileWrite(list_path, new_buf, new_len);
+
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  if (StrCmp(cur_name, name) == 0) {
+    U8 cp_path[256];
+    CurrentPathFilePath(repo_path, cp_path);
+    U8 main_name[8]; main_name[0]='m';main_name[1]='a';main_name[2]='i';main_name[3]='n';main_name[4]=0;
+    FileWrite(cp_path, main_name, 4);
+  }
+  return TRUE;
+}
 // WorkDir.HC — working-directory enumeration, for `hgit status`/
 // `hgit witness`. First use of TempleOS's real filesystem enumeration
 // API (`FilesFind`/`CDirEntry`), confirmed from primary source
@@ -954,7 +1218,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   }
 
   U8 head_hash[64];
-  if (!HeadRead(repo_path, head_hash)) {
+  if (!CurrentHeadRead(repo_path, head_hash)) {
     CommPrint(1, "STATUS_ERR no_head_but_objects_exist\n");
     return;
   }
@@ -1067,7 +1331,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 U0 HgitHistory(U8 *repo_path)
 {
   U8 head_hash[64];
-  if (!HeadRead(repo_path, head_hash)) {
+  if (!CurrentHeadRead(repo_path, head_hash)) {
     CommPrint(1, "HISTORY_EMPTY\n");
     return;
   }
@@ -1251,13 +1515,19 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 // an operation so ordinary recovery becomes: hgit undo / hgit redo /
 // hgit operation history / hgit operation restore <operation>."
 //
-// This is the first, minimal slice: append an entry recording HEAD's
-// before/after value on every offer, and undo the most recent one.
-// `redo` and `operation history`/`operation restore <op>` are not
-// built yet - this is a single-level undo (pop the last entry, revert
-// HEAD, done), not a full undo/redo stack with a movable cursor.
+// Undo + redo (probe 32): a `<repo_path>.redolog` sidecar, same
+// 136-byte entry shape as `.oplog`, holds entries popped by undo so
+// they can be replayed. `OpLogUndo` now pushes the entry it reverts
+// onto the redo log before truncating the undo log; `OpLogRedo` pops
+// the most recently undone entry, re-applies its `new_head`, and
+// pushes it back onto the undo log — standard undo/redo-stack
+// semantics. `OpLogAppend` (called by every real mutating operation,
+// e.g. `offer`) clears the redo log: doing new work after an undo
+// invalidates whatever was undone, same as any other tool's undo/redo.
+// `hgit operation history`/`hgit operation restore <op>` are still not
+// built yet.
 //
-// Entry format (136 bytes, sidecar file `<repo_path>.oplog`):
+// Entry format (136 bytes, both `.oplog` and `.redolog`):
 //   U64 timestamp
 //   64 bytes prev_head   (all-zero = "no commit existed yet")
 //   64 bytes new_head
@@ -1271,7 +1541,9 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 // successive undos correctly walk HEAD back through the second
 // commit's hash, to the first commit's hash, to the all-zero
 // no-commit sentinel - and a third undo correctly reports nothing left
-// to undo rather than doing something wrong.
+// to undo rather than doing something wrong. Wired into Offer.HC itself
+// and verified through the real Hgit(cmdline) dispatcher in
+// experiments/31-oplog-in-offer/.
 //
 // Confirmed HolyC quirk hit while building this (not new - already in
 // holyc-parser's own bug-compat corpus,
@@ -1279,8 +1551,7 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 // operator is not supported. Use plain if/else for conditional
 // assignment.
 //
-// Depends on Canon.HC (PutU64LE) and Head.HC (HeadWrite). Not yet
-// wired into Offer.HC - that's the next step, not done here.
+// Depends on Canon.HC (PutU64LE) and Head.HC (HeadWrite).
 
 U0 OpLogPath(U8 *repo_path, U8 *out_path)
 {
@@ -1291,12 +1562,21 @@ U0 OpLogPath(U8 *repo_path, U8 *out_path)
   out_path[i] = 0;
 }
 
-U0 OpLogAppend(U8 *repo_path, U8 *prev_head, U8 *new_head, U64 timestamp)
+U0 RedoLogPath(U8 *repo_path, U8 *out_path)
 {
-  U8 log_path[256];
-  OpLogPath(repo_path, log_path);
+  I64 i = 0;
+  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
+  out_path[i++]='.'; out_path[i++]='r'; out_path[i++]='e';
+  out_path[i++]='d'; out_path[i++]='o'; out_path[i++]='l';
+  out_path[i++]='o'; out_path[i++]='g'; out_path[i] = 0;
+}
+
+// Shared by OpLogAppend/OpLogUndo/OpLogRedo: appends one 136-byte
+// entry to whichever sidecar file `path` names.
+U0 OpLogAppendTo(U8 *path, U8 *prev_head, U8 *new_head, U64 timestamp)
+{
   I64 old_size;
-  U8 *old_buf = FileRead(log_path, &old_size);
+  U8 *old_buf = FileRead(path, &old_size);
   I64 total_old;
   if (old_buf==NULL) total_old = 0; else total_old = old_size;
 
@@ -1307,11 +1587,27 @@ U0 OpLogAppend(U8 *repo_path, U8 *prev_head, U8 *new_head, U64 timestamp)
   PutU64LE(new_buf, pos, timestamp); pos += 8;
   for (j=0; j<64; j++) new_buf[pos+j] = prev_head[j]; pos += 64;
   for (j=0; j<64; j++) new_buf[pos+j] = new_head[j]; pos += 64;
-  FileWrite(log_path, new_buf, pos);
+  FileWrite(path, new_buf, pos);
 }
 
-// Restores HEAD to the most recently logged operation's prev_head and
-// removes that entry from the log. Returns FALSE (no change made) if
+// Logs a real operation (e.g. offer). Also clears the redo log: doing
+// new work after an undo invalidates whatever was undone, same as any
+// other tool's undo/redo stack.
+U0 OpLogAppend(U8 *repo_path, U8 *prev_head, U8 *new_head, U64 timestamp)
+{
+  U8 log_path[256];
+  OpLogPath(repo_path, log_path);
+  OpLogAppendTo(log_path, prev_head, new_head, timestamp);
+
+  U8 redo_path[256];
+  RedoLogPath(repo_path, redo_path);
+  U8 empty[1];
+  FileWrite(redo_path, empty, 0);
+}
+
+// Restores HEAD to the most recently logged operation's prev_head,
+// removes that entry from the undo log, and pushes it onto the redo
+// log so OpLogRedo can replay it. Returns FALSE (no change made) if
 // the log is empty or missing - callers should treat that as "nothing
 // to undo," not an error.
 Bool OpLogUndo(U8 *repo_path)
@@ -1323,8 +1619,69 @@ Bool OpLogUndo(U8 *repo_path)
   if (buf==NULL || size < 136) return FALSE;
   I64 last_off = size - 136;
   U8 *prev_head = buf + last_off + 8;
+  U8 *new_head = buf + last_off + 8 + 64;
+  U64 timestamp = GetU64LE(buf, last_off);
+
   HeadWrite(repo_path, prev_head);
+
+  U8 redo_path[256];
+  RedoLogPath(repo_path, redo_path);
+  OpLogAppendTo(redo_path, prev_head, new_head, timestamp);
+
   FileWrite(log_path, buf, last_off);
+  return TRUE;
+}
+
+// Prints every logged operation (oldest first): index, timestamp, and
+// the prev_head/new_head hashes in hex. Read-only - doesn't touch HEAD
+// or either log file. Uses HashToHex (Hex.HC); depends on it and on
+// OpLogPath above.
+U0 OpLogHistory(U8 *repo_path)
+{
+  U8 log_path[256];
+  OpLogPath(repo_path, log_path);
+  I64 size;
+  U8 *buf = FileRead(log_path, &size);
+  if (buf==NULL || size < 136) {
+    CommPrint(1, "OPLOG_EMPTY\n");
+    return;
+  }
+  I64 count = size / 136;
+  I64 i;
+  for (i=0; i<count; i++) {
+    I64 off = i*136;
+    U64 ts = GetU64LE(buf, off);
+    U8 prev_hex[129], new_hex[129];
+    HashToHex(buf+off+8, prev_hex);
+    HashToHex(buf+off+8+64, new_hex);
+    CommPrint(1, "OP %d ts=%d prev=%s new=%s\n", i, ts, prev_hex, new_hex);
+  }
+}
+
+// Re-applies the most recently undone operation: sets HEAD back to
+// that entry's new_head, removes it from the redo log, and pushes it
+// back onto the undo log. Returns FALSE if there's nothing to redo
+// (redo log empty/missing, or nothing has been undone since the last
+// real operation).
+Bool OpLogRedo(U8 *repo_path)
+{
+  U8 redo_path[256];
+  RedoLogPath(repo_path, redo_path);
+  I64 size;
+  U8 *buf = FileRead(redo_path, &size);
+  if (buf==NULL || size < 136) return FALSE;
+  I64 last_off = size - 136;
+  U8 *prev_head = buf + last_off + 8;
+  U8 *new_head = buf + last_off + 8 + 64;
+  U64 timestamp = GetU64LE(buf, last_off);
+
+  HeadWrite(repo_path, new_head);
+
+  U8 log_path[256];
+  OpLogPath(repo_path, log_path);
+  OpLogAppendTo(log_path, prev_head, new_head, timestamp);
+
+  FileWrite(redo_path, buf, last_off);
   return TRUE;
 }
 // Offer.HC — `hgit offer`: the actual recording command. This is the
@@ -1413,7 +1770,7 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
 
   // Commit: parent = current HEAD, if any.
   U8 parent_hash[64];
-  Bool has_parent = HeadRead(repo_path, parent_hash);
+  Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
   U8 commit_content[512];
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
@@ -1442,7 +1799,7 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   }
   OpLogAppend(repo_path, log_prev_head, commit_hash, timestamp);
 
-  HeadWrite(repo_path, commit_hash);
+  CurrentHeadWrite(repo_path, commit_hash);
 }
 // Hgit.HC — the actual entry point. Resolves the open question from
 // doc 01 ("how does an argv-taking hgit command fit a system whose cmd
@@ -1586,6 +1943,59 @@ U0 Hgit(U8 *cmdline)
     Bool undo_ok = OpLogUndo(undo_repo_path);
     if (undo_ok) CommPrint(1, "DISPATCH_OK undo\n");
     else CommPrint(1, "DISPATCH_ERR nothing_to_undo\n");
+  } else if (StrCmp(cmd, "redo") == 0) {
+    U8 redo_repo_path[256];
+    ExtractToken(rest, 0, redo_repo_path, 256);
+    Bool redo_ok = OpLogRedo(redo_repo_path);
+    if (redo_ok) CommPrint(1, "DISPATCH_OK redo\n");
+    else CommPrint(1, "DISPATCH_ERR nothing_to_redo\n");
+  } else if (StrCmp(cmd, "operation") == 0) {
+    // Two-word command ("operation history ...") - `cmd` above only
+    // captured "operation", so pull the sub-command as the next token
+    // of `rest` before treating whatever follows as the sub-command's
+    // own arguments.
+    U8 op_sub[32];
+    I64 op_p = ExtractToken(rest, 0, op_sub, 32);
+    if (StrCmp(op_sub, "history") == 0) {
+      U8 op_hist_repo_path[256];
+      ExtractToken(rest, op_p, op_hist_repo_path, 256);
+      OpLogHistory(op_hist_repo_path);
+      CommPrint(1, "DISPATCH_OK operation_history\n");
+    } else {
+      CommPrint(1, "DISPATCH_ERR unknown_operation_subcommand %s\n", op_sub);
+    }
+  } else if (StrCmp(cmd, "path") == 0) {
+    U8 path_sub[32];
+    I64 path_p = ExtractToken(rest, 0, path_sub, 32);
+    if (StrCmp(path_sub, "list") == 0) {
+      U8 path_list_repo[256];
+      ExtractToken(rest, path_p, path_list_repo, 256);
+      PathListPrint(path_list_repo);
+      CommPrint(1, "DISPATCH_OK path_list\n");
+    } else if (StrCmp(path_sub, "new") == 0) {
+      U8 path_new_repo[256], path_new_name[HGIT_MAX_PATH_NAME];
+      I64 path_new_p = ExtractToken(rest, path_p, path_new_repo, 256);
+      ExtractToken(rest, path_new_p, path_new_name, HGIT_MAX_PATH_NAME);
+      Bool path_new_ok = PathNew(path_new_repo, path_new_name);
+      if (path_new_ok) CommPrint(1, "DISPATCH_OK path_new %s\n", path_new_name);
+      else CommPrint(1, "DISPATCH_ERR path_new_failed %s\n", path_new_name);
+    } else if (StrCmp(path_sub, "go") == 0) {
+      U8 path_go_repo[256], path_go_name[HGIT_MAX_PATH_NAME];
+      I64 path_go_p = ExtractToken(rest, path_p, path_go_repo, 256);
+      ExtractToken(rest, path_go_p, path_go_name, HGIT_MAX_PATH_NAME);
+      Bool path_go_ok = PathGo(path_go_repo, path_go_name);
+      if (path_go_ok) CommPrint(1, "DISPATCH_OK path_go %s\n", path_go_name);
+      else CommPrint(1, "DISPATCH_ERR path_go_failed %s\n", path_go_name);
+    } else if (StrCmp(path_sub, "close") == 0) {
+      U8 path_close_repo[256], path_close_name[HGIT_MAX_PATH_NAME];
+      I64 path_close_p = ExtractToken(rest, path_p, path_close_repo, 256);
+      ExtractToken(rest, path_close_p, path_close_name, HGIT_MAX_PATH_NAME);
+      Bool path_close_ok = PathClose(path_close_repo, path_close_name);
+      if (path_close_ok) CommPrint(1, "DISPATCH_OK path_close %s\n", path_close_name);
+      else CommPrint(1, "DISPATCH_ERR path_close_failed %s\n", path_close_name);
+    } else {
+      CommPrint(1, "DISPATCH_ERR unknown_path_subcommand %s\n", path_sub);
+    }
   } else {
     CommPrint(1, "DISPATCH_ERR unknown_command %s\n", cmd);
   }

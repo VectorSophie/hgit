@@ -19,7 +19,7 @@
 U0 HgitHistory(U8 *repo_path)
 {
   U8 head_hash[64];
-  if (!HeadRead(repo_path, head_hash)) {
+  if (!CurrentHeadRead(repo_path, head_hash)) {
     CommPrint(1, "HISTORY_EMPTY\n");
     return;
   }

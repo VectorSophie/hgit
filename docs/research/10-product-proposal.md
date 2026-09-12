@@ -219,20 +219,87 @@ Hit HolyC's lack of a `?:` ternary operator — already documented in
 `holyc-parser`'s own bug-compat corpus, not a new discovery, but a real
 gap this session hit independently.
 
-**`OpLogAppend` wired into `Offer.HC` itself, and an `undo` dispatch
-branch added to `Hgit.HC` — source-level done, QEMU verification
-BLOCKED, not yet obtained** (`experiments/31-oplog-in-offer/`). The
-change is small and built directly on probe 30's already-verified
-functions, but two real attempts to run it on TempleOS (including a
-fresh reboot and a smaller split push) never produced a `D_DONE` or
-any error — logged honestly as blocked
-(`docs/research/failed-approaches.md`, 2026-09-13 entry), not claimed
-as passing. Retry once host resources allow is the immediate next
-step, before anything else in M2.
+**`OpLogAppend` wired into `Offer.HC` itself, and a real `undo` command
+— done and verified** (`experiments/31-oplog-in-offer/`). `Offer.HC`
+now logs its own HEAD before/after transition on every offer (building
+an explicit all-zero sentinel for the no-parent case, since
+`parent_hash` is uninitialized stack garbage there); `Hgit.HC` gained
+an `undo` dispatch branch. Verified end-to-end through the real
+`Hgit(cmdline)` entry point (init → offer → offer → undo → undo, PASS)
+— not by calling hgit-core functions directly. Getting here took two
+false starts logged honestly as "blocked" before being resolved in the
+same session: stage-1's daemon has no compile-error capture, so a real
+syntax error freezes TempleOS's own debugger headlessly with zero
+host-visible signal — indistinguishable from a hang without a
+screendump. Fixed by upgrading to the devkit's stage-2 daemon (compile
+errors now reported as `COMPILE_OK`/`COMPILE_FAIL` instead of silently
+hanging) — now standard practice for any push of new/changed source.
+Full story: `docs/research/failed-approaches.md`'s 2026-09-13 entry.
 
-Still not yet done either way: `redo`, and the brief's
-`hgit operation history`/`hgit operation restore <op>` commands. Then
-the rest of M2 (paths/branches, portable `.HGS` archives).
+**`redo` done and verified** (`experiments/32-oplog-redo/`, PASS) — a
+second sidecar file (`.redolog`) holds entries popped by `undo` so they
+can be replayed; `OpLogAppend` (any real operation) clears it, matching
+standard undo/redo-stack semantics, confirmed explicitly (undo, then a
+real new offer, then a redo correctly fails rather than resurrecting
+stale state).
+
+**`hgit operation history` done and verified** (`experiments/33-operation-history/`,
+PASS) — walks the `.oplog` sidecar oldest-first, printing each entry's
+timestamp and `prev`/`new` hashes; confirmed the printed hashes form a
+real chain (each entry's `prev` matches the previous entry's `new`) and
+match the actual HEAD values read back independently, not just
+plausible-looking output. The dispatcher gained an `operation`
+top-level branch that extracts a second-word sub-command (`cmd` only
+ever captures the first space-separated word) — only `history` is
+implemented; anything else reports an explicit unknown-subcommand
+error.
+
+Still not yet done: `hgit operation restore <op>` (jumping to an
+arbitrary point in the log, not just one step via undo/redo - a bigger
+design question, deliberately not decided yet).
+
+**Named paths (`hgit path list/new/go/close`) done and verified**
+(`experiments/34-hgit-paths/`, PASS) — "main" is the always-existing
+implicit default (its HEAD stays exactly `<repo_path>.head`, unchanged
+from every prior probe); other paths get their own name in a
+`<repo_path>.paths` list and their own `<repo_path>.head.<name>` HEAD
+file; a `<repo_path>.currentpath` sidecar tracks which one is active.
+`path new` correctly copies the current path's real HEAD; duplicate
+creation, closing "main", and going to a nonexistent path are all
+correctly refused. **Deliberately bookkeeping-only so far**: creating
+or switching paths doesn't yet change what `offer`/`status`/`history`/
+`see`/`undo`/`redo`/`operation history` operate on — they all still
+hardcode "main". Wiring "whichever path is current" into those commands
+is the natural next step.
+
+This probe also found a second real test-harness reliability gap,
+distinct from probe 31's: a large (~46KB) push sent as one unpaced
+`sendall()` can have bytes dropped under host memory pressure, so its
+own trailing EOT never arrives and it silently concatenates with the
+*next* push instead of producing its own result. Fixed with
+`experiments/01-temple-repl/paced_push.py` (small paced chunks instead
+of one call) — now standard practice for any push over ~10KB. Full
+story: `docs/research/failed-approaches.md`'s second 2026-09-13 entry.
+
+**Current-path awareness wired into `offer`/`status`/`history` — done
+and verified** (`experiments/35-path-aware-offer/`, PASS). `Paths.HC`
+gained `CurrentHeadRead`/`CurrentHeadWrite`; those three commands now
+resolve HEAD through whichever path is current rather than always
+"main". Verified with one commit on `main`, a branch to `feature`, one
+more commit on `feature`, then confirming `main`'s own `.head` file is
+untouched, `history` shows a different entry count depending which
+path is current (2 on `feature`, 1 on `main` — same command, same
+repo), and `status` correctly reports `MODIFIED` on `main` vs.
+`UNCHANGED` on `feature` for the identical working file.
+**Deliberately not done**: `undo`/`redo` stay main-only — the
+operation log itself is still a single shared-across-paths log, and
+making undo/redo path-aware before that log is path-scoped would let
+an undo on one path revert a HEAD hash belonging to a different path's
+history (a real correctness bug, not just missing scope).
+
+Remaining M2 work: making the operation log path-scoped (prerequisite
+for path-aware undo/redo), portable `.HGS` archives, and a real DolDoc
+history view.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

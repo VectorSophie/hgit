@@ -43,8 +43,10 @@ packages into one file, loadable with a single `#include`.
   format and file header), `Object.HC`/`Tree.HC`/`Commit.HC` (typed
   objects: blob/tree/commit content), `Index.HC` (hash→offset lookup).
 - `src/hgit-cli/` — the command surface: `Init.HC`, `WorkDir.HC`,
-  `Head.HC`, `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
-  (hex string ↔ hash bytes), and `Hgit.HC` — the real entry point
+  `Head.HC`, `Paths.HC` (named paths — bookkeeping only so far),
+  `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
+  (hex string ↔ hash bytes), `OpLog.HC` (operation log + undo/redo
+  stack, wired into `Offer.HC`), and `Hgit.HC` — the real entry point
   (`Hgit(cmdline)`) composing all of the above behind one dispatcher.
   Every file in both directories verified running on real TempleOS via
   `experiments/01-temple-repl/`'s injection channel — see each probe's
@@ -58,9 +60,23 @@ packages into one file, loadable with a single `#include`.
   source file directly (`experiments/28-hgit-package/`).
 - `tests/` — still scaffolded/empty.
 
+**M2 in progress**: the operation log (`src/hgit-cli/OpLog.HC`) is
+built, wired into `hgit offer` itself, and real `hgit undo`/`hgit redo`/
+`hgit operation history` commands all exist (a proper undo/redo stack,
+not just single-level); named paths (`hgit path list/new/go/close`,
+`src/hgit-cli/Paths.HC`) exist and are now wired into `offer`/`status`/
+`history` — switching the current path genuinely changes what those
+commands see (`undo`/`redo` remain main-only for now, deliberately,
+until the operation log itself becomes path-scoped) — all verified
+end-to-end through the real `Hgit(cmdline)` entry point on TempleOS
+(`experiments/30-oplog-undo/`, `experiments/31-oplog-in-offer/`,
+`experiments/32-oplog-redo/`, `experiments/33-operation-history/`,
+`experiments/34-hgit-paths/`, `experiments/35-path-aware-offer/`).
+
 ## Next steps
 
 See `docs/research/10-product-proposal.md` for the live risk register
-and milestone checklist. With M1 complete, the concrete next work is M2
-territory: paths/branches, the operation log, portable `.HGS` archives,
-and a real DolDoc history view.
+and milestone checklist. Remaining M2 work: making the operation log
+path-scoped (so `undo`/`redo`/`hgit operation restore <op>` can safely
+become path-aware too), portable `.HGS` archives, and a real DolDoc
+history view.

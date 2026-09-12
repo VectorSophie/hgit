@@ -45,7 +45,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   }
 
   U8 head_hash[64];
-  if (!HeadRead(repo_path, head_hash)) {
+  if (!CurrentHeadRead(repo_path, head_hash)) {
     CommPrint(1, "STATUS_ERR no_head_but_objects_exist\n");
     return;
   }
