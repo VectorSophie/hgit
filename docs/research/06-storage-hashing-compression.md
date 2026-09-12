@@ -85,15 +85,49 @@ independently-verified digest for the same bytes. Real objects larger
 than 128 bytes can now actually go through the archive API end to end,
 not just through the hash primitive in isolation.
 
+## Experimental evidence — tree object content (probe 10)
+
+`experiments/10-tree-object/` + `src/hgit-core/Tree.HC`: designed and
+verified the actual content format for `OBJ_TREE` objects — a flat
+entry list (`U32 count` + repeated `[name_len][name][child_type][64-byte
+hash]`). Bumped `ObjectPut`'s scratch buffer from 128 to 4096 bytes
+(verified: a 146-byte tree object, which would have exceeded the old
+cap, stored/persisted/reloaded correctly). Decoded the reloaded tree and
+looked up both entries by name, confirming correct type and hash for
+each against independently-computed values.
+
+## Experimental evidence — commit object content (probe 11)
+
+`experiments/11-commit-object/` + `src/hgit-core/Commit.HC`: the other
+object-content design ADR 0001 deferred, now done. Tree hash + parent
+hash(es) + timestamp + message. Verified with a real root commit and a
+child commit whose parent field is the root commit's actual computed
+hash — the full blob→tree→commit graph now exists and works end to end,
+persisted to and reloaded from a real file, on real TempleOS.
+
+## Experimental evidence — hash→offset index (probe 12)
+
+`experiments/12-index/` + `src/hgit-core/Index.HC`: `IndexBuild` scans
+an archive once, recording each object's stored hash and offset;
+`IndexLookup` resolves a hash back to an offset. Verified by fully
+dereferencing a tree entry's child hash through the index to real blob
+content, with no hand-computed byte offsets anywhere in the test. The
+first attempt at this probe actually crashed the guest (a real General
+Protection fault) from exactly the kind of hand-computed-offset mistake
+the index exists to eliminate — see `failed-approaches.md`. This closes
+the last storage-layer gap ADR 0001/FORMAT.md flagged as missing.
+
 ## Not yet done
 
-- `ObjectPut`'s own `tagged[128]` scratch buffer still caps tagged
-  objects at 127 content bytes — a separate, smaller limitation than
-  the one probe 09 removed (buffer size, not hash capability).
-- **Index build** (hash→offset lookup) — probe 05 only verifies records
-  linearly; no index structure yet.
-- Archive size (currently a fixed ~1KB test buffer) and record count are
-  both far below anything real — scaling both up is unverified.
+- **Merge commits** (`parent_count` > 1) — format supports it, untested.
+- **Recursive trees** (a tree entry pointing at another tree) — the
+  format supports it, untested.
+- **Author/identity** on commits — deliberately deferred to M3.
+- **A real hash table** — the index is still a linear scan/search
+  internally; fine at current scale, not yet benchmarked against a real
+  corpus.
+- Archive size (currently a fixed ~1KB-4KB test buffer) and record count
+  are both far below anything real — scaling both up is unverified.
 - No compression/chunking work at all — LZ4/zstd-as-reference-only per
   the brief, content-defined chunking corpus, Fossil-style delta corpus.
   Blocked on doc 04's Fossil delta-format read (not yet done) informing

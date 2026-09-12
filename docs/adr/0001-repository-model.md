@@ -65,17 +65,30 @@ format at this stage — append-only is the whole story until evidence
 (a real corpus, per the brief's benchmarking plan) says otherwise. A
 rebuildable index (hash → offset) sits beside or within the archive,
 per the brief's "manual, previewable compaction" and "rebuildable index"
-requirements — **not yet built** (probe 05 explicitly left this as next
-work; this ADR commits to the shape, not the index implementation).
+requirements — **now built and verified** (`src/hgit-core/Index.HC`,
+`experiments/12-index/`): `IndexBuild` scans an archive once, `IndexLookup`
+resolves a hash to an offset, verified by fully dereferencing a tree
+entry's child hash back to real blob content. Still a linear scan
+internally, not a hash table — see "Costs."
 
 Object *typing* (blob/tree/commit-equivalent) is layered on top of this
 generic record format as a type tag in each record's content — **now
 implemented and verified** (`src/hgit-core/Object.HC`, FORMAT.md's
 "Object typing" section, `experiments/07-object-typing/`): a tag byte
 prepended before hashing, confirmed to make identical bytes stored under
-different types hash differently. What remains undesigned is the actual
-*content* of a tree or commit object (entry lists, parent refs) — the
-tagging mechanism itself is done.
+different types hash differently. **Tree content is now also designed
+and verified** (`src/hgit-core/Tree.HC`, `experiments/10-tree-object/`):
+a flat entry list (name → child type + hash), tested with a two-blob
+tree stored, persisted, reloaded, and both entries correctly resolved by
+name. **Commit content is now designed and verified too**
+(`src/hgit-core/Commit.HC`, `experiments/11-commit-object/`): tree hash
++ parent hash(es) + timestamp + message, tested with a real root commit
+and a child commit whose parent field correctly names the root commit
+by its own computed hash. The full blob→tree→commit object graph shape
+now exists and works on real TempleOS. What remains: recursive
+(tree-of-trees) nesting and merge commits (2+ parents) — both supported
+by the formats, neither tested yet — and author/identity (deliberately
+deferred to M3, not designed here).
 
 ## Costs
 
@@ -83,13 +96,20 @@ tagging mechanism itself is done.
   full. Acceptable at M1 scale (per TempleOS's own ~100MB-drive
   philosophy); revisit once a real corpus (per the brief's benchmarking
   plan, doc 06) shows this doesn't hold.
-- No sharding means a single large archive file — fine for RedSea's
-  contiguous-file model in principle, but "how does an append-only file
-  grow under contiguous-only allocation" is still an open question (doc
-  01's unresolved risk) that this ADR does not resolve; it commits to a
-  format that will need a real answer before real-sized use.
-- Rebuilding the index by full linear scan (as probe 05's `ArchiveVerify`
-  does) won't scale — needs a real index format before M2.
+- No sharding means a single large archive file. **Resolved**: RedSea
+  files genuinely cannot grow in place (confirmed from
+  `Doc/RedSea.DD` primary source), but `FileWrite` itself abstracts
+  this away transparently (verified, `experiments/14-file-growth/`) —
+  no architectural change needed to the growing-buffer-plus-`FileWrite`
+  pattern already used throughout `hgit-core`. Likely implemented as
+  delete+recreate under the hood, which is presumably not free
+  (whole-file rewrite cost on every save) — not yet measured against a
+  real-sized archive, worth watching once corpus benchmarking (doc 06)
+  happens.
+- The index (`Index.HC`) rebuilds via full linear scan and looks up via
+  linear search — won't scale, but there's no evidence yet that it needs
+  to at hgit's target size. A real hash table is real future work, not
+  done speculatively ahead of that evidence.
 
 ## What would justify revisiting this
 

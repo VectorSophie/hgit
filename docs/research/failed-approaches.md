@@ -197,3 +197,32 @@ unverified until fetched from a primary source, no matter how confident
 it looks** — this is exactly the class of mistake the brief's "use
 official vectors" instruction exists to prevent, and it nearly slipped
 through anyway.
+
+## 2026-09-13 — Hand-computed byte offset crashed the guest (General Protection fault)
+
+**Tried:** In `experiments/12-index/`, located a tree object inside a
+reloaded archive buffer by manually adding up expected record sizes
+(`16-byte header + 5+8+64 bytes per blob record × 2`) instead of using
+the index being built in the same test.
+
+**Happened:** Real TempleOS Debugger fault: `Fault 0x0E General
+Protection`, `RIP:...:&TreeFindEntry+0x315F`. The daemon didn't recover
+afterward — pinging it over COM2 got no response; a full VM reboot and
+re-bootstrap was required to continue.
+
+**Why:** The manual arithmetic assumed each blob record was 77 bytes
+(8 length + 5 data + 64 hash), forgetting that `ObjectPut` prepends a
+1-byte type tag before the data is ever stored — actual record size is
+78 bytes. The resulting pointer was 2 bytes into the next record's
+bytes, so `TreeFindEntry` read a garbage `name_len` and walked far past
+any valid buffer, corrupting memory badly enough to fault.
+
+**Worked instead:** Rewrote the test to never hand-compute an offset at
+all — every object's location comes from `IndexLookup`, and every
+object's length comes from its own stored length field via `GetU64LE`,
+not a remembered variable. This isn't just a bugfix, it's the actual
+point of building an index: **the moment there are two probes'-worth of
+prior context to keep straight (header size, per-record overhead, a
+prepended tag byte), hand-tracking offsets stops being reliable.**
+`src/hgit-core/Index.HC` exists specifically so nothing has to do this
+arithmetic by hand again.

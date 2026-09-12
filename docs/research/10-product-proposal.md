@@ -56,13 +56,31 @@ different-type collisions. **BLAKE2b is no longer capped at 128 bytes**
 either (`experiments/08-blake2b-streaming/`), **and that streaming hash
 is now wired into the actual archive API** (`experiments/09-wire-streaming-hash/`)
 — `ArchivePut`/`ArchiveVerify`/`HgsPut` all use it, verified with a real
-200-byte object stored, persisted, and re-verified. What's left before
-M1's CLI surface (`hgit init`, `status`, `witness`, `offer`, `history`,
-`see`, `restore`, `shrine check`) can start for real: designing actual
-tree content (entry lists: name → child hash + type) and commit content
-(tree hash + parent hash(es) + metadata) — both hashing and storage
-plumbing are now ready for objects of realistic size — plus the index
-that both ADR 0001 and FORMAT.md still flag as missing.
+200-byte object stored, persisted, and re-verified. **Tree object content is now designed and verified too**
+(`src/hgit-core/Tree.HC`, `experiments/10-tree-object/`) — a flat entry
+list, name → child type + hash, tested with a real two-blob tree stored,
+persisted, reloaded, and both entries correctly resolved by name. **Commit object content is now designed and verified too**
+(`src/hgit-core/Commit.HC`, `experiments/11-commit-object/`) — tree hash
++ parent hash(es) + timestamp + message, tested with a real
+root-commit/child-commit chain where the parent field correctly names
+an ancestor by its own computed hash. **The full blob→tree→commit
+object graph now exists and works end to end on real TempleOS** —
+persisted, reloaded, and re-verified from an actual file. **The
+hash→offset index is also built and verified**
+(`src/hgit-core/Index.HC`, `experiments/12-index/`) — closing the last
+storage-layer gap ADR 0001/FORMAT.md flagged, after a real crash (a
+General Protection fault from hand-computed offsets, not the library
+code) forced a redesign that eliminated manual offset-tracking entirely
+rather than just patching the arithmetic. The entire object storage
+layer — encoding, hashing, typed objects, trees, commits, and lookup —
+is now built and verified on real TempleOS. **M1 has actually started**: `hgit init` is now real, working code
+(`src/hgit-cli/Init.HC`, `experiments/13-hgit-init/`) — creates a valid
+empty repository, refuses to overwrite an existing one, verified on real
+TempleOS. First file in a new `hgit-cli` module, separate from
+`hgit-core`'s repository-format mechanics per the brief's own module
+boundary. Remaining M1 commands (`status`, `witness`, `offer`,
+`history`, `see`, `restore`, `shrine check`) are the next concrete
+targets, each buildable on the now-complete object/index layer.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

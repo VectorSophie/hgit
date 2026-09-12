@@ -113,6 +113,38 @@ doc-mirror prose:
   boot-phase-only top-level-loop restriction above: it doesn't error,
   it just quietly computes garbage.
 
+## Facts confirmed in source (the actual `cia-foundation/TempleOS` mirror, cloned and read directly)
+
+Resolving a risk flagged since this dossier's first draft:
+
+- **RedSea files literally cannot grow once created.** Primary source,
+  `Doc/RedSea.DD`: *"a simple, 64-bit, file system which is similar to
+  FAT32, but with absolute block addresses instead of clus, fixed-sized
+  64-byte directory entries and no FAT table, just an allocation
+  bitmap... Files are stored in contiguous blocks **and cannot grow in
+  size**."* This is not an inference from the reliability-philosophy
+  doc's tone, it's the literal filesystem behavior. **Direct
+  consequence for `hgit`'s `.HGS` archive**: appending to an existing
+  repository file in place is not just "constrained," it is not
+  supported by the filesystem at all — growing a `.HGS` file requires
+  writing a new, larger file and replacing the old one (rename or
+  delete+recreate), not an in-place append. This resolves the "needs
+  confirmation from actual RedSea source" risk below and should shape
+  the next storage-layer probe.
+- The on-disk directory entry (`CDirEntry`, "64-byte fixed-size"): `U16
+  attr`, `U8 name[38]`, `I64 clus`, `I64 size`, `CDate datetime`.
+  `FilesFind(mask, flags)` (`Kernel/BlkDev/DskFind.HC`) returns a
+  `CDirEntry*` tree/list; real usage
+  (`Adam/Opt/Utils/DocUtils.HC`) traverses it as
+  `while (tmpde) { ...tmpde->full_name...tmpde->datetime...
+  tmpde=tmpde->next; }` and frees it with `DirTreeDel()`. The in-memory
+  traversal node clearly carries more fields (`full_name`, `next`) than
+  the bare 64-byte on-disk struct shown in `RedSea.DD` — expected (a
+  tree-building wrapper around the raw disk format), but the exact full
+  in-memory class wasn't found in this mirror's plain-text sources (may
+  be assembled at a lower level not in this checkout). Treat `full_name`/
+  `next`/`datetime` as confirmed; anything else needs testing before use.
+
 ## Unresolved risk
 
 - How does an **AOT-compiled, argv-taking** `hgit` executable fit into a
@@ -121,10 +153,19 @@ doc-mirror prose:
   TempleOS but the argument-passing convention for them hasn't been read
   yet (need `Doc/` and `Compiler/` source, and the "AOT executables and
   command-line argument handling" item from the brief).
-- Contiguous-file-only allocation (RedSea) directly constrains the archive
-  format: no sparse growth, appends likely require either preallocation or
-  copy-on-grow. Needs confirmation from actual RedSea source, not just the
-  philosophy doc's mention of it.
+- ~~Contiguous-file-only allocation (RedSea) directly constrains the
+  archive format~~ **Resolved, and turns out to be a non-issue at the
+  API level**: `Doc/RedSea.DD` confirms the underlying filesystem
+  primitive genuinely cannot grow a file in place, but `FileWrite`
+  itself abstracts this away — tested directly
+  (`experiments/14-file-growth/`): calling `FileWrite` twice on the
+  *same* path with a larger buffer the second time works transparently
+  (`PASS filewrite_grows_existing_file`), presumably via delete+recreate
+  under the hood. `hgit-core`'s existing pattern of calling `FileWrite`
+  with a growing buffer on each save (as every probe from 05 onward
+  already does) needs no architectural change because of this
+  constraint — it was a real risk to check, and checking it was cheap
+  and worthwhile, but it doesn't change anything.
 - `throw`'s 8-byte-literal limit needs to be checked against how deep
   hgit-core's error paths need to be (repository corruption, hash
   mismatch, etc.) — may push toward return-code-based error propagation

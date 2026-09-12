@@ -75,15 +75,60 @@ format itself — a reader that doesn't know about type tags still sees a
 valid, hashable byte string, just one whose first byte happens to be
 semantically meaningful to typed readers.
 
+## Tree object content
+
+An `OBJ_TREE` object's content (`src/hgit-core/Tree.HC`,
+`experiments/10-tree-object/`) is a flat entry list:
+
+```
+U32 entry_count
+repeated entry_count times:
+  U8 name_len
+  name_len bytes of name
+  U8 child_type   (OBJ_BLOB or OBJ_TREE)
+  64 bytes child_hash
+```
+
+A tree entry's `child_hash` can point at another tree (nesting/recursion
+is supported by the format), but this has not been tested yet — only a
+flat, single-level, two-entry tree has been verified so far.
+
+## Commit object content
+
+An `OBJ_COMMIT` object's content (`src/hgit-core/Commit.HC`,
+`experiments/11-commit-object/`):
+
+```
+64 bytes  tree_hash
+U8        parent_count
+repeated parent_count times: 64 bytes parent_hash
+U64       timestamp (LE)
+U32       message_len (LE)
+message_len bytes of message
+```
+
+Verified with a real two-commit chain: a root commit (`parent_count=0`)
+and a child commit (`parent_count=1`) whose parent hash is the root
+commit's own computed hash — the actual point of the design (naming an
+ancestor by content address), not just "a commit object exists."
+
+No author/identity field yet — deliberately deferred to M3 per the
+product thesis's "stable entity ID"/"human mark" concepts; not invented
+ahead of that milestone.
+
 ## What this format deliberately does NOT have yet
 
-- **No real tree/commit structure.** The type tags exist; what a tree's
-  or commit's *content* actually contains (entry lists, parent refs,
-  metadata) is undesigned. Only the tagging mechanism is verified so
-  far.
-- **No index.** Reading requires a linear scan (`ArchiveVerify`'s
-  approach). A hash→offset index is explicit future work (doc 06,
-  ADR 0001's "costs" section).
+- **No merge commits tested** — the format's `parent_count` supports
+  more than 1, but only 0 and 1 have been exercised.
+- **No recursive-tree test** — the format supports a tree entry pointing
+  at another tree, but no test has built one yet.
+- **Index is linear-search, not a hash table yet.** `src/hgit-core/Index.HC`
+  (`IndexBuild`/`IndexLookup`, `experiments/12-index/`) now answers
+  "where is the object with this hash" — verified by fully dereferencing
+  a tree entry's child hash through it back to real blob content — but
+  the lookup itself is still a linear scan, and the index isn't
+  persisted (rebuilt from a full scan every time). Real optimization,
+  not yet needed at hgit's current scale.
 - **No compression or delta encoding.** Every byte of every object is
   stored raw. Deliberate for now — no compression should be added
   without corpus evidence per the brief's own discipline.

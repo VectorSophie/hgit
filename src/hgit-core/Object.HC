@@ -16,14 +16,15 @@
 #define OBJ_COMMIT 3
 
 // Tags `data` with `type` and appends it as one .HGS record. HgsPut
-// underneath now hashes via B2Hash512Any (no BLAKE2b block-size cap),
-// but this function's own `tagged[128]` scratch buffer still limits
-// dlen+1 <= 128 - a fixed-size-local limitation, not a hashing one.
-// Raise it (or MAlloc instead of a fixed local) once a real object
-// needs more; not yet exercised past this size.
+// underneath hashes via B2Hash512Any, so there's no BLAKE2b block-size
+// cap; this function's own `tagged[4096]` scratch buffer is the only
+// remaining limit (dlen+1 <= 4096), verified up to a 146-byte tree
+// object in experiments/10-tree-object/. Bump further (or switch to
+// MAlloc) if a real object ever needs more - not yet exercised past
+// this size.
 U0 ObjectPut(U8 *archive_buf, I64 *len, U8 type, U8 *data, I64 dlen)
 {
-  U8 tagged[128];
+  U8 tagged[4096];
   I64 i;
   tagged[0] = type;
   for (i=0; i<dlen; i++) tagged[1+i] = data[i];
