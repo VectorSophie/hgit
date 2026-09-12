@@ -1,3 +1,60 @@
+// Canon.HC — canonical little-endian integer encode/decode for hgit's
+// on-disk formats. This is the first piece of hgit-core: everything
+// persisted (object headers, index entries, archive metadata) goes
+// through these, never a raw struct memcpy.
+//
+// Why not just write the struct bytes directly: HolyC has no declared
+// struct packing/alignment guarantee documented yet (open question,
+// doc 01), and native byte order should never leak into a portable
+// repository format regardless. Fixed-width, explicit-byte-order
+// encode/decode sidesteps both concerns at the cost of a few more lines.
+//
+// IMPORTANT HolyC quirk, confirmed by testing (see
+// experiments/03-canonical-encoding/): a function declared to return
+// U32 (or any width narrower than 64 bits) does NOT get its result
+// truncated to that width automatically. Accumulating shifted bytes
+// into a wider (U64) local and explicitly masking with `& 0xFFFFFFFF`
+// before returning is required, or garbage high bits leak into the
+// caller (verified: printing the "raw" unmasked result showed correct
+// low 32 bits with ~20 bits of leftover garbage above them). Every
+// GetU32LE-shaped function in this file masks explicitly for this
+// reason — don't remove the mask as "redundant."
+//
+// Second HolyC quirk, confirmed the same way: there is no C-style
+// prefix typecast `(U32)x`. HolyC uses a POSTFIX typecast: `x(U32)`.
+// See holyc-parser's corpus entry
+// tests/corpus/passing/079-expr-expr-postfix-typecast.hc in
+// experiments/templeos-devkit for the authoritative example this was
+// checked against.
+
+U0 PutU32LE(U8 *buf, I64 off, U32 v)
+{
+  buf[off+0] = v & 0xFF;
+  buf[off+1] = (v >> 8)  & 0xFF;
+  buf[off+2] = (v >> 16) & 0xFF;
+  buf[off+3] = (v >> 24) & 0xFF;
+}
+
+U32 GetU32LE(U8 *buf, I64 off)
+{
+  U64 v = buf[off] | (buf[off+1] << 8) | (buf[off+2] << 16)
+        | (buf[off+3](U64) << 24);
+  return v & 0xFFFFFFFF;
+}
+
+U0 PutU64LE(U8 *buf, I64 off, U64 v)
+{
+  I64 i;
+  for (i = 0; i < 8; i++) buf[off+i] = (v >> (i*8)) & 0xFF;
+}
+
+U64 GetU64LE(U8 *buf, I64 off)
+{
+  U64 v = 0;
+  I64 i;
+  for (i = 0; i < 8; i++) v |= buf[off+i](U64) << (i*8);
+  return v;
+}
 // Blake2b.HC — BLAKE2b-512, unkeyed, single-block (input <= 111 bytes)
 // implementation of hgit's authoritative content hash.
 //
@@ -10,14 +67,13 @@
 // "same fixture hashes identically in TempleOS and a host build" as well
 // as "official BLAKE2b vectors passing in native HolyC".
 //
-// B2Hash512 below only handles messages that fit in one 128-byte block.
-// For anything larger, use the B2StreamInit/B2StreamUpdate/B2StreamFinal
-// API further down this file (verified against 200- and 300-byte
-// messages, including cross-call-boundary buffering, in
-// experiments/08-blake2b-streaming/). Both share the same B2Compress/
-// B2G/B2Init - B2Hash512 is kept as-is (not rewritten in terms of the
-// streaming API) since it's already verified against RFC 7693 and there
-// was no reason to disturb that.
+// LIMITATION (deliberate, for this first probe): only handles messages
+// that fit in one 128-byte block (<=111 bytes after the length/counter
+// bookkeeping headroom BLAKE2b's single-block path allows here - not yet
+// generalized to multi-block streaming). hgit-core will need multi-block
+// support before this can hash real objects; that's the next probe, not
+// done here. Do not use this for anything beyond short-fixture testing
+// yet.
 //
 // Depends on Canon.HC's GetU64LE/PutU64LE for endian-correct byte<->word
 // conversion - load that first.
@@ -292,82 +348,72 @@ U0 B2Hash512(U8 *msg, I64 len, U8 *out64)
   B2Compress(h, m, len, 0, TRUE);
   for (i=0; i<8; i++) PutU64LE(out64, i*8, h[i]);
 }
+U8 archive[1024];
+I64 arc_len;
+arc_len = 0;
 
-// --- Multi-block streaming (verified experiments/08-blake2b-streaming/) ---
-//
-// The single-block B2Hash512 above only handles messages that fit in
-// one 128-byte block. This adds the standard incremental Init/Update/
-// Final pattern: buffer bytes up to 128, compress-as-non-final and
-// reset the buffer whenever it fills *while more input remains*,
-// zero-pad and compress-as-final whatever's left in Final(). Verified
-// against Python's hashlib.blake2b for 200-byte (2-block) and 300-byte
-// (3-block) messages, including a message deliberately split across
-// three separate Update() calls at non-block-aligned offsets to
-// exercise the cross-call buffering - all matched exactly. Also
-// verified this streaming path produces the identical digest as
-// B2Hash512 for a message ("abc") both can handle, as a regression
-// check.
-//
-// Global state (single in-flight hash at a time) rather than a
-// parameterized "context struct" - deliberately, per ADR 0002's
-// reasoning: HolyC struct/class layout guarantees haven't been
-// verified from source, so this avoids relying on one until that's
-// resolved. Parameterizing (so multiple hashes can be in flight at
-// once) is real future work, not yet needed or verified.
-U64 b2s_h[8];
-U8 b2s_buf[128];
-I64 b2s_buflen;
-U64 b2s_t0;
-
-U0 B2StreamInit()
+U0 ArchivePut(U8 *data, I64 len)
 {
+  U8 hash[64];
   I64 i;
-  B2Init();
-  for (i=0; i<8; i++) b2s_h[i] = B2_IV[i];
-  b2s_h[0] ^= 0x0000000001010040;
-  b2s_buflen = 0;
-  b2s_t0 = 0;
+  B2Hash512(data, len, hash);
+  PutU64LE(archive, arc_len, len);
+  arc_len += 8;
+  for (i=0; i<len; i++) archive[arc_len+i]=data[i];
+  arc_len += len;
+  for (i=0; i<64; i++) archive[arc_len+i]=hash[i];
+  arc_len += 64;
 }
 
-U0 B2StreamCompressBuf(Bool final)
-{
-  U64 m[16];
-  I64 i;
-  for (i=0; i<16; i++) m[i] = GetU64LE(b2s_buf, i*8);
-  B2Compress(b2s_h, m, b2s_t0, 0, final);
-}
+U8 obj1[5]; obj1[0]='h';obj1[1]='g';obj1[2]='i';obj1[3]='t';obj1[4]='1';
+U8 obj2[5]; obj2[0]='h';obj2[1]='g';obj2[2]='i';obj2[3]='t';obj2[4]='2';
+ArchivePut(obj1, 5);
+ArchivePut(obj2, 5);
 
-U0 B2StreamUpdate(U8 *data, I64 len)
+CommPrint(1,"arc_len=%d\n", arc_len);
+FileWrite("C:/Home/test.hgs", archive, arc_len);
+CommPrint(1,"WRITE_OK\n");
+
+I64 read_size;
+U8 *readback = FileRead("C:/Home/test.hgs", &read_size);
+CommPrint(1,"read_size=%d readback_null=%d\n", read_size, readback==NULL);
+
+I64 pos=0, total=0, ok_count=0;
+while (pos < read_size) {
+  U64 len = GetU64LE(readback, pos); pos += 8;
+  U8 *data = readback + pos; pos += len;
+  U8 *stored_hash = readback + pos; pos += 64;
+  U8 recomputed[64];
+  B2Hash512(data, len, recomputed);
+  Bool match = TRUE;
+  I64 j;
+  for (j=0; j<64; j++) if (recomputed[j] != stored_hash[j]) match = FALSE;
+  total++;
+  if (match) ok_count++;
+}
+CommPrint(1,"objects=%d verified=%d\n", total, ok_count);
+if (total==2 && ok_count==2) CommPrint(1,"PASS tiny_archive_roundtrip\n");
+else CommPrint(1,"FAIL tiny_archive_roundtrip\n");
+U0 ArchiveVerify(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok)
 {
-  I64 i = 0;
-  while (i < len) {
-    if (b2s_buflen == 128) {
-      b2s_t0 += 128;
-      B2StreamCompressBuf(FALSE);
-      b2s_buflen = 0;
-    }
-    b2s_buf[b2s_buflen] = data[i];
-    b2s_buflen++;
-    i++;
+  I64 pos=0, total=0, ok_count=0;
+  while (pos < total_len) {
+    U64 len = GetU64LE(buf, pos); pos += 8;
+    U8 *data = buf + pos; pos += len;
+    U8 *stored_hash = buf + pos; pos += 64;
+    U8 recomputed[64];
+    B2Hash512(data, len, recomputed);
+    Bool match = TRUE;
+    I64 j;
+    for (j=0; j<64; j++) if (recomputed[j] != stored_hash[j]) match = FALSE;
+    total++;
+    if (match) ok_count++;
   }
+  *out_total = total;
+  *out_ok = ok_count;
 }
-
-U0 B2StreamFinal(U8 *out64)
-{
-  I64 i;
-  b2s_t0 += b2s_buflen;
-  for (i=b2s_buflen; i<128; i++) b2s_buf[i] = 0;
-  B2StreamCompressBuf(TRUE);
-  for (i=0; i<8; i++) PutU64LE(out64, i*8, b2s_h[i]);
-}
-
-// Any-length convenience wrapper over the streaming API above - use
-// this (not B2Hash512) for anything that isn't guaranteed to fit in one
-// 128-byte block. Verified in experiments/09-wire-streaming-hash/ as
-// the actual hash call inside ArchivePut/ArchiveVerify/HgsPut.
-U0 B2Hash512Any(U8 *data, I64 len, U8 *out64)
-{
-  B2StreamInit();
-  B2StreamUpdate(data, len);
-  B2StreamFinal(out64);
-}
+I64 vtotal, vok;
+ArchiveVerify(readback, read_size, &vtotal, &vok);
+CommPrint(1,"fn_based: total=%d ok=%d\n", vtotal, vok);
+if (vtotal==2 && vok==2) CommPrint(1,"PASS tiny_archive_roundtrip_v2\n");
+else CommPrint(1,"FAIL tiny_archive_roundtrip_v2\n");

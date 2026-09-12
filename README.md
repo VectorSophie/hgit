@@ -5,10 +5,11 @@ HolyC, native to TempleOS — with persistent file/symbol identity,
 executable DolDoc reconciliation, truthful non-destructive history, and a
 consistent modern CLI.
 
-**Status: Phase 0 (research/feasibility). No hgit code has been written
-yet.** This repository currently holds research notes and isolated
-feasibility probes only, per the project's own engineering discipline:
-architecture is not allowed to freeze ahead of evidence.
+**Status: M0 (feasibility), 6 of 7 acceptance items done with real
+evidence** — see `docs/research/10-product-proposal.md`. Real HolyC now
+exists (`src/hgit-core/`: canonical encoding, BLAKE2b-512, a tiny
+object archive), each verified running on real TempleOS under QEMU, not
+simulated. Still pre-M1: no CLI, no repository commands yet.
 
 ## What's here
 
@@ -19,10 +20,16 @@ architecture is not allowed to freeze ahead of evidence.
   `experiments/00-qemu-boot/` proves TempleOS 5.03 boots to a live desktop
   under QEMU on a plain Linux host — the single highest-risk question for
   the whole project, resolved with screenshots and exact commands.
-- `docs/adr/` — empty. No architecture decision should be recorded before
-  the evidence behind it exists.
-- `src/`, `tests/`, `tools/`, `packaging/` — scaffolded, empty. M0 hasn't
-  started.
+- `docs/adr/` — 0001 (repository model) and 0002 (canonical encoding)
+  written, backed by working, tested `src/hgit-core/` code and the M0
+  probes. The rest wait for their own evidence — no architecture
+  decision should be recorded before the evidence behind it exists.
+- `src/hgit-core/` — real, tested HolyC: `Canon.HC` (canonical
+  little-endian encoding), `Blake2b.HC` (BLAKE2b-512, matches RFC 7693),
+  `Archive.HC` (append/read/verify object records). Each verified
+  running on real TempleOS via `experiments/01-temple-repl/`'s injection
+  channel — see their probe READMEs for exact evidence.
+- `tests/`, `tools/`, `packaging/` — still scaffolded/empty.
 
 ## Next steps
 

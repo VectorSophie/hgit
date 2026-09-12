@@ -141,6 +141,39 @@ standing rule for all of `hgit-core`, documented directly in
 `src/hgit-core/Canon.HC`: never trust a narrow return type to mask
 itself — always mask explicitly at every width boundary.**
 
+## 2026-09-12 — Bare top-level `while` loop silently corrupted local variables (not a boot-phase error, a silent wrong-result bug)
+
+**Tried:** A verification loop for the tiny-archive probe
+(`experiments/05-tiny-archive/`) written as a bare top-level statement:
+`I64 pos=0...; while (pos < read_size) { U64 len=...; U8 recomputed[64];
+B2Hash512(...); ...; }`.
+
+**Happened:** No compile error at all. The loop ran, printed plausible-
+looking values for `len`/`pos` (correct!), but the hash comparison
+failed for every record. A diagnostic print showed `recomputed[0]` held
+the first byte of BLAKE2b("abc")'s digest — a value that appears nowhere
+in this test's actual data — while an *otherwise identical* manual check
+done outside any loop, on the same underlying data, computed the correct
+hash and matched.
+
+**Why:** Not root-caused to compiler internals, but conclusively
+isolated by elimination: ruled out local-variable-argument passing (a
+separate test called the same function with local pointer/length
+variables outside a loop and got the right answer), ruled out `FileRead`
+data corruption (raw bytes read back correctly when printed directly).
+The one variable that changed was "loop declares locals at bare top
+level" vs. "same logic inside a real function."
+
+**Worked instead:** Moved the identical loop body into a real
+`U0 ArchiveVerify(...) { while (...) { ... } }` function. Passed cleanly
+on the same data. **Rule now enforced project-wide in
+`src/hgit-core/Archive.HC`'s comments: any loop declaring its own locals
+must live inside a real function, never as a bare top-level statement —
+regardless of boot phase.** This generalizes the previously-known
+boot-phase-only top-level-loop restriction (doc 01/08) to a broader,
+silent-failure-mode caution that applies even in ordinary post-boot
+execution — and is more dangerous precisely because it doesn't error.
+
 ## 2026-09-12 — BLAKE2b test vector typed from memory was wrong
 
 **Tried:** Hand-typed a third BLAKE2b-512 test vector (unkeyed hash of

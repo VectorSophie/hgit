@@ -48,11 +48,52 @@ hashes identically in TempleOS and a host build"** (the host half was
 already established by probe 02's oracle computing the identical digest
 for the same input).
 
+## Experimental evidence — tiny object archive (probe 05)
+
+`experiments/05-tiny-archive/` + `src/hgit-core/Archive.HC`: a minimal
+append-only object archive (`[U64 length][data][64-byte BLAKE2b hash]`
+per record) built on `Canon.HC` + `Blake2b.HC`, written to and read back
+from a real file on TempleOS (`FileWrite`/`FileRead`, RedSea), with every
+record's hash re-verified after the round trip. Closes M0's "append/
+read/rebuild of a tiny object archive" checklist item. Found and fixed a
+genuine new HolyC quirk along the way (see doc 01 / failed-approaches.md):
+bare top-level loops with local declarations can silently misbehave, not
+just error, even outside boot phase.
+
+## Experimental evidence — multi-block BLAKE2b streaming (probe 08)
+
+`experiments/08-blake2b-streaming/`: added `B2StreamInit`/
+`B2StreamUpdate`/`B2StreamFinal` to `Blake2b.HC` — standard incremental
+hashing, no longer capped at one 128-byte block. Verified against a
+200-byte and a 300-byte message (2 and 3 BLAKE2b blocks respectively),
+matching Python's `hashlib.blake2b` exactly; also verified the same
+200-byte message split across three `Update` calls at non-block-aligned
+offsets produces the identical digest as one call, specifically
+exercising the cross-call buffering logic. A regression check confirmed
+the new streaming path agrees with the original `B2Hash512` for `"abc"`.
+All four checks passed on the first push.
+
+## Experimental evidence — streaming hash wired into the archive pipeline (probe 09)
+
+`experiments/09-wire-streaming-hash/`: `ArchivePut`/`ArchiveVerify`
+(`Archive.HC`) and `HgsPut` (`Hgs.HC`) now call `B2Hash512Any`
+(`Blake2b.HC`'s streaming wrapper) instead of the 128-byte-capped
+`B2Hash512`. Verified: a 200-byte object stored, written to a real file,
+read back, and re-verified alongside a small object — both passed, and
+the 200-byte object's hash was cross-checked against probe 08's
+independently-verified digest for the same bytes. Real objects larger
+than 128 bytes can now actually go through the archive API end to end,
+not just through the hash primitive in isolation.
+
 ## Not yet done
 
-- **Multi-block BLAKE2b streaming** — the native implementation only
-  handles single-block (≤128 byte) inputs so far. Needed before this can
-  hash anything resembling a real hgit object.
+- `ObjectPut`'s own `tagged[128]` scratch buffer still caps tagged
+  objects at 127 content bytes — a separate, smaller limitation than
+  the one probe 09 removed (buffer size, not hash capability).
+- **Index build** (hash→offset lookup) — probe 05 only verifies records
+  linearly; no index structure yet.
+- Archive size (currently a fixed ~1KB test buffer) and record count are
+  both far below anything real — scaling both up is unverified.
 - No compression/chunking work at all — LZ4/zstd-as-reference-only per
   the brief, content-defined chunking corpus, Fossil-style delta corpus.
   Blocked on doc 04's Fossil delta-format read (not yet done) informing

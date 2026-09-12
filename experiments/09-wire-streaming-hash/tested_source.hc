@@ -1,3 +1,60 @@
+// Canon.HC — canonical little-endian integer encode/decode for hgit's
+// on-disk formats. This is the first piece of hgit-core: everything
+// persisted (object headers, index entries, archive metadata) goes
+// through these, never a raw struct memcpy.
+//
+// Why not just write the struct bytes directly: HolyC has no declared
+// struct packing/alignment guarantee documented yet (open question,
+// doc 01), and native byte order should never leak into a portable
+// repository format regardless. Fixed-width, explicit-byte-order
+// encode/decode sidesteps both concerns at the cost of a few more lines.
+//
+// IMPORTANT HolyC quirk, confirmed by testing (see
+// experiments/03-canonical-encoding/): a function declared to return
+// U32 (or any width narrower than 64 bits) does NOT get its result
+// truncated to that width automatically. Accumulating shifted bytes
+// into a wider (U64) local and explicitly masking with `& 0xFFFFFFFF`
+// before returning is required, or garbage high bits leak into the
+// caller (verified: printing the "raw" unmasked result showed correct
+// low 32 bits with ~20 bits of leftover garbage above them). Every
+// GetU32LE-shaped function in this file masks explicitly for this
+// reason — don't remove the mask as "redundant."
+//
+// Second HolyC quirk, confirmed the same way: there is no C-style
+// prefix typecast `(U32)x`. HolyC uses a POSTFIX typecast: `x(U32)`.
+// See holyc-parser's corpus entry
+// tests/corpus/passing/079-expr-expr-postfix-typecast.hc in
+// experiments/templeos-devkit for the authoritative example this was
+// checked against.
+
+U0 PutU32LE(U8 *buf, I64 off, U32 v)
+{
+  buf[off+0] = v & 0xFF;
+  buf[off+1] = (v >> 8)  & 0xFF;
+  buf[off+2] = (v >> 16) & 0xFF;
+  buf[off+3] = (v >> 24) & 0xFF;
+}
+
+U32 GetU32LE(U8 *buf, I64 off)
+{
+  U64 v = buf[off] | (buf[off+1] << 8) | (buf[off+2] << 16)
+        | (buf[off+3](U64) << 24);
+  return v & 0xFFFFFFFF;
+}
+
+U0 PutU64LE(U8 *buf, I64 off, U64 v)
+{
+  I64 i;
+  for (i = 0; i < 8; i++) buf[off+i] = (v >> (i*8)) & 0xFF;
+}
+
+U64 GetU64LE(U8 *buf, I64 off)
+{
+  U64 v = 0;
+  I64 i;
+  for (i = 0; i < 8; i++) v |= buf[off+i](U64) << (i*8);
+  return v;
+}
 // Blake2b.HC — BLAKE2b-512, unkeyed, single-block (input <= 111 bytes)
 // implementation of hgit's authoritative content hash.
 //
@@ -360,14 +417,96 @@ U0 B2StreamFinal(U8 *out64)
   B2StreamCompressBuf(TRUE);
   for (i=0; i<8; i++) PutU64LE(out64, i*8, b2s_h[i]);
 }
-
-// Any-length convenience wrapper over the streaming API above - use
-// this (not B2Hash512) for anything that isn't guaranteed to fit in one
-// 128-byte block. Verified in experiments/09-wire-streaming-hash/ as
-// the actual hash call inside ArchivePut/ArchiveVerify/HgsPut.
+U8 msg200[200];
+msg200[0]=3;msg200[1]=10;msg200[2]=17;msg200[3]=24;msg200[4]=31;msg200[5]=38;msg200[6]=45;msg200[7]=52;msg200[8]=59;msg200[9]=66;msg200[10]=73;msg200[11]=80;msg200[12]=87;msg200[13]=94;msg200[14]=101;
+msg200[15]=108;msg200[16]=115;msg200[17]=122;msg200[18]=129;msg200[19]=136;msg200[20]=143;msg200[21]=150;msg200[22]=157;msg200[23]=164;msg200[24]=171;msg200[25]=178;msg200[26]=185;msg200[27]=192;
+msg200[28]=199;msg200[29]=206;msg200[30]=213;msg200[31]=220;msg200[32]=227;msg200[33]=234;msg200[34]=241;msg200[35]=248;msg200[36]=255;msg200[37]=6;msg200[38]=13;msg200[39]=20;msg200[40]=27;
+msg200[41]=34;msg200[42]=41;msg200[43]=48;msg200[44]=55;msg200[45]=62;msg200[46]=69;msg200[47]=76;msg200[48]=83;msg200[49]=90;msg200[50]=97;msg200[51]=104;msg200[52]=111;msg200[53]=118;msg200[54]=125;
+msg200[55]=132;msg200[56]=139;msg200[57]=146;msg200[58]=153;msg200[59]=160;msg200[60]=167;msg200[61]=174;msg200[62]=181;msg200[63]=188;msg200[64]=195;msg200[65]=202;msg200[66]=209;msg200[67]=216;
+msg200[68]=223;msg200[69]=230;msg200[70]=237;msg200[71]=244;msg200[72]=251;msg200[73]=2;msg200[74]=9;msg200[75]=16;msg200[76]=23;msg200[77]=30;msg200[78]=37;msg200[79]=44;msg200[80]=51;msg200[81]=58;
+msg200[82]=65;msg200[83]=72;msg200[84]=79;msg200[85]=86;msg200[86]=93;msg200[87]=100;msg200[88]=107;msg200[89]=114;msg200[90]=121;msg200[91]=128;msg200[92]=135;msg200[93]=142;msg200[94]=149;
+msg200[95]=156;msg200[96]=163;msg200[97]=170;msg200[98]=177;msg200[99]=184;msg200[100]=191;msg200[101]=198;msg200[102]=205;msg200[103]=212;msg200[104]=219;msg200[105]=226;msg200[106]=233;
+msg200[107]=240;msg200[108]=247;msg200[109]=254;msg200[110]=5;msg200[111]=12;msg200[112]=19;msg200[113]=26;msg200[114]=33;msg200[115]=40;msg200[116]=47;msg200[117]=54;msg200[118]=61;msg200[119]=68;
+msg200[120]=75;msg200[121]=82;msg200[122]=89;msg200[123]=96;msg200[124]=103;msg200[125]=110;msg200[126]=117;msg200[127]=124;msg200[128]=131;msg200[129]=138;msg200[130]=145;msg200[131]=152;
+msg200[132]=159;msg200[133]=166;msg200[134]=173;msg200[135]=180;msg200[136]=187;msg200[137]=194;msg200[138]=201;msg200[139]=208;msg200[140]=215;msg200[141]=222;msg200[142]=229;msg200[143]=236;
+msg200[144]=243;msg200[145]=250;msg200[146]=1;msg200[147]=8;msg200[148]=15;msg200[149]=22;msg200[150]=29;msg200[151]=36;msg200[152]=43;msg200[153]=50;msg200[154]=57;msg200[155]=64;msg200[156]=71;
+msg200[157]=78;msg200[158]=85;msg200[159]=92;msg200[160]=99;msg200[161]=106;msg200[162]=113;msg200[163]=120;msg200[164]=127;msg200[165]=134;msg200[166]=141;msg200[167]=148;msg200[168]=155;
+msg200[169]=162;msg200[170]=169;msg200[171]=176;msg200[172]=183;msg200[173]=190;msg200[174]=197;msg200[175]=204;msg200[176]=211;msg200[177]=218;msg200[178]=225;msg200[179]=232;msg200[180]=239;
+msg200[181]=246;msg200[182]=253;msg200[183]=4;msg200[184]=11;msg200[185]=18;msg200[186]=25;msg200[187]=32;msg200[188]=39;msg200[189]=46;msg200[190]=53;msg200[191]=60;msg200[192]=67;msg200[193]=74;
+msg200[194]=81;msg200[195]=88;msg200[196]=95;msg200[197]=102;msg200[198]=109;msg200[199]=116;
+// Any-length convenience wrapper over the streaming API.
 U0 B2Hash512Any(U8 *data, I64 len, U8 *out64)
 {
   B2StreamInit();
   B2StreamUpdate(data, len);
   B2StreamFinal(out64);
 }
+
+// Archive.HC's ArchivePut/ArchiveVerify re-defined here to call
+// B2Hash512Any instead of B2Hash512 - this IS the fix being tested.
+U8 wire_archive[1024];
+I64 wire_len = 0;
+
+U0 ArchivePutAny(U8 *data, I64 len)
+{
+  U8 hash[64];
+  I64 i;
+  B2Hash512Any(data, len, hash);
+  PutU64LE(wire_archive, wire_len, len);
+  wire_len += 8;
+  for (i=0; i<len; i++) wire_archive[wire_len+i] = data[i];
+  wire_len += len;
+  for (i=0; i<64; i++) wire_archive[wire_len+i] = hash[i];
+  wire_len += 64;
+}
+
+U0 ArchiveVerifyAny(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok)
+{
+  I64 pos=0, total=0, ok_count=0;
+  while (pos < total_len) {
+    U64 len = GetU64LE(buf, pos); pos += 8;
+    U8 *data = buf + pos; pos += len;
+    U8 *stored_hash = buf + pos; pos += 64;
+    U8 recomputed[64];
+    B2Hash512Any(data, len, recomputed);
+    Bool match = TRUE;
+    I64 j;
+    for (j=0; j<64; j++) if (recomputed[j] != stored_hash[j]) match = FALSE;
+    total++;
+    if (match) ok_count++;
+  }
+  *out_total = total;
+  *out_ok = ok_count;
+}
+
+// Test data: one small (5-byte) object, one large (200-byte, reusing
+// probe 08's ground-truth message so we know its expected digest too).
+U8 small_obj[5]; small_obj[0]='s';small_obj[1]='m';small_obj[2]='a';small_obj[3]='l';small_obj[4]='l';
+ArchivePutAny(small_obj, 5);
+I64 large_off = wire_len;
+ArchivePutAny(msg200, 200);
+
+CommPrint(1,"wire_len=%d\n", wire_len);
+
+// Cross-check the large object's stored hash against probe 08's
+// already-verified ground truth for msg200.
+U8 *large_stored_hash = wire_archive + large_off + 8 + 200;
+U8 expected200[64];
+expected200[0]=0xDD;expected200[1]=0x82;expected200[2]=0xE8;expected200[3]=0x0E;
+Bool prefix_match = (large_stored_hash[0]==0xDD && large_stored_hash[1]==0x82 &&
+                      large_stored_hash[2]==0xE8 && large_stored_hash[3]==0x0E);
+CommPrint(1,"large_hash_prefix_matches_probe08=%d (got %02X%02X%02X%02X)\n",
+          prefix_match, large_stored_hash[0], large_stored_hash[1],
+          large_stored_hash[2], large_stored_hash[3]);
+
+FileWrite("C:/Home/test4.hgs", wire_archive, wire_len);
+I64 rsize4;
+U8 *rbuf4 = FileRead("C:/Home/test4.hgs", &rsize4);
+I64 vt4, vok4;
+ArchiveVerifyAny(rbuf4, rsize4, &vt4, &vok4);
+CommPrint(1,"reload: rsize=%d verify_total=%d verify_ok=%d\n", rsize4, vt4, vok4);
+
+if (rsize4==wire_len && vt4==2 && vok4==2 && prefix_match)
+  CommPrint(1,"PASS wire_streaming_into_archive\n");
+else
+  CommPrint(1,"FAIL wire_streaming_into_archive\n");

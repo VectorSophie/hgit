@@ -99,6 +99,19 @@ doc-mirror prose:
   "reference inside a not-yet-called function body," even within the
   same compilation mechanism. See `experiments/01-temple-repl/` and
   `failed-approaches.md`.
+- **Confirmed (probe 03, `experiments/03-canonical-encoding/`)**: no
+  C-style prefix typecast — HolyC is postfix-only (`x(Type)`, not
+  `(Type)x`) — and a function's declared narrow return width (e.g.
+  `U32`) is not automatically truncated/masked on return; callers can
+  see garbage high bits unless the callee masks explicitly before
+  returning.
+- **Confirmed (probe 05, `experiments/05-tiny-archive/`)**: a bare
+  top-level `while` loop that declares its own local variables can
+  silently misbehave — not a compile error, a wrong-result bug — even
+  well outside boot phase. Moving the identical logic into a real
+  function fixed it. This is a broader, more dangerous cousin of the
+  boot-phase-only top-level-loop restriction above: it doesn't error,
+  it just quietly computes garbage.
 
 ## Unresolved risk
 

@@ -5,7 +5,8 @@ Status legend: ✅ seeded with real primary-source material · 🟡 stub only (s
 This is Phase 0. It is intentionally incomplete — every doc below distinguishes
 verified documentation, facts confirmed in source, experimental evidence,
 inference, and open risk, per the project brief. Nothing here should be read
-as a frozen decision; see `docs/adr/` (not yet written — no ADR should be
+as a frozen decision; see `docs/adr/` (0001 and 0002 now written, backed
+by the M0 probes below — the rest still wait; no ADR should be
 authored before its supporting evidence exists).
 
 | Doc | Status | Notes |
@@ -13,9 +14,9 @@ authored before its supporting evidence exists).
 | [01-templeos-holyc.md](01-templeos-holyc.md) | ✅ | HolyC lang basics, cmd-line REPL model, reliability philosophy, source mirror structure |
 | [02-doldoc-interface.md](02-doldoc-interface.md) | ✅ | DolDoc format basics + live confirmation from boot probe |
 | [03-zealos-and-networking.md](03-zealos-and-networking.md) | ✅ | ZealOS lineage/license/activity; networking status still unresolved |
-| [04-vcs-comparison.md](04-vcs-comparison.md) | 🟡 | Only Git covered so far (see 05); jj/Sapling/Pijul/Fossil/GitButler not yet fetched |
+| [04-vcs-comparison.md](04-vcs-comparison.md) | 🟡 | jj's operation log and Fossil's delta format both read and compared; Sapling/Pijul/GitButler/Mercurial still unfetched |
 | [05-git-internals-and-product-practice.md](05-git-internals-and-product-practice.md) | 🟡 | Object model only; packfiles/refs/merge/gc not yet fetched |
-| [06-storage-hashing-compression.md](06-storage-hashing-compression.md) | 🟡 | Canonical encoding **and full BLAKE2b-512** both passing in native HolyC on real TempleOS, matching RFC vectors and the host oracle exactly (`experiments/03-canonical-encoding/`, `experiments/04-blake2b-native/`, `src/hgit-core/`); compression/chunking not started |
+| [06-storage-hashing-compression.md](06-storage-hashing-compression.md) | 🟡 | Canonical encoding, full BLAKE2b-512, a tiny append/read/verify object archive, **and a versioned `.HGS` header format** (see `FORMAT.md`) all passing in native HolyC on real TempleOS; compression/chunking not started |
 | [07-portability-and-toolchains.md](07-portability-and-toolchains.md) | ✅ | `holyc-parser` (210-snippet VM-validated corpus, found via templeos-devkit) is now the strongest evidence; holyc-lang still only homepage-level |
 | [08-qemu-testing.md](08-qemu-testing.md) | ✅ | Boot **and** scripted install+inject+capture both reproduced end to end, see `experiments/00-qemu-boot/` and `experiments/01-temple-repl/` |
 | [09-packaging-and-releases.md](09-packaging-and-releases.md) | ⛔ | Not started |

@@ -1,20 +1,64 @@
-# VCS comparison (not started)
+# VCS comparison
 
-Nothing fetched yet for jj, Sapling, Pijul/Darcs, Fossil, GitButler,
-Mercurial, Breezy, or the smaller alternatives listed in the brief. Doc 05
-covers Git's object model only. This doc should not be written until at
-least jj (change IDs, operation log, revsets) and Fossil (single-file repo,
-delta encoding) have been read firsthand — those two are the closest
-analogues to hgit's own stated goals (typed history relations, operation
-log, small self-contained storage) and are called out that way in the
-product thesis.
+Started (jj + Fossil, the two closest analogues to hgit's stated goals
+per the product thesis itself); Sapling/Pijul/Darcs/GitButler/Mercurial/
+Breezy still unstarted.
 
-Source list to work through next, in priority order matched to the thesis:
-1. jj operation log + conflicts + change IDs — directly informs ADR 0006
-   (operation log) and ADR 0007 (conflict representation).
-2. Fossil delta format + single-file repository — directly informs ADR 0005
-   (compression) and ADR 0001 (repository model)'s storage half.
-3. Sapling undo/absorb/visibility — informs the `hgit undo`/`redo` design.
-4. Pijul/Darcs theory — read for comparison only; brief explicitly warns
-   against adopting patch theory without evidence, so the goal here is
-   "understand what it buys and costs," not "adopt."
+## Verified documentation — Jujutsu's operation log
+
+Source: `docs.jj-vcs.dev/latest/operation-log/`. An "operation" is any
+repo-changing action; each one captures a complete "view" snapshot of
+repo state (bookmarks, tags, Git refs, heads, working-copy commit), plus
+parent-operation references and metadata (timestamp, user, host,
+description). `jj op log` shows the history of operations, distinct from
+commit history: **commits track what code changed; operations track how
+the repository (as a whole, including refs/working-copy) changed.**
+`jj undo` removes operations one at a time; `jj op revert` reverts a
+specific non-recent operation; `jj op restore` jumps the whole repo back
+to an earlier operation's view.
+
+**Direct match to the product thesis's own operation-log design** (`hgit
+operation history` / `hgit operation restore` / `hgit undo`/`redo`) —
+this isn't a novel design hgit is inventing, it's adopting jj's proven
+one. Nothing here contradicts the brief's plan; if anything it's
+reassuring that a shipped, well-regarded VCS made the same architectural
+bet.
+
+## Verified documentation — Fossil's delta format
+
+Source: `fossil-scm.org/.../delta_format.wiki`. A delta is
+`<header>\n<segments><trailer>`: header is just the target length in
+bytes as decimal text; trailer is a checksum (sum of the target's bytes
+as 32-bit big-endian words, mod 2^32-1) followed by `;`. Segments are
+either `N:bytes` (insert N literal bytes) or `N@M,` (copy N bytes from
+offset M in the source; N=0 means "copy to end"). All integers use a
+base-64-like encoding (6 bits/char, MSB-first, alphabet
+`0-9A-Za-z_~`) — not the same as normal base64.
+
+**This is about as simple and human-auditable as a binary-diff format
+gets** — a real, shipped alternative to the brief's own
+"prefer readable algorithms over marginal compression" instinct, worth
+weighing seriously against a from-scratch design once hgit needs delta
+compression (not yet — doc 06 notes compression/chunking is still
+unstarted). The text-based, self-describing structure (length-prefixed,
+checksummed, ASCII-safe) is a good fit for the brief's "small auditable
+native format over maximal ratio" preference, and for RedSea's
+contiguous-file constraint (doc 01) since it's a flat byte stream, not a
+structure needing random-access mutation.
+
+## Architectural implications so far
+
+- Adopt jj's operation-log/commit-history separation as designed in the
+  product thesis — this comparison found no reason to deviate.
+- When hgit-core needs delta compression (post-M1, per the milestone
+  plan), prototype Fossil's delta format specifically before inventing a
+  new one — it's simple enough to implement in HolyC without much risk,
+  and self-describing enough to debug by eye.
+
+## Not yet done
+
+Sapling (undo/absorb/stacks — informs `hgit undo` UX beyond the
+operation-log mechanics), Pijul/Darcs (patch theory — comparison only,
+brief explicitly warns against adopting without evidence), GitButler
+(virtual branches), Mercurial/Breezy. Lower priority now that the two
+most load-bearing comparisons (operation log, delta format) are done.

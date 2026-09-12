@@ -15,7 +15,7 @@ for planning the next sessions of work.
 | Automated pass/fail signal out of a booted TempleOS guest | **Resolved — low risk** | `experiments/01-temple-repl/`: scripted install + COM2 injection + real `D_OK`/`PASS .../D_DONE` round trip through a host file, zero human interaction |
 | No usable host-side HolyC toolchain, forcing every test through QEMU | **Open — downgraded to medium**: a lint/validate-only option (`holyc-parser`) is now evidenced; a full execute-on-host option (`holyc-lang`) is still unverified | doc 07 |
 | Canonical encoding / BLAKE2b feasibility natively in HolyC | **Open — unknown risk, but now has a proven execution path to test it on** | Not probed; blocked on doc 06, but doc 08's proven injection loop removes the "how would we even run this" uncertainty |
-| RedSea contiguous-file storage constraints on an append/rebuild archive format | **Open — unknown risk, plausible mitigation exists** | Only the philosophy doc mentions this; real RedSea source not read |
+| RedSea contiguous-file storage constraints on an append/rebuild archive format | **Downgraded — small files empirically fine, growth pattern still unverified** | `FileWrite`/`FileRead` round-tripped small (154/170-byte) `.HGS` archives correctly across three separate probes and multiple reboots; RedSea source itself still not read, and repeated in-place *growth* of one archive (vs. write-once) is untested |
 | ZealOS networking maturity as a transport target | **Open — low priority for M0/M1** | README claims are unverified; not on the critical path yet |
 | QEMU test-harness input timing is not naively reliable | **New risk, resolved as a design constraint** | probe 01's boot-phase-quirk false start: fixed-delay scripted input is unsafe; a real idle/ready check is required (now documented, not yet implemented as reusable tooling) |
 
@@ -35,16 +35,34 @@ for planning the next sessions of work.
 - [x] Same fixture hashes identically in TempleOS and a host build
       (probe 04's TempleOS digest == probe 02's host oracle digest for
       the same "abc" input)
-- [ ] Append/read/rebuild of a tiny object archive
-- [ ] Source injection into, and `.HGS` extraction from, a disposable guest
-      (the injection mechanism itself is now proven; `.HGS`-specific
-      extraction still untested since no `.HGS` format exists yet)
+- [x] Append/read/rebuild of a tiny object archive
+      (`src/hgit-core/Archive.HC`, `experiments/05-tiny-archive/` —
+      found and fixed a genuine new HolyC quirk: bare top-level loops
+      with local declarations can silently misbehave)
+- [x] Source injection into, and `.HGS` extraction from, a disposable guest
+      (`FORMAT.md`, `src/hgit-core/Hgs.HC`, `experiments/06-hgs-format/`
+      — a real, versioned, byte-documented `.HGS` header now exists,
+      written and read back through the proven injection channel)
 
-Five of seven M0 boxes checked with real evidence. What's left needs an
-actual archive format decision (blob/tree/commit shape — still blocked
-on doc 04's jj/Fossil comparison, not yet done) before "append/read/
-rebuild a tiny object archive" can be attempted meaningfully — that's
-the next real fork in the road, not another isolated probe.
+**All seven M0 acceptance boxes now checked with real evidence.** M0 is
+functionally done: TempleOS boots and can be driven/tested
+automatically, canonical encoding, BLAKE2b, a tiny object archive, and a
+versioned `.HGS` header all work in native HolyC on real TempleOS.
+
+Moving into M1-adjacent design: **object typing is now also implemented
+and verified** (`src/hgit-core/Object.HC`, FORMAT.md) — a type tag
+participates in the content hash, confirmed to prevent same-bytes-
+different-type collisions. **BLAKE2b is no longer capped at 128 bytes**
+either (`experiments/08-blake2b-streaming/`), **and that streaming hash
+is now wired into the actual archive API** (`experiments/09-wire-streaming-hash/`)
+— `ArchivePut`/`ArchiveVerify`/`HgsPut` all use it, verified with a real
+200-byte object stored, persisted, and re-verified. What's left before
+M1's CLI surface (`hgit init`, `status`, `witness`, `offer`, `history`,
+`see`, `restore`, `shrine check`) can start for real: designing actual
+tree content (entry lists: name → child hash + type) and commit content
+(tree hash + parent hash(es) + metadata) — both hashing and storage
+plumbing are now ready for objects of realistic size — plus the index
+that both ADR 0001 and FORMAT.md still flag as missing.
 
 ## Estimated line counts (very rough, will move once real code exists)
 
