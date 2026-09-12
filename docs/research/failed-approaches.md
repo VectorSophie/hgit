@@ -226,3 +226,59 @@ prior context to keep straight (header size, per-record overhead, a
 prepended tag byte), hand-tracking offsets stops being reliable.**
 `src/hgit-core/Index.HC` exists specifically so nothing has to do this
 arithmetic by hand again.
+
+## 2026-09-13 — Typed bootstrap into an undismissed "Take Tour" prompt, twice in a row
+
+**Tried:** After booting for `experiments/15-dir-enumeration/`, glanced
+at a screendump, judged the screen "idle enough," and typed the full
+daemon bootstrap sequence without re-confirming a live `C:/Home>` prompt
+was actually showing.
+
+**Happened:** Cascading compile errors (`Undefined identifier`) sourced
+from `::/Doc/Comm.HC.Z` itself — a file that had `#include`d cleanly
+dozens of times in every prior probe. Retried once more from what
+looked like a recovered prompt; failed identically again.
+
+**Why:** Re-examining the screendump that had been judged "idle"
+straight after taking it — not after acting on it — showed it was
+actually still sitting at `Take Tour (y or n)? ■`, not the command
+line. Both bootstrap attempts were typed into that prompt's input
+context, not the interpreter, garbling everything downstream. This
+wasn't a new HolyC/TempleOS quirk at all — it was reading a screenshot
+too quickly and trusting a snap judgment ("looks idle") over actually
+checking for the specific known prompt text.
+
+**Worked instead:** Full VM reboot, and this time reading the
+screendump for the literal prompt text before typing anything — not a
+vibe check. Identical bootstrap sequence worked immediately.
+**Rule reinforced, again: never drive scripted input off an assumption
+about screen state — read the actual expected text (a specific prompt
+string, or a specific idle marker) every time, no shortcuts, even after
+this has already worked dozens of times in a row.**
+
+## 2026-09-13 — Repeated probe 12's index-offset mistake while building `hgit history`
+
+**Tried:** `HgitHistory`'s first version took `IndexLookup`'s returned
+offset and used it directly as an index into the full `.HGS` file
+buffer (`rbuf[off+8]`).
+
+**Happened:** `HISTORY_ERR not_a_commit` — the byte at that position
+wasn't a valid type tag. A diagnostic dump showed outright garbage at
+the looked-up offset.
+
+**Why:** This is the *identical* mistake logged for probe 12: `IndexBuild`
+records offsets relative to whatever buffer it was handed
+(`rbuf+16`, the object section — the 16-byte `.HGS` header excluded),
+not the whole file. Despite that already being written up in this very
+file, it was made again, fresh, while writing new code that used the
+same index.
+
+**Worked instead:** The same one-line fix as probe 12
+(`I64 off = 16 + off_rel;`), this time written directly into
+`History.HC`'s own source comments at the point of use, not only in
+this research doc. **Lesson about the lesson**: documenting a mistake
+in a separate research file didn't prevent repeating it in new code —
+the fix that actually sticks is the one placed at the exact call site
+where the mistake is possible, where the next reader (human or a future
+version of this same agent) hits the warning before hitting the bug,
+not after.

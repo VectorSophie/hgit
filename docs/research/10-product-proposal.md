@@ -81,6 +81,38 @@ TempleOS. First file in a new `hgit-cli` module, separate from
 boundary. Remaining M1 commands (`status`, `witness`, `offer`,
 `history`, `see`, `restore`, `shrine check`) are the next concrete
 targets, each buildable on the now-complete object/index layer.
+**Directory enumeration is now also real** (`src/hgit-cli/WorkDir.HC`,
+`experiments/15-dir-enumeration/`) — `FilesFind`/`CDirEntry`, confirmed
+from primary source before use, lists real working-directory files with
+correct names and sizes. **`hgit status` now exists too**
+(`src/hgit-cli/Status.HC`, `experiments/16-hgit-status/`), scoped
+honestly to what's well-defined without a ref/HEAD concept: a
+zero-offering repository reports every working-directory file as
+untracked (verified); anything else reports `STATUS_UNIMPLEMENTED`
+rather than guessing. **That blocker is now closed**: `src/hgit-cli/Head.HC`
+(`experiments/17-head-pointer/`) — a minimal one-pointer-per-repository
+"current offering" reference (deliberately not the brief's full
+multi-`path` system, which is explicitly M2 work), verified absent on a
+fresh repo, settable, and independently re-settable to a second value.
+**`hgit offer` now exists and works** (`src/hgit-cli/Offer.HC`,
+`experiments/18-hgit-offer/`) — the integration milestone. Real files →
+blobs → tree → commit → HEAD update, verified for both a root offering
+and a second offering with a real parent chain (HEAD correctly moved
+from the first commit's hash to the second's). Every previously-built
+piece (probes 03–17) composed correctly on the first try. hgit can now
+actually record something, not just read/scaffold.
+
+**`hgit history` is also done** (`src/hgit-cli/History.HC`,
+`experiments/19-hgit-history/`) — walks the real parent chain from
+HEAD, verified against the actual two-commit repository probe 18 built
+in the previous session (correct order, correct messages/timestamps,
+read back across a QEMU reboot boundary). Repeated probe 12's
+index-offset mistake while building it — documenting a mistake in a
+research file didn't prevent repeating it in new code — fixed the same
+way, this time with the warning written directly into `History.HC`'s
+own source at the point of use. Next concrete step: wire HEAD +
+tree-walking into `Status.HC`'s `STATUS_UNIMPLEMENTED` branch, and build
+`hgit see <offering>` on top of the now-real parent chain.
 
 ## Estimated line counts (very rough, will move once real code exists)
 
