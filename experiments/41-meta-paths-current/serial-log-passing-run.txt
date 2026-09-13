@@ -1,0 +1,51 @@
+D_OK
+D_DONE
+D_DONE
+D_EXIT
+D2_OK
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+no loop here
+COMPILE_OK
+D_DONE
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+renamed ok
+COMPILE_OK
+D_DONE
+name_buf ok, qi instead of pi
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+main_exists_before=1 feature_exists_before=0 cur0=main
+PATH main
+feature_exists_after=1
+PATH main
+PATH feature
+cur1=feature cur1_is_feature=1
+cur2=main cur2_is_main=1
+never_declared_exists=0 (expect 0)
+PASS meta_paths_current
+COMPILE_OK
+D_DONE

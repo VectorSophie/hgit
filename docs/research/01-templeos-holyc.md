@@ -63,6 +63,32 @@ with zero patches, `-m 512`, no KVM. Full detail and screenshots:
 "cmd line is the compiler" doc claim against the running system, not just
 the manual.
 
+## Confirmed HolyC quirk: `pi` is a reserved global identifier (real F64 constant)
+
+Found in probe 41 (`experiments/41-meta-paths-current/`) after a long,
+properly-isolated debugging chase (multiple fresh reboots to rule out
+session pollution, since the symptom initially looked like stale
+compiler state): declaring a **local variable named `pi`** produces a
+bizarre, misleading parse error rather than a normal shadowing/
+redeclaration error:
+
+```
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+```
+
+The hex constant in that message, `0x400921FB54442D18`, is exactly the
+IEEE754 double-precision bit pattern for **π** (3.14159265358979...) —
+proof TempleOS predefines `pi` as a real global `F64` constant, and a
+local variable declared with the same name collides with it, confusing
+the parser into this cryptic message instead of a clean error. Isolated
+by bisecting a failing function down to a two-line minimal repro
+(`U8 buf[64]; I64 pi; for (pi=0; pi<3; pi++) buf[pi] = 'x';`) and
+confirming renaming just the loop variable (to `qi`, then `ni` in the
+real fix) made it compile instantly, with no other change. **Avoid
+`pi` as a local/parameter name anywhere in this project** — it isn't
+merely bad style here, it actively breaks compilation in a way that
+looks like an unrelated bug.
+
 ## Test-harness quirk, confirmed by deliberate reproduction: stage-1 `ExePutS` has no compile-error capture
 
 Found while chasing down two "hangs" during probe 31

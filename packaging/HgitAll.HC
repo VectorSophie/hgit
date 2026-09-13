@@ -787,6 +787,574 @@ Bool IndexLookup(U8 *index_hashes, I64 *index_offsets, I64 count,
   }
   return FALSE;
 }
+// Meta.HC — the combined per-repo metadata file, per ADR 0003
+// (docs/adr/0003-path-length-ceiling.md).
+//
+// Real TempleOS/RedSea constraint found in probe 36
+// (experiments/36-path-scoped-oplog/): a full path string longer than
+// 33 characters is silently rejected by FileWrite/FileRead - no error,
+// the call just no-ops. Every sidecar-file-per-concern this project
+// built before this (Head.HC's `.head.<name>`, Paths.HC's `.paths`/
+// `.currentpath`, OpLog.HC's `.ol.<name>`/`.rl.<name>`) grows its own
+// filename with the path name, shrinking the safe budget every time a
+// new per-path concern is added.
+//
+// One combined file per repo, `<repo_path>.m` - a single short, FIXED
+// suffix that never grows no matter how many paths exist or how long
+// their names are, because path names live INSIDE the file's own
+// structure as data, not in filenames as identity.
+//
+// Probe 40 built and verified the HEAD-storage slice alone
+// (MetaReadHead/MetaWriteHead). Probe 41 added path declaration/listing
+// (MetaPathExists/MetaPathDeclare/MetaPathList) and the current-path
+// pointer (MetaCurrentGet/MetaCurrentSet). Probe 42 adds the operation
+// log (MetaOpLogAppend/MetaOpLogPopLast) - now every concern
+// Paths.HC's and OpLog.HC's sidecar files used to hold lives in this
+// one file too. Deliberately NOT yet wired in: Head.HC/Paths.HC/
+// OpLog.HC and every real hgit command still use today's separate-
+// sidecar-file layout - same incremental pattern this project already
+// used for OpLog.HC itself (built standalone in probe 30, wired into
+// Offer.HC in probe 31).
+//
+// Depends on Canon.HC (PutU64LE/GetU64LE, for the operation-log entry
+// slice only) - load it first.
+//
+// Record format (flat, read-until-EOF, same style as Paths.HC's
+// `.paths` file):
+//   U8  name_len     (0 for a "global," not-per-path record, e.g. the
+//                      current-path pointer)
+//   name_len bytes of path name
+//   U8  tag
+//   U8  payload_len
+//   payload_len bytes of payload
+//
+// Tags:
+//   META_TAG_HEAD          - payload is the path's 64-byte HEAD hash
+//   META_TAG_PATH_DECLARED - marks a (non-"main") path name as
+//                            existing; payload_len 0, no payload -
+//                            the record's own name IS the data
+//   META_TAG_CURRENT       - name_len 0 (global); payload is the
+//                            current path's name bytes
+//
+// Every "set" operation splices out any existing record for the same
+// (name, tag) before appending the new one (MetaSpliceOut) - so each
+// (name, tag) pair has at most one record at a time, not an
+// ever-growing history. MetaFind (last-match-wins scan) and
+// MetaAppendRecord are the two shared primitives every public
+// function below is built from.
+
+#define META_TAG_HEAD 1
+#define META_TAG_PATH_DECLARED 2
+#define META_TAG_CURRENT 3
+
+// Kept self-contained (hgit-core shouldn't depend on hgit-cli's
+// Paths.HC) even though it matches Paths.HC's own HGIT_MAX_PATH_NAME.
+#define META_MAX_PATH_NAME 64
+
+U0 MetaPath(U8 *repo_path, U8 *out_path)
+{
+  I64 i = 0;
+  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
+  out_path[i++] = '.'; out_path[i++] = 'm';
+  out_path[i] = 0;
+}
+
+// Scans buf (size bytes) for the LAST record matching (name, tag).
+// Returns the payload's byte OFFSET within buf (so the caller computes
+// `buf + offset` itself - avoids a pointer-to-pointer out-parameter,
+// a syntax shape not used/verified anywhere else in this project) and
+// sets *payload_len_out to its length. Returns -1 (payload_len_out
+// untouched) if nothing matches.
+I64 MetaFind(U8 *buf, I64 size, U8 *name, U8 tag, I64 *payload_len_out)
+{
+  I64 target_len = StrLen(name);
+  I64 pos = 0;
+  I64 found_off = -1;
+  while (pos < size) {
+    U8 name_len = buf[pos]; pos += 1;
+    U8 *rec_name = buf + pos; pos += name_len;
+    U8 rtag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    I64 payload_off = pos; pos += payload_len;
+
+    if (rtag == tag && name_len == target_len) {
+      Bool same = TRUE;
+      I64 fi;
+      for (fi=0; fi<name_len; fi++) if (rec_name[fi] != name[fi]) same = FALSE;
+      if (same) {
+        found_off = payload_off;
+        *payload_len_out = payload_len;
+        // keep scanning - last match wins (splice-on-write should
+        // keep this to one, but cheap insurance against a stale dup).
+      }
+    }
+  }
+  return found_off;
+}
+
+// Copies every record from buf (size bytes) EXCEPT ones matching
+// (name, tag) into out_buf. Sets *out_len to the copied length.
+U0 MetaSpliceOut(U8 *buf, I64 size, U8 *name, U8 tag, U8 *out_buf, I64 *out_len)
+{
+  I64 target_len = StrLen(name);
+  I64 pos = 0, new_len = 0;
+  while (pos < size) {
+    I64 entry_start = pos;
+    U8 name_len = buf[pos]; pos += 1;
+    U8 *rec_name = buf + pos; pos += name_len;
+    U8 rtag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    pos += payload_len;
+
+    Bool is_match = FALSE;
+    if (rtag == tag && name_len == target_len) {
+      Bool same = TRUE;
+      I64 si;
+      for (si=0; si<name_len; si++) if (rec_name[si] != name[si]) same = FALSE;
+      is_match = same;
+    }
+    if (!is_match) {
+      I64 entry_len = pos - entry_start;
+      I64 ci;
+      for (ci=0; ci<entry_len; ci++) out_buf[new_len+ci] = buf[entry_start+ci];
+      new_len += entry_len;
+    }
+  }
+  *out_len = new_len;
+}
+
+// Appends one record (name, tag, payload) to buf at *len, advancing it.
+U0 MetaAppendRecord(U8 *buf, I64 *len, U8 *name, U8 tag, U8 *payload, U8 payload_len)
+{
+  I64 name_len = StrLen(name);
+  I64 pos = *len;
+  buf[pos] = name_len; pos += 1;
+  I64 ai;
+  for (ai=0; ai<name_len; ai++) buf[pos+ai] = name[ai];
+  pos += name_len;
+  buf[pos] = tag; pos += 1;
+  buf[pos] = payload_len; pos += 1;
+  for (ai=0; ai<payload_len; ai++) buf[pos+ai] = payload[ai];
+  pos += payload_len;
+  *len = pos;
+}
+
+// Reads the current HEAD hash (64 bytes) recorded for path `name`.
+// Returns FALSE if no such record exists yet (same convention as
+// Head.HC's HeadRead/Paths.HC's CurrentHeadRead).
+Bool MetaReadHead(U8 *repo_path, U8 *name, U8 *hash_out)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return FALSE;
+
+  I64 payload_len;
+  I64 payload_off = MetaFind(buf, size, name, META_TAG_HEAD, &payload_len);
+  if (payload_off < 0) return FALSE;
+  I64 i;
+  for (i=0; i<64; i++) hash_out[i] = buf[payload_off+i];
+  return TRUE;
+}
+
+// Sets path `name`'s HEAD to `hash` (64 bytes), replacing any existing
+// HEAD record for that name.
+U0 MetaWriteHead(U8 *repo_path, U8 *name, U8 *hash)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  I64 total_old;
+  if (buf == NULL) total_old = 0; else total_old = size;
+
+  U8 new_buf[16384]; // fixed cap for now - same style as OpLog.HC
+  I64 new_len;
+  MetaSpliceOut(buf, total_old, name, META_TAG_HEAD, new_buf, &new_len);
+  MetaAppendRecord(new_buf, &new_len, name, META_TAG_HEAD, hash, 64);
+  FileWrite(meta_path, new_buf, new_len);
+}
+
+// TRUE if `name` is "main" (always exists, never stored) or has a
+// META_TAG_PATH_DECLARED record.
+Bool MetaPathExists(U8 *repo_path, U8 *name)
+{
+  if (StrCmp(name, "main") == 0) return TRUE;
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return FALSE;
+  I64 payload_len;
+  return MetaFind(buf, size, name, META_TAG_PATH_DECLARED, &payload_len) >= 0;
+}
+
+// Declares `name` as an existing path (idempotent - does nothing if
+// already declared or if `name` is "main").
+U0 MetaPathDeclare(U8 *repo_path, U8 *name)
+{
+  if (MetaPathExists(repo_path, name)) return;
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  I64 total_old;
+  if (buf == NULL) total_old = 0; else total_old = size;
+
+  U8 new_buf[16384];
+  I64 new_len = 0;
+  I64 i;
+  for (i=0; i<total_old; i++) new_buf[i] = buf[i];
+  new_len = total_old;
+  U8 no_payload[1];
+  MetaAppendRecord(new_buf, &new_len, name, META_TAG_PATH_DECLARED, no_payload, 0);
+  FileWrite(meta_path, new_buf, new_len);
+}
+
+// Un-declares `name` (removes its META_TAG_PATH_DECLARED record, if
+// any). Does nothing for "main" (can never be undeclared) or a name
+// that was never declared. Does NOT touch its HEAD or operation-log
+// records - those become orphaned but unreachable via
+// MetaPathExists/MetaPathList, the same "left behind, not deleted"
+// choice Paths.HC's original PathClose made for its own sidecar files.
+U0 MetaPathUndeclare(U8 *repo_path, U8 *name)
+{
+  if (StrCmp(name, "main") == 0) return;
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return;
+  U8 new_buf[16384];
+  I64 new_len;
+  MetaSpliceOut(buf, size, name, META_TAG_PATH_DECLARED, new_buf, &new_len);
+  FileWrite(meta_path, new_buf, new_len);
+}
+
+// Prints every path name, "main" first, then each META_TAG_PATH_DECLARED
+// record found (creation order).
+U0 MetaPathList(U8 *repo_path)
+{
+  CommPrint(1, "PATH main\n");
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return;
+  I64 pos = 0;
+  while (pos < size) {
+    U8 name_len = buf[pos]; pos += 1;
+    U8 *rec_name = buf + pos; pos += name_len;
+    U8 rec_tag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    pos += payload_len;
+    if (rec_tag == META_TAG_PATH_DECLARED) {
+      U8 name_buf[META_MAX_PATH_NAME];
+      I64 ni; // NOT "pi" - TempleOS predefines that as the F64 constant
+               // pi (confirmed, probe 41): a local var named pi produces
+               // a cryptic "Expecting '*' at INT:400921FB54442D18 (F64)"
+               // parse error (that hex IS pi's IEEE754 bit pattern).
+      for (ni=0; ni<name_len; ni++) name_buf[ni] = rec_name[ni];
+      name_buf[name_len] = 0;
+      CommPrint(1, "PATH %s\n", name_buf);
+    }
+  }
+}
+
+// Writes out_name = the current path's name (defaults to "main" if no
+// META_TAG_CURRENT record exists yet - same convention as Paths.HC's
+// CurrentPathGet).
+U0 MetaCurrentGet(U8 *repo_path, U8 *out_name)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  I64 payload_len;
+  I64 payload_off = -1;
+  if (buf != NULL) payload_off = MetaFind(buf, size, "", META_TAG_CURRENT, &payload_len);
+  if (payload_off < 0) {
+    out_name[0]='m'; out_name[1]='a'; out_name[2]='i'; out_name[3]='n'; out_name[4]=0;
+    return;
+  }
+  I64 i;
+  for (i=0; i<payload_len; i++) out_name[i] = buf[payload_off+i];
+  out_name[payload_len] = 0;
+}
+
+// Sets the current path to `name`, replacing any existing
+// META_TAG_CURRENT record.
+U0 MetaCurrentSet(U8 *repo_path, U8 *name)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  I64 total_old;
+  if (buf == NULL) total_old = 0; else total_old = size;
+
+  U8 new_buf[16384];
+  I64 new_len;
+  MetaSpliceOut(buf, total_old, "", META_TAG_CURRENT, new_buf, &new_len);
+  MetaAppendRecord(new_buf, &new_len, "", META_TAG_CURRENT, name, StrLen(name));
+  FileWrite(meta_path, new_buf, new_len);
+}
+
+// --- Operation log (probe 42) ---
+//
+// Unlike HEAD/CURRENT (one record per name, replaced on every write),
+// operation-log entries for a path ACCUMULATE - each real operation
+// (e.g. an offer) appends one, and undo pops the most recently
+// appended one. This needs a different removal primitive from
+// MetaSpliceOut (which strips EVERY matching record): MetaSpliceOutLast
+// finds and removes only the LAST matching record, leaving earlier
+// same-(name,tag) entries alone. Each entry is 136 bytes, the same
+// shape OpLog.HC's sidecar-file version already uses and verified
+// (probe 30): U64 timestamp + 64-byte prev_head + 64-byte new_head.
+
+#define META_TAG_OPLOG 4
+
+// Finds the LAST record matching (name, tag), copies its payload into
+// payload_out (caller-sized buffer) and its length into
+// *payload_len_out, and writes every OTHER record (including earlier
+// same-name/tag ones) into out_buf/*out_len - i.e. removes exactly one
+// occurrence, not all of them. Returns FALSE (out_buf just a copy of
+// buf, payload_out untouched) if no match exists.
+Bool MetaSpliceOutLast(U8 *buf, I64 size, U8 *name, U8 tag,
+                        U8 *out_buf, I64 *out_len,
+                        U8 *payload_out, I64 *payload_len_out)
+{
+  I64 target_len = StrLen(name);
+  I64 pos = 0;
+  I64 match_start = -1, match_end = -1, match_payload_off = -1, match_payload_len = 0;
+  while (pos < size) {
+    I64 entry_start = pos;
+    U8 name_len = buf[pos]; pos += 1;
+    U8 *rec_name = buf + pos; pos += name_len;
+    U8 rtag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    I64 payload_off = pos; pos += payload_len;
+
+    if (rtag == tag && name_len == target_len) {
+      Bool same = TRUE;
+      I64 li;
+      for (li=0; li<name_len; li++) if (rec_name[li] != name[li]) same = FALSE;
+      if (same) {
+        match_start = entry_start;
+        match_end = pos;
+        match_payload_off = payload_off;
+        match_payload_len = payload_len;
+      }
+    }
+  }
+  if (match_start < 0) {
+    I64 zi;
+    for (zi=0; zi<size; zi++) out_buf[zi] = buf[zi];
+    *out_len = size;
+    return FALSE;
+  }
+  I64 pli;
+  for (pli=0; pli<match_payload_len; pli++) payload_out[pli] = buf[match_payload_off+pli];
+  *payload_len_out = match_payload_len;
+
+  I64 new_len = 0, ci;
+  for (ci=0; ci<match_start; ci++) out_buf[new_len++] = buf[ci];
+  for (ci=match_end; ci<size; ci++) out_buf[new_len++] = buf[ci];
+  *out_len = new_len;
+  return TRUE;
+}
+
+// Appends one 136-byte operation-log entry for path `name`.
+U0 MetaOpLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 timestamp)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  I64 total_old;
+  if (buf == NULL) total_old = 0; else total_old = size;
+
+  U8 payload[136];
+  PutU64LE(payload, 0, timestamp);
+  I64 bi;
+  for (bi=0; bi<64; bi++) payload[8+bi] = prev_head[bi];
+  for (bi=0; bi<64; bi++) payload[72+bi] = new_head[bi];
+
+  U8 new_buf[16384];
+  I64 new_len = 0;
+  for (bi=0; bi<total_old; bi++) new_buf[bi] = buf[bi];
+  new_len = total_old;
+  MetaAppendRecord(new_buf, &new_len, name, META_TAG_OPLOG, payload, 136);
+  FileWrite(meta_path, new_buf, new_len);
+}
+
+// Pops the most recently appended operation-log entry for path `name`:
+// removes it and returns its prev_head/new_head/timestamp. Returns
+// FALSE (outputs untouched) if there's nothing to pop.
+Bool MetaOpLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_out, U64 *timestamp_out)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return FALSE;
+
+  U8 new_buf[16384];
+  I64 new_len;
+  U8 payload[136];
+  I64 payload_len;
+  Bool found = MetaSpliceOutLast(buf, size, name, META_TAG_OPLOG, new_buf, &new_len, payload, &payload_len);
+  if (!found) return FALSE;
+
+  *timestamp_out = GetU64LE(payload, 0);
+  I64 bi;
+  for (bi=0; bi<64; bi++) prev_head_out[bi] = payload[8+bi];
+  for (bi=0; bi<64; bi++) new_head_out[bi] = payload[72+bi];
+
+  FileWrite(meta_path, new_buf, new_len);
+  return TRUE;
+}
+
+// Returns TRUE and fills prev/new/timestamp for the entry at `index`
+// (0-based, oldest first) among path `name`'s operation-log entries.
+// FALSE if out of range. Read-only. Deliberately returns raw fields,
+// not a printable string - hgit-core (this file) shouldn't depend on
+// hgit-cli's hex-conversion helpers; callers building a human-readable
+// listing do that themselves (see OpLog.HC's OpLogHistory).
+Bool MetaOpLogGet(U8 *repo_path, U8 *name, I64 index, U8 *prev_out, U8 *new_out, U64 *timestamp_out)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return FALSE;
+  I64 target_len = StrLen(name);
+  I64 pos = 0, idx = 0;
+  while (pos < size) {
+    U8 name_len = buf[pos]; pos += 1;
+    U8 *rec_name = buf + pos; pos += name_len;
+    U8 tag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    I64 payload_off = pos; pos += payload_len;
+    if (tag == META_TAG_OPLOG && name_len == target_len) {
+      Bool same = TRUE;
+      I64 gi;
+      for (gi=0; gi<name_len; gi++) if (rec_name[gi] != name[gi]) same = FALSE;
+      if (same) {
+        if (idx == index) {
+          *timestamp_out = GetU64LE(buf, payload_off);
+          I64 bi;
+          for (bi=0; bi<64; bi++) prev_out[bi] = buf[payload_off+8+bi];
+          for (bi=0; bi<64; bi++) new_out[bi] = buf[payload_off+72+bi];
+          return TRUE;
+        }
+        idx++;
+      }
+    }
+  }
+  return FALSE;
+}
+
+// Count of operation-log entries for path `name`.
+I64 MetaOpLogCount(U8 *repo_path, U8 *name)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return 0;
+  I64 target_len = StrLen(name);
+  I64 pos = 0, count = 0;
+  while (pos < size) {
+    U8 name_len = buf[pos]; pos += 1;
+    U8 *rec_name = buf + pos; pos += name_len;
+    U8 tag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    pos += payload_len;
+    if (tag == META_TAG_OPLOG && name_len == target_len) {
+      Bool same = TRUE;
+      I64 ki;
+      for (ki=0; ki<name_len; ki++) if (rec_name[ki] != name[ki]) same = FALSE;
+      if (same) count++;
+    }
+  }
+  return count;
+}
+
+// --- Redo log: same accumulate/pop-last shape as the operation log
+// above, kept as a separate tag rather than reusing META_TAG_OPLOG so
+// the two never collide when scanned. OpLog.HC's own OpLogAppend is
+// responsible for calling MetaRedoLogClear (a real new operation
+// invalidates whatever was undone) - deliberately NOT done
+// automatically inside MetaOpLogAppend itself, since OpLogRedo also
+// calls MetaOpLogAppend (to push a redone entry back onto the undo
+// log) and must NOT clear the remaining redo log as a side effect of
+// that internal reuse.
+
+#define META_TAG_REDOLOG 5
+
+U0 MetaRedoLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 timestamp)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  I64 total_old;
+  if (buf == NULL) total_old = 0; else total_old = size;
+
+  U8 payload[136];
+  PutU64LE(payload, 0, timestamp);
+  I64 bi;
+  for (bi=0; bi<64; bi++) payload[8+bi] = prev_head[bi];
+  for (bi=0; bi<64; bi++) payload[72+bi] = new_head[bi];
+
+  U8 new_buf[16384];
+  I64 new_len = 0;
+  for (bi=0; bi<total_old; bi++) new_buf[bi] = buf[bi];
+  new_len = total_old;
+  MetaAppendRecord(new_buf, &new_len, name, META_TAG_REDOLOG, payload, 136);
+  FileWrite(meta_path, new_buf, new_len);
+}
+
+Bool MetaRedoLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_out, U64 *timestamp_out)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return FALSE;
+
+  U8 new_buf[16384];
+  I64 new_len;
+  U8 payload[136];
+  I64 payload_len;
+  Bool found = MetaSpliceOutLast(buf, size, name, META_TAG_REDOLOG, new_buf, &new_len, payload, &payload_len);
+  if (!found) return FALSE;
+
+  *timestamp_out = GetU64LE(payload, 0);
+  I64 bi;
+  for (bi=0; bi<64; bi++) prev_head_out[bi] = payload[8+bi];
+  for (bi=0; bi<64; bi++) new_head_out[bi] = payload[72+bi];
+
+  FileWrite(meta_path, new_buf, new_len);
+  return TRUE;
+}
+
+// Clears every redo-log entry for path `name` (standard undo/redo
+// semantics: a real new operation invalidates whatever was undone).
+U0 MetaRedoLogClear(U8 *repo_path, U8 *name)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return;
+  U8 new_buf[16384];
+  I64 new_len;
+  MetaSpliceOut(buf, size, name, META_TAG_REDOLOG, new_buf, &new_len);
+  FileWrite(meta_path, new_buf, new_len);
+}
 // Init.HC — `hgit init`: create a new, empty repository.
 //
 // First real CLI-shaped command (M1) built on the now-complete
@@ -870,202 +1438,88 @@ U0 HeadWrite(U8 *repo_path, U8 *hash)
 // Paths.HC — named paths (hgit's branch equivalent), per the brief's
 // `hgit path list/new/go/close` vocabulary.
 //
-// Deliberately minimal, first slice: path bookkeeping only (create,
-// list, switch "current path," close) — NOT yet wired into
-// Offer.HC/Status.HC/History.HC/See.HC/OpLog.HC, so creating or
-// switching paths doesn't yet change what those commands operate on.
-// That's the natural next step, not done here — same pattern this
-// project already used for OpLog.HC (built and verified standalone in
-// probe 30, wired into Offer.HC in probe 31).
+// Probe 43: this file's PUBLIC API (CurrentPathGet/PathExists/
+// PathListPrint/PathNew/PathGo/CurrentHeadRead/CurrentHeadWrite/
+// PathClose) is now backed by `src/hgit-core/Meta.HC`'s combined
+// per-repo metadata file (ADR 0003) internally - every function's
+// SIGNATURE and observable behavior is unchanged from probes 34/35/37,
+// so Hgit.HC/Offer.HC/History.HC/Status.HC (every real caller) needed
+// no changes at all. This retires the old one-sidecar-file-per-concern
+// scheme (`.head.<name>`, `.paths`, `.currentpath`) that motivated ADR
+// 0003 in the first place - the real path-length ceiling those files
+// were vulnerable to (probe 36) no longer applies to path names at
+// all, since names now live inside Meta.HC's one combined file rather
+// than in filenames.
 //
-// Design:
-//   - "main" is the implicit default path — it always exists, is never
-//     stored in the path list, and its HEAD is exactly `<repo_path>.head`
-//     (byte-identical location to every already-verified probe, so this
-//     adds nothing new for repos that never touch paths).
-//   - `<repo_path>.paths`: every OTHER path's name, as a flat list of
-//     [U8 name_len][name bytes] entries, read until EOF. No count
-//     prefix — same "read until end of buffer" pattern as OpLog.HC's
-//     fixed-size entries, just variable-length here.
-//   - `<repo_path>.currentpath`: raw bytes = the current path's name
-//     (no NUL terminator, no length prefix). Missing/empty means "main".
-//   - `<repo_path>.head.<name>`: HEAD storage for any non-main path
-//     (same 64-byte format as Head.HC's `.head` file).
+// `PathNameFits` is kept (same name, same call site in PathNew) but
+// its actual constraint changed: under the old scheme it had to budget
+// for `repo_path + ".head." + name`; under Meta.HC it only needs
+// `repo_path + ".m"` to fit - `name` no longer affects any filename at
+// all, so long path names that used to be rejected are now accepted.
 //
-// Depends on Head.HC (HeadRead/HeadWrite, for the "main" case) and
-// Canon.HC only for the general style; no BLAKE2b/object-layer
-// dependency, this is pure bookkeeping.
+// Depends on Meta.HC (MetaPathExists/MetaPathDeclare/MetaPathUndeclare/
+// MetaPathList/MetaCurrentGet/MetaCurrentSet/MetaReadHead/MetaWriteHead)
+// and, transitively, Canon.HC. Load Meta.HC first.
 
 #define HGIT_MAX_PATH_NAME 64
 
 // The real, previously-undocumented TempleOS/RedSea limit found in
 // probe 36: a full path string longer than this is silently rejected
-// by FileWrite/FileRead - no error, the call just no-ops. Not caught
-// after the fact (there's nothing to catch - it doesn't fail loudly),
-// so PathNameFits below must be checked proactively before ever
-// creating a path whose sidecar filenames could cross it.
+// by FileWrite/FileRead - no error, the call just no-ops.
 #define HGIT_MAX_SAFE_PATH_LEN 33
 
-// TRUE if every per-path sidecar file this project creates for `name`
-// under `repo_path` - `.head.<name>` (6-char tag, the widest of the
-// three currently in use), `.ol.<name>`/`.rl.<name>` (4-char tags) -
-// would stay at or under HGIT_MAX_SAFE_PATH_LEN. Checked against the
-// widest shape (".head.") since that's the actual binding constraint;
-// if that fits, the shorter oplog/redolog suffixes fit too.
+// TRUE if the combined metadata file itself (`<repo_path>.m`, from
+// Meta.HC's MetaPath) would stay at or under HGIT_MAX_SAFE_PATH_LEN.
+// `name` no longer affects this at all under the Meta.HC design (kept
+// as a parameter only so PathNew's call site is unchanged) - unlike
+// the old per-path-sidecar scheme, a long path NAME is never rejected
+// by this check anymore, only a long REPO path would be.
 Bool PathNameFits(U8 *repo_path, U8 *name)
 {
-  I64 total = StrLen(repo_path) + 6 + StrLen(name);
-  return total <= HGIT_MAX_SAFE_PATH_LEN;
+  return StrLen(repo_path) + 2 <= HGIT_MAX_SAFE_PATH_LEN;
 }
 
-U0 PathListFilePath(U8 *repo_path, U8 *out_path)
-{
-  I64 i = 0;
-  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
-  out_path[i++]='.'; out_path[i++]='p'; out_path[i++]='a';
-  out_path[i++]='t'; out_path[i++]='h'; out_path[i++]='s';
-  out_path[i] = 0;
-}
-
-U0 CurrentPathFilePath(U8 *repo_path, U8 *out_path)
-{
-  I64 i = 0;
-  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
-  out_path[i++]='.'; out_path[i++]='c'; out_path[i++]='u';
-  out_path[i++]='r'; out_path[i++]='r'; out_path[i++]='e';
-  out_path[i++]='n'; out_path[i++]='t'; out_path[i++]='p';
-  out_path[i++]='a'; out_path[i++]='t'; out_path[i++]='h';
-  out_path[i] = 0;
-}
-
-// HEAD storage location for `name` under this repo. "main" reuses
-// Head.HC's own `<repo_path>.head` unchanged; anything else gets its
-// own `<repo_path>.head.<name>` sidecar.
-U0 PathHeadFilePath(U8 *repo_path, U8 *name, U8 *out_path)
-{
-  if (StrCmp(name, "main") == 0) {
-    HeadPath(repo_path, out_path);
-    return;
-  }
-  U8 base[256];
-  HeadPath(repo_path, base); // "<repo_path>.head"
-  I64 i = 0;
-  while (base[i]) { out_path[i] = base[i]; i++; }
-  out_path[i++] = '.';
-  I64 j = 0;
-  while (name[j]) { out_path[i++] = name[j]; j++; }
-  out_path[i] = 0;
-}
-
-// Writes out_name = the current path's name (defaults to "main" if the
-// `.currentpath` sidecar is missing or empty).
+// Writes out_name = the current path's name (defaults to "main").
 U0 CurrentPathGet(U8 *repo_path, U8 *out_name)
 {
-  U8 cp_path[256];
-  CurrentPathFilePath(repo_path, cp_path);
-  I64 size;
-  U8 *buf = FileRead(cp_path, &size);
-  if (buf == NULL || size <= 0) {
-    out_name[0]='m'; out_name[1]='a'; out_name[2]='i'; out_name[3]='n'; out_name[4]=0;
-    return;
-  }
-  I64 i;
-  for (i=0; i<size && i<HGIT_MAX_PATH_NAME-1; i++) out_name[i] = buf[i];
-  out_name[i] = 0;
+  MetaCurrentGet(repo_path, out_name);
 }
 
-// TRUE if `name` is "main" or already appears in the path list.
+// TRUE if `name` is "main" or has been declared via PathNew.
 Bool PathExists(U8 *repo_path, U8 *name)
 {
-  if (StrCmp(name, "main") == 0) return TRUE;
-  U8 list_path[256];
-  PathListFilePath(repo_path, list_path);
-  I64 size;
-  U8 *buf = FileRead(list_path, &size);
-  if (buf == NULL) return FALSE;
-  I64 target_len = StrLen(name);
-  I64 pos = 0;
-  while (pos < size) {
-    U8 name_len = buf[pos]; pos += 1;
-    Bool same = (name_len == target_len);
-    I64 i;
-    if (same) for (i=0; i<name_len; i++) if (name[i] != buf[pos+i]) same = FALSE;
-    pos += name_len;
-    if (same) return TRUE;
-  }
-  return FALSE;
+  return MetaPathExists(repo_path, name);
 }
 
-// Prints every path name, "main" first, then each entry in the path
-// list file (creation order).
+// Prints every path name, "main" first, then each declared path.
 U0 PathListPrint(U8 *repo_path)
 {
-  CommPrint(1, "PATH main\n");
-  U8 list_path[256];
-  PathListFilePath(repo_path, list_path);
-  I64 size;
-  U8 *buf = FileRead(list_path, &size);
-  if (buf == NULL) return;
-  I64 pos = 0;
-  while (pos < size) {
-    U8 name_len = buf[pos]; pos += 1;
-    U8 name[HGIT_MAX_PATH_NAME];
-    I64 i;
-    for (i=0; i<name_len; i++) name[i] = buf[pos+i];
-    name[name_len] = 0;
-    pos += name_len;
-    CommPrint(1, "PATH %s\n", name);
-  }
+  MetaPathList(repo_path);
 }
 
 // Creates a new path named `name`, pointing its HEAD at whatever the
 // CURRENT path's HEAD is right now (all-zero if the current path has
 // no offerings yet). Returns FALSE if `name` already exists (including
-// "main", which can't be recreated), is too long, or - per probe 36's
-// real path-length ceiling - would push one of its own sidecar
-// filenames past the safe limit (checked proactively here rather than
-// silently creating a path whose HEAD file can never actually be
-// written or found afterward).
+// "main"), is too long, or would push the combined metadata file's own
+// path past the safe limit (see PathNameFits above).
 Bool PathNew(U8 *repo_path, U8 *name)
 {
   I64 name_len = StrLen(name);
   if (name_len <= 0 || name_len >= HGIT_MAX_PATH_NAME) return FALSE;
   if (!PathNameFits(repo_path, name)) return FALSE;
-  if (PathExists(repo_path, name)) return FALSE;
+  if (MetaPathExists(repo_path, name)) return FALSE;
 
   U8 cur_name[HGIT_MAX_PATH_NAME];
-  CurrentPathGet(repo_path, cur_name);
-  U8 cur_head_path[256];
-  PathHeadFilePath(repo_path, cur_name, cur_head_path);
-  I64 cur_size;
-  U8 *cur_buf = FileRead(cur_head_path, &cur_size);
+  MetaCurrentGet(repo_path, cur_name);
   U8 head[64];
-  I64 i;
-  if (cur_buf != NULL && cur_size == 64) {
-    for (i=0; i<64; i++) head[i] = cur_buf[i];
-  } else {
-    for (i=0; i<64; i++) head[i] = 0;
+  Bool has_head = MetaReadHead(repo_path, cur_name, head);
+  if (!has_head) {
+    I64 zi;
+    for (zi=0; zi<64; zi++) head[zi] = 0;
   }
 
-  U8 new_head_path[256];
-  PathHeadFilePath(repo_path, name, new_head_path);
-  FileWrite(new_head_path, head, 64);
-
-  // Append to the path list.
-  U8 list_path[256];
-  PathListFilePath(repo_path, list_path);
-  I64 old_size;
-  U8 *old_buf = FileRead(list_path, &old_size);
-  I64 total_old;
-  if (old_buf == NULL) total_old = 0; else total_old = old_size;
-  U8 new_buf[4096];
-  I64 j;
-  for (j=0; j<total_old; j++) new_buf[j] = old_buf[j];
-  I64 pos = total_old;
-  new_buf[pos] = name_len; pos += 1;
-  for (j=0; j<name_len; j++) new_buf[pos+j] = name[j];
-  pos += name_len;
-  FileWrite(list_path, new_buf, pos);
+  MetaWriteHead(repo_path, name, head);
+  MetaPathDeclare(repo_path, name);
   return TRUE;
 }
 
@@ -1073,86 +1527,42 @@ Bool PathNew(U8 *repo_path, U8 *name)
 // exist (callers should create it with PathNew first).
 Bool PathGo(U8 *repo_path, U8 *name)
 {
-  if (!PathExists(repo_path, name)) return FALSE;
-  U8 cp_path[256];
-  CurrentPathFilePath(repo_path, cp_path);
-  FileWrite(cp_path, name, StrLen(name));
+  if (!MetaPathExists(repo_path, name)) return FALSE;
+  MetaCurrentSet(repo_path, name);
   return TRUE;
 }
 
-// Reads HEAD for whichever path is CURRENT right now (same
-// TRUE/FALSE-if-no-offerings-yet convention as Head.HC's HeadRead).
-// This is the first thing that makes `path go` actually mean
-// something: everything that used to call HeadRead(repo_path, ...)
-// directly only ever saw "main"'s HEAD regardless of current path.
+// Reads HEAD for whichever path is CURRENT right now.
 Bool CurrentHeadRead(U8 *repo_path, U8 *hash_out)
 {
   U8 cur_name[HGIT_MAX_PATH_NAME];
-  CurrentPathGet(repo_path, cur_name);
-  U8 hp[256];
-  PathHeadFilePath(repo_path, cur_name, hp);
-  I64 size;
-  U8 *buf = FileRead(hp, &size);
-  if (buf == NULL || size != 64) return FALSE;
-  I64 i;
-  for (i=0; i<64; i++) hash_out[i] = buf[i];
-  return TRUE;
+  MetaCurrentGet(repo_path, cur_name);
+  return MetaReadHead(repo_path, cur_name, hash_out);
 }
 
 // Writes HEAD for whichever path is CURRENT right now.
 U0 CurrentHeadWrite(U8 *repo_path, U8 *hash)
 {
   U8 cur_name[HGIT_MAX_PATH_NAME];
-  CurrentPathGet(repo_path, cur_name);
-  U8 hp[256];
-  PathHeadFilePath(repo_path, cur_name, hp);
-  FileWrite(hp, hash, 64);
+  MetaCurrentGet(repo_path, cur_name);
+  MetaWriteHead(repo_path, cur_name, hash);
 }
 
-// Removes `name` from the path list (its .head.<name> sidecar is left
-// on disk, orphaned but unreachable through this API — not deleted;
-// TempleOS's Del() exists but deleting it isn't exercised here, kept
-// out of scope for this probe). If the closed path was current,
-// switches current back to "main". Refuses to close "main" itself.
+// Removes `name` (its HEAD/operation-log records are left behind,
+// orphaned but unreachable - same choice the pre-Meta.HC version made
+// for its own sidecar files). If the closed path was current, switches
+// current back to "main". Refuses to close "main" itself or a path
+// that doesn't exist.
 Bool PathClose(U8 *repo_path, U8 *name)
 {
   if (StrCmp(name, "main") == 0) return FALSE;
-  U8 list_path[256];
-  PathListFilePath(repo_path, list_path);
-  I64 size;
-  U8 *buf = FileRead(list_path, &size);
-  if (buf == NULL) return FALSE;
-
-  U8 new_buf[4096];
-  I64 new_len = 0, pos = 0;
-  Bool found = FALSE;
-  I64 name_len_target = StrLen(name);
-  while (pos < size) {
-    U8 name_len = buf[pos];
-    I64 entry_start = pos;
-    pos += 1;
-    Bool same = (name_len == name_len_target);
-    I64 i;
-    if (same) for (i=0; i<name_len; i++) if (buf[pos+i] != name[i]) same = FALSE;
-    pos += name_len;
-    if (same) {
-      found = TRUE;
-    } else {
-      I64 entry_len = pos - entry_start;
-      for (i=0; i<entry_len; i++) new_buf[new_len+i] = buf[entry_start+i];
-      new_len += entry_len;
-    }
-  }
-  if (!found) return FALSE;
-  FileWrite(list_path, new_buf, new_len);
+  if (!MetaPathExists(repo_path, name)) return FALSE;
+  MetaPathUndeclare(repo_path, name);
 
   U8 cur_name[HGIT_MAX_PATH_NAME];
-  CurrentPathGet(repo_path, cur_name);
+  MetaCurrentGet(repo_path, cur_name);
   if (StrCmp(cur_name, name) == 0) {
-    U8 cp_path[256];
-    CurrentPathFilePath(repo_path, cp_path);
-    U8 main_name[8]; main_name[0]='m';main_name[1]='a';main_name[2]='i';main_name[3]='n';main_name[4]=0;
-    FileWrite(cp_path, main_name, 4);
+    MetaCurrentSet(repo_path, "main");
   }
   return TRUE;
 }
@@ -1540,256 +1950,112 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 // an operation so ordinary recovery becomes: hgit undo / hgit redo /
 // hgit operation history / hgit operation restore <operation>."
 //
-// Undo + redo (probe 32): a `<repo_path>.redolog` sidecar, same
-// 136-byte entry shape as `.oplog`, holds entries popped by undo so
-// they can be replayed. `OpLogUndo` now pushes the entry it reverts
-// onto the redo log before truncating the undo log; `OpLogRedo` pops
-// the most recently undone entry, re-applies its `new_head`, and
-// pushes it back onto the undo log — standard undo/redo-stack
-// semantics. `OpLogAppend` (called by every real mutating operation,
-// e.g. `offer`) clears the redo log: doing new work after an undo
-// invalidates whatever was undone, same as any other tool's undo/redo.
+// Probe 44: this file's PUBLIC API (OpLogAppend/OpLogUndo/OpLogRedo/
+// OpLogHistory/OpLogRestore) is now backed by `src/hgit-core/Meta.HC`'s
+// operation-log slice internally, completing ADR 0003's real-command
+// cutover started in probe 43 (which moved Paths.HC over the same
+// way). Every function's SIGNATURE and observable behavior is
+// unchanged - Offer.HC and Hgit.HC needed no changes at all. This
+// retires the old `.oplog.<name>`/`.redolog.<name>` sidecar files that
+// motivated ADR 0003 in the first place.
 //
-// Path-scoped (probe 36): both logs now live per current path, same
-// "main" convention as Paths.HC's PathHeadFilePath — main's logs stay
-// at the original bare `<repo_path>.oplog`/`.redolog`, any other path
-// gets its own `.oplog.<name>`/`.redolog.<name>`. This was NOT true as
-// of probe 35, which deliberately left undo/redo on the plain HeadWrite
-// (main only) specifically because a single shared-across-paths log
-// made path-aware undo/redo unsafe (an undo while on path B could
-// revert a HEAD hash that actually belonged to path A's history). Now
-// that each path's log is its own file, OpLogUndo/OpLogRedo switch to
-// CurrentHeadWrite - closing that gap.
+// All operations are scoped to whichever path is CURRENT right now
+// (via Paths.HC's CurrentPathGet - reused, not reimplemented), same
+// path-scoping this file already had since probe 36.
 //
-// `hgit operation restore <op>` is still not built.
-//
-// Entry format (136 bytes, both `.oplog` and `.redolog`):
-//   U64 timestamp
-//   64 bytes prev_head   (all-zero = "no commit existed yet")
-//   64 bytes new_head
-//
-// The all-zero prev_head sentinel is a practical choice, not a proven
-// one: a real BLAKE2b-512 hash is vanishingly unlikely to be all
-// zero bytes, but this hasn't been formally ruled out or guarded
-// against - flagged as a known, low-probability edge case.
-//
-// Verified (experiments/30-oplog-undo/): two offerings logged, then two
-// successive undos correctly walk HEAD back through the second
-// commit's hash, to the first commit's hash, to the all-zero
-// no-commit sentinel - and a third undo correctly reports nothing left
-// to undo rather than doing something wrong. Wired into Offer.HC itself
-// and verified through the real Hgit(cmdline) dispatcher in
-// experiments/31-oplog-in-offer/.
-//
-// Confirmed HolyC quirk hit while building this (not new - already in
-// holyc-parser's own bug-compat corpus,
-// `009-bug-compat-bug-ternary-not-supported.hc`): the `?:` ternary
-// operator is not supported. Use plain if/else for conditional
-// assignment.
-//
-// Depends on Canon.HC (PutU64LE) and Paths.HC (CurrentPathGet,
-// CurrentHeadWrite, HGIT_MAX_PATH_NAME).
+// Depends on Meta.HC (MetaOpLogAppend/MetaOpLogPopLast/MetaOpLogGet/
+// MetaOpLogCount/MetaRedoLogAppend/MetaRedoLogPopLast/MetaRedoLogClear),
+// Paths.HC (CurrentPathGet, CurrentHeadWrite, HGIT_MAX_PATH_NAME), and
+// Hex.HC (HashToHex, for OpLogHistory's printable output only - kept
+// out of Meta.HC itself, which shouldn't depend on hgit-cli).
 
-// `<repo_path>.oplog` for "main" (unchanged from probes 30/31, byte-
-// identical location - so a repo that never touches paths sees no
-// difference); `<repo_path>.ol.<name>` for anything else. Uses the
-// short "ol" suffix (not "oplog.<name>") for non-main paths because
-// probe 36 found a real, previously-undocumented TempleOS/RedSea
-// limit: a full path string longer than 33 characters is silently
-// rejected by FileWrite/FileRead - no error, the call just no-ops -
-// see doc 01's "Path length limit" section. Every extra character in
-// a per-path sidecar suffix eats directly into that same 33-char
-// budget shared with the repo's own path and the path name itself, so
-// this suffix is kept as short as it can be while staying readable.
-U0 OpLogPathFor(U8 *repo_path, U8 *name, U8 *out_path)
-{
-  I64 i = 0;
-  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
-  if (StrCmp(name, "main") == 0) {
-    out_path[i++]='.'; out_path[i++]='o'; out_path[i++]='p';
-    out_path[i++]='l'; out_path[i++]='o'; out_path[i++]='g';
-  } else {
-    out_path[i++] = '.'; out_path[i++] = 'o'; out_path[i++] = 'l';
-    out_path[i++] = '.';
-    I64 j = 0;
-    while (name[j]) { out_path[i++] = name[j]; j++; }
-  }
-  out_path[i] = 0;
-}
-
-U0 RedoLogPathFor(U8 *repo_path, U8 *name, U8 *out_path)
-{
-  I64 i = 0;
-  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
-  if (StrCmp(name, "main") == 0) {
-    out_path[i++]='.'; out_path[i++]='r'; out_path[i++]='e';
-    out_path[i++]='d'; out_path[i++]='o'; out_path[i++]='l';
-    out_path[i++]='o'; out_path[i++]='g';
-  } else {
-    out_path[i++] = '.'; out_path[i++] = 'r'; out_path[i++] = 'l';
-    out_path[i++] = '.';
-    I64 j = 0;
-    while (name[j]) { out_path[i++] = name[j]; j++; }
-  }
-  out_path[i] = 0;
-}
-
-// Convenience wrappers resolving whichever path is CURRENT right now
-// (CurrentPathGet, from Paths.HC) - what every real call site below
-// actually uses.
-U0 OpLogPath(U8 *repo_path, U8 *out_path)
-{
-  U8 cur_name[HGIT_MAX_PATH_NAME];
-  CurrentPathGet(repo_path, cur_name);
-  OpLogPathFor(repo_path, cur_name, out_path);
-}
-
-U0 RedoLogPath(U8 *repo_path, U8 *out_path)
-{
-  U8 cur_name[HGIT_MAX_PATH_NAME];
-  CurrentPathGet(repo_path, cur_name);
-  RedoLogPathFor(repo_path, cur_name, out_path);
-}
-
-// Shared by OpLogAppend/OpLogUndo/OpLogRedo: appends one 136-byte
-// entry to whichever sidecar file `path` names.
-U0 OpLogAppendTo(U8 *path, U8 *prev_head, U8 *new_head, U64 timestamp)
-{
-  I64 old_size;
-  U8 *old_buf = FileRead(path, &old_size);
-  I64 total_old;
-  if (old_buf==NULL) total_old = 0; else total_old = old_size;
-
-  U8 new_buf[16384]; // fixed cap for now - ~120 entries; grow if hit
-  I64 j;
-  for (j=0; j<total_old; j++) new_buf[j] = old_buf[j];
-  I64 pos = total_old;
-  PutU64LE(new_buf, pos, timestamp); pos += 8;
-  for (j=0; j<64; j++) new_buf[pos+j] = prev_head[j]; pos += 64;
-  for (j=0; j<64; j++) new_buf[pos+j] = new_head[j]; pos += 64;
-  FileWrite(path, new_buf, pos);
-}
-
-// Logs a real operation (e.g. offer). Also clears the redo log: doing
-// new work after an undo invalidates whatever was undone, same as any
-// other tool's undo/redo stack.
+// Logs a real operation (e.g. offer) for the current path. Also
+// clears that path's redo log: doing new work after an undo
+// invalidates whatever was undone, same as any other tool's undo/redo
+// stack. Deliberately not done inside MetaOpLogAppend itself, since
+// OpLogRedo (below) also calls it and must NOT clear the redo log as
+// a side effect of that internal reuse.
 U0 OpLogAppend(U8 *repo_path, U8 *prev_head, U8 *new_head, U64 timestamp)
 {
-  U8 log_path[256];
-  OpLogPath(repo_path, log_path);
-  OpLogAppendTo(log_path, prev_head, new_head, timestamp);
-
-  U8 redo_path[256];
-  RedoLogPath(repo_path, redo_path);
-  U8 empty[1];
-  FileWrite(redo_path, empty, 0);
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  MetaOpLogAppend(repo_path, cur_name, prev_head, new_head, timestamp);
+  MetaRedoLogClear(repo_path, cur_name);
 }
 
 // Restores HEAD to the most recently logged operation's prev_head,
 // removes that entry from the undo log, and pushes it onto the redo
 // log so OpLogRedo can replay it. Returns FALSE (no change made) if
-// the log is empty or missing - callers should treat that as "nothing
-// to undo," not an error.
+// there's nothing to undo for the current path.
 Bool OpLogUndo(U8 *repo_path)
 {
-  U8 log_path[256];
-  OpLogPath(repo_path, log_path);
-  I64 size;
-  U8 *buf = FileRead(log_path, &size);
-  if (buf==NULL || size < 136) return FALSE;
-  I64 last_off = size - 136;
-  U8 *prev_head = buf + last_off + 8;
-  U8 *new_head = buf + last_off + 8 + 64;
-  U64 timestamp = GetU64LE(buf, last_off);
-
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  U8 prev_head[64], new_head[64];
+  U64 ts;
+  Bool found = MetaOpLogPopLast(repo_path, cur_name, prev_head, new_head, &ts);
+  if (!found) return FALSE;
   CurrentHeadWrite(repo_path, prev_head);
-
-  U8 redo_path[256];
-  RedoLogPath(repo_path, redo_path);
-  OpLogAppendTo(redo_path, prev_head, new_head, timestamp);
-
-  FileWrite(log_path, buf, last_off);
+  MetaRedoLogAppend(repo_path, cur_name, prev_head, new_head, ts);
   return TRUE;
 }
 
-// Prints every logged operation (oldest first): index, timestamp, and
-// the prev_head/new_head hashes in hex. Read-only - doesn't touch HEAD
-// or either log file. Uses HashToHex (Hex.HC); depends on it and on
-// OpLogPath above.
+// Re-applies the most recently undone operation for the current path:
+// sets HEAD back to that entry's new_head, removes it from the redo
+// log, and pushes it back onto the undo log. Returns FALSE if there's
+// nothing to redo.
+Bool OpLogRedo(U8 *repo_path)
+{
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  U8 prev_head[64], new_head[64];
+  U64 ts;
+  Bool found = MetaRedoLogPopLast(repo_path, cur_name, prev_head, new_head, &ts);
+  if (!found) return FALSE;
+  CurrentHeadWrite(repo_path, new_head);
+  MetaOpLogAppend(repo_path, cur_name, prev_head, new_head, ts);
+  return TRUE;
+}
+
+// Prints every logged operation for the current path (oldest first):
+// index, timestamp, and the prev_head/new_head hashes in hex.
+// Read-only - doesn't touch HEAD or either log.
 U0 OpLogHistory(U8 *repo_path)
 {
-  U8 log_path[256];
-  OpLogPath(repo_path, log_path);
-  I64 size;
-  U8 *buf = FileRead(log_path, &size);
-  if (buf==NULL || size < 136) {
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  I64 count = MetaOpLogCount(repo_path, cur_name);
+  if (count == 0) {
     CommPrint(1, "OPLOG_EMPTY\n");
     return;
   }
-  I64 count = size / 136;
   I64 i;
   for (i=0; i<count; i++) {
-    I64 off = i*136;
-    U64 ts = GetU64LE(buf, off);
+    U8 prev_head[64], new_head[64];
+    U64 ts;
+    MetaOpLogGet(repo_path, cur_name, i, prev_head, new_head, &ts);
     U8 prev_hex[129], new_hex[129];
-    HashToHex(buf+off+8, prev_hex);
-    HashToHex(buf+off+8+64, new_hex);
+    HashToHex(prev_head, prev_hex);
+    HashToHex(new_head, new_hex);
     CommPrint(1, "OP %d ts=%d prev=%s new=%s\n", i, ts, prev_hex, new_hex);
   }
 }
 
-// Jumps CURRENT path's HEAD directly to the `new_head` recorded by
-// the operation at `index` (0-based, oldest first - same numbering
-// OpLogHistory prints as "OP <index>"), regardless of how many steps
-// away that is. Returns FALSE if index is out of range or the log is
-// empty/missing.
-//
-// Deliberately simpler than undo/redo: this does NOT touch either the
-// undo or redo log - no popping, no pushing, just a direct HEAD set.
-// Restoring to an arbitrary point and then expecting undo/redo to
-// still make sense relative to it would need real reconciliation
-// logic (what happens to the entries "between" old and new HEAD?)
-// that's out of scope here - a known, flagged simplification, not an
-// oversight. `hgit operation restore <op>` is meant for "jump to a
-// known-good point," not for composing with undo/redo afterward.
+// Jumps the current path's HEAD directly to the `new_head` recorded
+// by the operation at `index` (0-based, oldest first - same numbering
+// OpLogHistory prints), regardless of how many steps away that is.
+// Deliberately does not touch the undo/redo logs (see OpLog.HC's
+// original design note, unchanged from probe 38): reconciling an
+// arbitrary restore with undo/redo afterward is out of scope.
 Bool OpLogRestore(U8 *repo_path, I64 index)
 {
-  U8 log_path[256];
-  OpLogPath(repo_path, log_path);
-  I64 size;
-  U8 *buf = FileRead(log_path, &size);
-  if (buf==NULL || size < 136) return FALSE;
-  I64 count = size / 136;
-  if (index < 0 || index >= count) return FALSE;
-  U8 *new_head = buf + index*136 + 8 + 64;
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  U8 prev_head[64], new_head[64];
+  U64 ts;
+  Bool found = MetaOpLogGet(repo_path, cur_name, index, prev_head, new_head, &ts);
+  if (!found) return FALSE;
   CurrentHeadWrite(repo_path, new_head);
-  return TRUE;
-}
-
-// Re-applies the most recently undone operation: sets HEAD back to
-// that entry's new_head, removes it from the redo log, and pushes it
-// back onto the undo log. Returns FALSE if there's nothing to redo
-// (redo log empty/missing, or nothing has been undone since the last
-// real operation).
-Bool OpLogRedo(U8 *repo_path)
-{
-  U8 redo_path[256];
-  RedoLogPath(repo_path, redo_path);
-  I64 size;
-  U8 *buf = FileRead(redo_path, &size);
-  if (buf==NULL || size < 136) return FALSE;
-  I64 last_off = size - 136;
-  U8 *prev_head = buf + last_off + 8;
-  U8 *new_head = buf + last_off + 8 + 64;
-  U64 timestamp = GetU64LE(buf, last_off);
-
-  CurrentHeadWrite(repo_path, new_head);
-
-  U8 log_path[256];
-  OpLogPath(repo_path, log_path);
-  OpLogAppendTo(log_path, prev_head, new_head, timestamp);
-
-  FileWrite(redo_path, buf, last_off);
   return TRUE;
 }
 // Offer.HC — `hgit offer`: the actual recording command. This is the

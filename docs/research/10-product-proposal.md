@@ -362,9 +362,61 @@ RedSea constraint itself. Real migration work (touching `Head.HC`,
 `Paths.HC`, `OpLog.HC`, and re-verifying every probe that depends on
 today's file layout) is the next concrete M2 step, not done yet.
 
-Remaining M2 work: implementing ADR 0003's combined-metadata-file
-migration, a real `hgit export`/`import` for whole-repo (not just
-object-layer) portability, and a real DolDoc history view.
+**ADR 0003 implementation started**: `src/hgit-core/Meta.HC`
+(`experiments/40-combined-meta-file/`, PASS) implements and verifies
+the combined file's HEAD-storage slice standalone — two path names'
+HEADs (one 33 characters long) round-trip correctly through one
+short, constant-length `<repo_path>.m` file, confirming the core idea
+works. Also found a second real bug along the way: an *invalid*
+(over-33-char) path passed to `FileRead` can cause a genuine **hang**,
+not just probe 36's silent no-op — reproduced on two fresh boots,
+worked around by never constructing an over-length path anywhere,
+including test code. Not yet wired in: `Head.HC`/`Paths.HC`/`OpLog.HC`
+and every dependent command/probe still use today's layout.
+
+**ADR 0003 implementation continued**: `Meta.HC` now also covers path
+declaration/listing and the current-path pointer
+(`experiments/41-meta-paths-current/`, PASS) — every concern
+`Paths.HC`'s sidecars held is now standalone in the combined file.
+Found and fixed a second genuine HolyC reserved-identifier trap along
+the way: **`pi` is a predefined global `F64` constant (π)**, and a
+local variable named `pi` produces a bizarre parse error mentioning
+π's own IEEE754 bit pattern rather than a normal redeclaration error —
+confirmed real (not session pollution) via a brand-new function name
+on a truly clean boot before chasing it further. Now documented in
+`docs/research/01-templeos-holyc.md`.
+
+**ADR 0003's storage design is now complete**: `Meta.HC` also covers
+the operation log (`experiments/42-meta-oplog/`, PASS) — a new
+`MetaSpliceOutLast` primitive (distinct from HEAD/CURRENT's
+replace-on-write `MetaSpliceOut`) lets entries accumulate and pop in
+correct LIFO order, verified with two different paths' logs sharing
+one file with zero cross-talk. Every concern the old sidecar-file
+scheme held now has a `Meta.HC` equivalent.
+
+**`Paths.HC` cut over to `Meta.HC` — real commands now use it, done and
+verified** (`experiments/43-paths-on-meta/`, PASS). Every public
+function in `Paths.HC` (`PathNew`/`PathGo`/`CurrentHeadRead`/
+`CurrentHeadWrite`/etc.) is now a thin wrapper over `Meta.HC`, with
+zero changes needed to `Hgit.HC`/`Offer.HC`/`History.HC`/`Status.HC`
+(same function names/signatures). Verified by reproducing probe 35's
+exact scenario identically under the new backing store, **and** the
+concrete payoff: a path name that the old per-path-sidecar scheme would
+have rejected (46 characters, over the 33-char ceiling) now succeeds,
+since names live inside the combined file instead of in filenames.
+`Head.HC`'s own sidecar is effectively retired for real commands (no
+real call sites left) but not deleted.
+
+**`OpLog.HC` cut over to `Meta.HC` too — ADR 0003 fully complete**
+(`experiments/44-oplog-on-meta/`, PASS). `undo`/`redo`/
+`operation history`/`operation restore` all now run on the combined
+file, reproducing probe 36's/38's exact scenarios identically. Every
+real command hgit has now runs on `Meta.HC`; the old sidecar-file
+scheme is fully retired from real code paths (`Head.HC` remains
+unused-but-present).
+
+Remaining M2 work: a real `hgit export`/`import` for whole-repo (not
+just object-layer) portability, and a real DolDoc history view.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

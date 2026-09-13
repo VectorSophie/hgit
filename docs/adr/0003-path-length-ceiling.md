@@ -2,10 +2,20 @@
 
 ## Status
 
-Decided, **not yet implemented**. This ADR records the decision and its
-reasoning; migrating `Head.HC`/`Paths.HC`/`OpLog.HC` off the current
-one-sidecar-file-per-concern-per-path design is real future work, not
-done in this ADR or the probes that motivated it.
+**Implemented and fully wired into real commands.**
+`src/hgit-core/Meta.HC` covers HEAD storage, path declaration/listing,
+the current-path pointer, the operation log, and the redo log (probes
+40-42), and every real command now runs on it: probe 43 cut `Paths.HC`
+over (`offer`/`status`/`history`/`path new`/`path go`), probe 44
+(`experiments/44-oplog-on-meta/`) cut `OpLog.HC` over
+(`undo`/`redo`/`operation history`/`operation restore`) — both
+verified reproducing their respective prior probes' exact scenarios
+identically under the new backing store, plus the concrete payoff: a
+path name the old per-path-sidecar scheme would have rejected now
+succeeds. The old `.head.<name>`/`.paths`/`.currentpath`/`.oplog*`/
+`.redolog*` sidecar files are no longer written or read by any real
+command. `Head.HC` itself remains in the codebase, unused by real
+commands, not deleted — a separate decision, not made here.
 
 ## Context
 

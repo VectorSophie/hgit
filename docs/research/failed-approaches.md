@@ -561,3 +561,73 @@ not fully resolved at the architecture level - it constrains every
 sidecar-file-per-concern design this project uses, and shortening one
 suffix only buys headroom, not a removed ceiling. Full writeup:
 `experiments/36-path-scoped-oplog/README.md`.
+
+## 2026-09-13 — Probe 40: an over-length path can genuinely HANG, not just silently no-op
+
+**Tried:** Verifying `Meta.HC` (ADR 0003's combined-metadata-file
+primitive) with a deliberately long repo path
+(`C:/Home/AVeryLongRepositoryName.hgs`, 35 characters - already over
+probe 36's 33-character ceiling on its own) to contrast against the old
+per-path sidecar scheme.
+
+**Happened:** A real hang, reproduced on two separate fresh boots
+(ruling out session degradation): execution froze inside the very
+first `MetaWriteHead` call and never returned - no compile error, no
+`COMPILE_OK`/`COMPILE_FAIL` (stage-2 only prints those once `_DRun`
+returns), just silence, indefinitely.
+
+**Why:** Not independently isolated all the way down, but a real
+confound was found and is the leading explanation: probe 36 established
+that `FileWrite`/`FileRead` on an over-length path silently do nothing
+and return cleanly (`buf == NULL`) - but that finding used paths that
+were *valid-length-but-nonexistent*. This probe's path was *invalid*
+(over the length ceiling) from the start, a case not separately tested
+before. The working theory is that `FileRead` on an invalid path may
+not reliably zero its output `size` parameter the way it does for a
+valid-but-nonexistent one, so downstream code trusting `size` without
+checking `buf == NULL` first could read/loop over garbage. `Meta.HC`
+itself already guards correctly (`if (buf == NULL) total_old = 0; else
+total_old = size;`), so this remains a theory about the mechanism, not
+a confirmed root cause chased down further.
+
+**Worked instead:** Re-ran the identical test with a realistic,
+valid-length repo path (23 characters) on a fresh boot - completed
+cleanly, real `PASS`. **New standing practice, beyond probe 37's
+`PathNameFits` guard on new path names specifically**: never construct
+or pass a path string that might exceed 33 characters into
+`FileRead`/`FileWrite` anywhere in this project, including throwaway
+test/diagnostic code - the risk isn't limited to real repo paths. Full
+writeup: `experiments/40-combined-meta-file/README.md`.
+
+## 2026-09-13 — Probe 41: `pi` is a reserved identifier, and it took real discipline to prove it wasn't session pollution
+
+**Tried:** Verifying `Meta.HC`'s path-list/current-path functions
+(`experiments/41-meta-paths-current/`). One specific function
+(copying a record's name into a local buffer via a loop variable named
+`pi`) failed to compile with `ERROR: Expecting '*' at
+"INT:400921FB54442D18" (0x400921FB54442D18(F64))`.
+
+**Happened:** The failure came with a red herring - an intermittent
+"Fun header args mismatch" warning on some retries strongly suggested
+stale session state (a function redefined after an earlier failed
+attempt at the same name). Ruling that out took several fresh-reboot
+cycles: pushing a brand-new, never-before-used function name
+(`ZzzNestedCopyTest`, never referenced anywhere before) as the very
+FIRST push on a truly clean boot still reproduced the identical error -
+proving it was real, not stale state, before continuing to chase it.
+
+**Why:** Bisected the function body down to a two-line minimal repro
+across six more small, cheap pushes on that same clean session
+(`U8 buf[64]; I64 pi; for (pi=0; pi<3; pi++) buf[pi] = 'x';`), then
+renamed just the loop variable to `qi` - compiled instantly, same
+everything else. `0x400921FB54442D18` is exactly IEEE754 double `pi`
+(3.14159...) - TempleOS predefines `pi` as a real global `F64`
+constant, and declaring a local variable with that name collides with
+it, confusing the parser into this specific misleading message instead
+of a clean shadowing/redeclaration error.
+
+**Worked instead:** Renamed the loop variable to `ni`. **New standing
+practice: never use `pi` as a local variable or parameter name
+anywhere in this project** - now documented in
+`docs/research/01-templeos-holyc.md`. Full writeup:
+`experiments/41-meta-paths-current/README.md`.

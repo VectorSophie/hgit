@@ -31,6 +31,7 @@ cat \
   src/hgit-core/Tree.HC \
   src/hgit-core/Commit.HC \
   src/hgit-core/Index.HC \
+  src/hgit-core/Meta.HC \
   src/hgit-cli/Init.HC \
   src/hgit-cli/Head.HC \
   src/hgit-cli/Paths.HC \

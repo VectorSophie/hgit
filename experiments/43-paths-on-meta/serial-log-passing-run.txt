@@ -1,0 +1,109 @@
+D_OK
+D_DONE
+D_DONE
+D_EXIT
+D2_OK
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+no loop here
+COMPILE_OK
+D_DONE
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+renamed ok
+COMPILE_OK
+D_DONE
+name_buf ok, qi instead of pi
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+main_exists_before=1 feature_exists_before=0 cur0=main
+PATH main
+feature_exists_after=1
+PATH main
+PATH feature
+cur1=feature cur1_is_feature=1
+cur2=main cur2_is_main=1
+never_declared_exists=0 (expect 0)
+PASS meta_paths_current
+COMPILE_OK
+D_DONE
+COMPILE_ERR_BEGIN
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'MetaFind'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'payload_len' in 'MetaFind'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'rtag' in 'MetaFind'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'MetaSpliceOut'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'MetaPathList'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'rec_tag' in 'MetaPathList'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'payload_len' in 'MetaPathList'
+&LexExcept MemberAdd PrsVarLst PrsStmt ERROR: Duplicate member at ";"    for (ci=0; ci<match_start; ci++) out_buf[new_len++] = buf[ci];
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+COMPILE_OK
+D_DONE
+pop1_ok=1 pop1_ts=3000 pop1_prev_ok=1 pop1_new_ok=1
+fpop_ok=1 fpop_ts=5000 fpop_new_ok=1
+fpop2_ok=0 (expect 0)
+pop2_ok=1 pop2_ts=2000 pop2_prev_ok=1 pop2_new_ok=1
+pop3_ok=1 pop3_prev_ok=1
+pop4_ok=0 (expect 0, main now empty too)
+PASS meta_oplog
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P43Repo.hgs
+DISPATCH_OK offer
+main_head1_meta_ok=1
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+main_unchanged_after_feature_offer=1
+feature_head_ok=1 feature_differs=1
+commit ts=1983675 msg=feature commit 1
+commit ts=1982282 msg=main commit 1
+HISTORY_END shown=2
+DISPATCH_OK path_go main
+commit ts=1982282 msg=main commit 1
+HISTORY_END shown=1
+STATUS_MODIFIED P43FileA.txt
+STATUS_END
+DISPATCH_OK path_go feature
+STATUS_UNCHANGED P43FileA.txt
+STATUS_END
+long_name_now_ok=1 (was rejected under the old scheme)
+PASS paths_on_meta
+COMPILE_OK
+D_DONE

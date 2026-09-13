@@ -1,0 +1,18 @@
+D_OK
+D_DONE
+D_DONE
+D_EXIT
+D2_OK
+COMPILE_OK
+D_DONE
+repo_len=23
+name_len=33
+old_style_path_len=62 (would exceed the 33-char ceiling)
+meta_path=C:/Home/FeatureRepo.hgs.m len=25
+found_a=1 a_matches=1 found_b=1 b_matches=1
+found_a2=1 a2_matches=1
+found_b2=1 b2_still_matches=1
+found_missing=0 (expect 0)
+PASS combined_meta_file
+COMPILE_OK
+D_DONE

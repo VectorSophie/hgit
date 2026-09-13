@@ -37,21 +37,29 @@ packages into one file, loadable with a single `#include`.
 - `docs/adr/` — 0001 (repository model) and 0002 (canonical encoding),
   each backed by working, tested `src/` code, updated as that code grew;
   0003 (the real 33-character path-length ceiling found in probe 36 —
-  decided: one combined per-repo metadata file instead of one sidecar
-  file per concern, not yet implemented). No ADR should be written
-  before its own evidence exists — 0003 is backed by probes 36/37's
-  real, binary-searched measurements.
+  decided and now fully implemented: one combined per-repo metadata
+  file instead of one sidecar file per concern. Every real command
+  (`Paths.HC`, `OpLog.HC`) now genuinely runs on
+  `src/hgit-core/Meta.HC` — a path name the old scheme would have
+  rejected now succeeds). No ADR should be written before its own
+  evidence exists — 0003 is backed by probes 36/37/40/41/42/43/44's
+  real, binary-searched/QEMU-verified measurements.
 - `src/hgit-core/` — the object storage layer: `Canon.HC` (canonical
   little-endian encoding), `Blake2b.HC` (BLAKE2b-512, single-block +
   streaming, matches RFC 7693), `Archive.HC`/`Hgs.HC` (the `.HGS` record
   format and file header), `Object.HC`/`Tree.HC`/`Commit.HC` (typed
-  objects: blob/tree/commit content), `Index.HC` (hash→offset lookup).
+  objects: blob/tree/commit content), `Index.HC` (hash→offset lookup),
+  `Meta.HC` (ADR 0003's combined per-repo metadata file — HEAD, path
+  list/current-path, and operation-log storage in one file, immune to
+  the real 33-char path-length ceiling; `Paths.HC` now runs on it).
 - `src/hgit-cli/` — the command surface: `Init.HC`, `WorkDir.HC`,
-  `Head.HC`, `Paths.HC` (named paths — bookkeeping only so far),
-  `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
+  `Head.HC` (now unused by real commands — retired in favor of
+  `Meta.HC`, not yet deleted), `Paths.HC` (named paths, backed by
+  `Meta.HC`), `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
   (hex string ↔ hash bytes), `OpLog.HC` (operation log + undo/redo
-  stack, wired into `Offer.HC`), and `Hgit.HC` — the real entry point
-  (`Hgit(cmdline)`) composing all of the above behind one dispatcher.
+  stack, wired into `Offer.HC`, now backed by `Meta.HC`), and
+  `Hgit.HC` — the real entry point (`Hgit(cmdline)`) composing all of
+  the above behind one dispatcher.
   Every file in both directories verified running on real TempleOS via
   `experiments/01-temple-repl/`'s injection channel — see each probe's
   README for exact evidence, and each source file's own comments for
