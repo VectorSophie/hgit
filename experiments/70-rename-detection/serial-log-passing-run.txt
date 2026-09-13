@@ -1,0 +1,28 @@
+11:DISPATCH_OK offer
+12:DISPATCH_OK offer
+36:DISPATCH_OK offer
+49:DISPATCH_OK init C:/Home/P70Repo.hgs
+50:DISPATCH_OK offer
+51:SEE_COMMIT ts=1538781 parents=0 msg=initial_offer
+52:SEE_TREE entries=1
+53:  entry type=1 id=bed2cffaf4e6391c name=P70Original.txt
+54:SEE_END
+55:DISPATCH_OK offer
+56:SEE_COMMIT ts=1541051 parents=1 msg=after_rename
+57:SEE_TREE entries=1
+58:  entry type=1 id=bed2cffaf4e6391c name=P70Renamed.txt
+59:SEE_END
+60:PASS p70_rename_test
+64:DISPATCH_OK offer
+65:DISPATCH_OK offer
+66:SEE_COMMIT ts=1560656 parents=1 msg=second
+67:SEE_TREE entries=1
+68:  entry type=1 id=661281709c60602e name=P70BFileB.txt
+69:SEE_END
+70:PASS p70b_negative_test
+79:DISPATCH_OK offer
+80:DISPATCH_OK offer
+94:SEE_COMMIT ts=271764 parents=1 msg=offer_two
+95:SEE_TREE entries=1
+96:  entry type=1 id=932d7aa9e3485348 name=P65FileA.txt
+97:SEE_END

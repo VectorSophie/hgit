@@ -87,3 +87,35 @@ Bool TreeFindEntry(U8 *tree_buf, I64 tree_len, U8 *name, I64 name_len,
   }
   return FALSE;
 }
+
+// ADR 0009 (experiments/70-rename-detection/): finds the FIRST entry
+// whose own child hash matches `target_hash` (64 bytes) - the
+// content-addressed half of exact-content rename detection (the
+// name-based half is `TreeFindEntry` above). Returns its entity ID via
+// *entity_id_out. Returns FALSE if no entry has that hash. Same linear
+// scan, same "first match wins" simplification as every by-name/
+// by-hash lookup in this project so far - if multiple old entries
+// share the same content hash (legitimately duplicate content under
+// different names), this returns whichever one the scan reaches
+// first, not necessarily "the" renamed one - documented in ADR 0009
+// as a known limitation, not a hidden bug.
+Bool TreeFindEntryByHash(U8 *tree_buf, I64 tree_len, U8 *target_hash, U64 *entity_id_out)
+{
+  U32 count = GetU32LE(tree_buf, 0);
+  I64 pos = 4;
+  U32 e;
+  for (e=0; e<count; e++) {
+    U8 this_name_len = tree_buf[pos]; pos += 1;
+    U8 *this_hash = tree_buf + pos + this_name_len + 1;
+    U64 this_entity_id = GetU64LE(tree_buf, pos+this_name_len+1+64);
+    Bool same = TRUE;
+    I64 hi;
+    for (hi=0; hi<64; hi++) if (this_hash[hi] != target_hash[hi]) same = FALSE;
+    if (same) {
+      *entity_id_out = this_entity_id;
+      return TRUE;
+    }
+    pos += this_name_len + 1 + 64 + 8;
+  }
+  return FALSE;
+}

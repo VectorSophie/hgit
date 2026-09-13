@@ -689,6 +689,38 @@ Bool TreeFindEntry(U8 *tree_buf, I64 tree_len, U8 *name, I64 name_len,
   }
   return FALSE;
 }
+
+// ADR 0009 (experiments/70-rename-detection/): finds the FIRST entry
+// whose own child hash matches `target_hash` (64 bytes) - the
+// content-addressed half of exact-content rename detection (the
+// name-based half is `TreeFindEntry` above). Returns its entity ID via
+// *entity_id_out. Returns FALSE if no entry has that hash. Same linear
+// scan, same "first match wins" simplification as every by-name/
+// by-hash lookup in this project so far - if multiple old entries
+// share the same content hash (legitimately duplicate content under
+// different names), this returns whichever one the scan reaches
+// first, not necessarily "the" renamed one - documented in ADR 0009
+// as a known limitation, not a hidden bug.
+Bool TreeFindEntryByHash(U8 *tree_buf, I64 tree_len, U8 *target_hash, U64 *entity_id_out)
+{
+  U32 count = GetU32LE(tree_buf, 0);
+  I64 pos = 4;
+  U32 e;
+  for (e=0; e<count; e++) {
+    U8 this_name_len = tree_buf[pos]; pos += 1;
+    U8 *this_hash = tree_buf + pos + this_name_len + 1;
+    U64 this_entity_id = GetU64LE(tree_buf, pos+this_name_len+1+64);
+    Bool same = TRUE;
+    I64 hi;
+    for (hi=0; hi<64; hi++) if (this_hash[hi] != target_hash[hi]) same = FALSE;
+    if (same) {
+      *entity_id_out = this_entity_id;
+      return TRUE;
+    }
+    pos += this_name_len + 1 + 64 + 8;
+  }
+  return FALSE;
+}
 // Commit.HC — commit object content: a tree reference, zero or more
 // parent references, a timestamp, a message, and (per ADR 0005/0006)
 // an optional typed relation to an earlier commit, optionally scoped
@@ -2887,9 +2919,14 @@ U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
 // looked up first so each currently-offered file's ID can be copied
 // forward from the OLD entry of the same name (TreeFindEntry) -
 // otherwise (new name, or root offering) a fresh ID is generated
-// (Tree.HC's GenerateEntityId). Deliberately minimal: same name = same
-// identity; an actual rename is NOT detected here (see ADR 0004's own
-// "what this slice does not do").
+// (Tree.HC's GenerateEntityId).
+//
+// Per ADR 0009 (experiments/70-rename-detection/): if the name isn't
+// found, the file's CONTENT hash is also checked against the parent
+// tree (TreeFindEntryByHash) before falling back to a fresh ID - exact
+// -content rename detection, closing the gap ADR 0004 itself deferred.
+// A rename with an edit in the same offer still isn't detected (looks
+// new either way) - see ADR 0009's own "what this slice does not do".
 //
 // Per ADR 0005 (experiments/51-relation-commands/): HgitOffer itself
 // is now a thin wrapper over HgitOfferWithRelation (REL_NONE/NULL),
@@ -3048,6 +3085,12 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
       B2Hash512Any(blob_tagged, fsize+1, blob_hash);
       ObjectPut(archive, &alen, OBJ_BLOB, fbuf, fsize);
 
+      // ADR 0009 (experiments/70-rename-detection/): if this name
+      // doesn't match anything in the parent's own tree, check
+      // whether its CONTENT does before generating a fresh identity -
+      // exact-content rename detection, the same scope as ADR 0004's
+      // own by-name carry-forward, just keyed on the blob hash instead
+      // of the name when the name lookup fails.
       U64 entity_id;
       Bool found_old = FALSE;
       if (old_tree_content != NULL) {
@@ -3056,6 +3099,10 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
         found_old = TreeFindEntry(old_tree_content, old_tree_content_len,
                                    tmpde->full_name+name_start, name_len,
                                    &old_type, old_hash, &entity_id);
+        if (!found_old) {
+          found_old = TreeFindEntryByHash(old_tree_content, old_tree_content_len,
+                                           blob_hash, &entity_id);
+        }
       }
       if (!found_old) entity_id = GenerateEntityId();
 

@@ -34,9 +34,14 @@
 // looked up first so each currently-offered file's ID can be copied
 // forward from the OLD entry of the same name (TreeFindEntry) -
 // otherwise (new name, or root offering) a fresh ID is generated
-// (Tree.HC's GenerateEntityId). Deliberately minimal: same name = same
-// identity; an actual rename is NOT detected here (see ADR 0004's own
-// "what this slice does not do").
+// (Tree.HC's GenerateEntityId).
+//
+// Per ADR 0009 (experiments/70-rename-detection/): if the name isn't
+// found, the file's CONTENT hash is also checked against the parent
+// tree (TreeFindEntryByHash) before falling back to a fresh ID - exact
+// -content rename detection, closing the gap ADR 0004 itself deferred.
+// A rename with an edit in the same offer still isn't detected (looks
+// new either way) - see ADR 0009's own "what this slice does not do".
 //
 // Per ADR 0005 (experiments/51-relation-commands/): HgitOffer itself
 // is now a thin wrapper over HgitOfferWithRelation (REL_NONE/NULL),
@@ -195,6 +200,12 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
       B2Hash512Any(blob_tagged, fsize+1, blob_hash);
       ObjectPut(archive, &alen, OBJ_BLOB, fbuf, fsize);
 
+      // ADR 0009 (experiments/70-rename-detection/): if this name
+      // doesn't match anything in the parent's own tree, check
+      // whether its CONTENT does before generating a fresh identity -
+      // exact-content rename detection, the same scope as ADR 0004's
+      // own by-name carry-forward, just keyed on the blob hash instead
+      // of the name when the name lookup fails.
       U64 entity_id;
       Bool found_old = FALSE;
       if (old_tree_content != NULL) {
@@ -203,6 +214,10 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
         found_old = TreeFindEntry(old_tree_content, old_tree_content_len,
                                    tmpde->full_name+name_start, name_len,
                                    &old_type, old_hash, &entity_id);
+        if (!found_old) {
+          found_old = TreeFindEntryByHash(old_tree_content, old_tree_content_len,
+                                           blob_hash, &entity_id);
+        }
       }
       if (!found_old) entity_id = GenerateEntityId();
 

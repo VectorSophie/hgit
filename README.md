@@ -257,19 +257,21 @@ five other read-only view commands (`see`/`history`/`status`/
 26-offer/~78-object repo run through all five, no crash; see
 `docs/research/failed-approaches.md`.
 
-**Five real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
+**Six real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
 (M4's reconciliation view underway),
 [`v0.5.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.5.0)
 (every known fixed-size-buffer overflow found and fixed),
 [`v0.6.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.6.0)
-(a critical silent-data-loss fix in `Meta.HC`), and
+(a critical silent-data-loss fix in `Meta.HC`),
 [`v0.7.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.7.0)
-(two more buffer fixes, real VCS research, a Fossil delta prototype).
-Each attaches `packaging/HgitAll.HC` — verified downloaded and
-byte-identical to the local build before being announced done. Matches
-TempleOS's own convention (no installer/package manager; a program is
-`#include`d as one source file) — see `docs/research/09-packaging-and-releases.md`.
+(two more buffer fixes, real VCS research, a Fossil delta prototype),
+and [`v0.8.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.8.0)
+(referential integrity checking, host-side lint tooling). Each attaches
+`packaging/HgitAll.HC` — verified downloaded and byte-identical to the
+local build before being announced done. Matches TempleOS's own
+convention (no installer/package manager; a program is `#include`d as
+one source file) — see `docs/research/09-packaging-and-releases.md`.
 
 ## Next steps
 
