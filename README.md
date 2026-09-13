@@ -79,6 +79,14 @@ packages into one file, loadable with a single `#include`.
   single `#include "C:/Home/HgitAll.HC";`, followed by a working
   `Hgit(...)` call, in a session that never pushed any individual
   source file directly (`experiments/28-hgit-package/`).
+- `tools/lint-package.sh` — host-side HolyC lint before paying the
+  ~1-minute QEMU round trip, via `holyc-parser`
+  (`experiments/templeos-devkit/holyc-parser/`), verified against
+  hgit's own real source with zero real errors and confirmed to
+  actually catch real problems (the `pi`-reserved-constant and
+  "Duplicate member" quirks specifically) — see
+  `docs/research/07-portability-and-toolchains.md` for what it does
+  and doesn't catch.
 - `tests/` — still scaffolded/empty.
 
 **M2 in progress**: the operation log (`src/hgit-cli/OpLog.HC`) is
@@ -239,17 +247,19 @@ five other read-only view commands (`see`/`history`/`status`/
 26-offer/~78-object repo run through all five, no crash; see
 `docs/research/failed-approaches.md`.
 
-**Four real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
+**Five real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
 (M4's reconciliation view underway),
 [`v0.5.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.5.0)
-(every known fixed-size-buffer overflow found and fixed), and
+(every known fixed-size-buffer overflow found and fixed),
 [`v0.6.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.6.0)
-(a critical silent-data-loss fix in `Meta.HC`). Each attaches
-`packaging/HgitAll.HC` — verified downloaded and byte-identical to the
-local build before being announced done. Matches TempleOS's own
-convention (no installer/package manager; a program is `#include`d as
-one source file) — see `docs/research/09-packaging-and-releases.md`.
+(a critical silent-data-loss fix in `Meta.HC`), and
+[`v0.7.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.7.0)
+(two more buffer fixes, real VCS research, a Fossil delta prototype).
+Each attaches `packaging/HgitAll.HC` — verified downloaded and
+byte-identical to the local build before being announced done. Matches
+TempleOS's own convention (no installer/package manager; a program is
+`#include`d as one source file) — see `docs/research/09-packaging-and-releases.md`.
 
 ## Next steps
 

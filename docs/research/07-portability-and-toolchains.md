@@ -45,6 +45,56 @@ actually run/compile HolyC on the host" question, not the first — worth
 checking primarily for whether it can produce a runnable binary (which
 `holyc-parser`, being parse/lint-only, cannot).
 
+## `holyc-parser` actually adopted into this project's own workflow
+
+Doc 07 recommended a "host-side lint + QEMU ground truth" two-tier
+loop early on but never actually built it - `tools/lint-package.sh`
+now does. Built `holyc-parser`'s own CLI (`holycc`, `cargo build
+--release`, no license issue - `Cargo.toml` says `Unlicense`, public
+domain) and ran it directly against this project's real, full 23-file
+`hgit-core`+`hgit-cli` corpus:
+
+- Linting the raw source directories (unordered) produced **60 false
+  positives** - almost all "unresolved identifier," because the tool
+  enforces the same "no forward declarations" rule real HolyC has
+  (independently confirmed the hard way in this project,
+  `docs/research/01-templeos-holyc.md`) across the whole file set in
+  whatever order they're given.
+- Linting `packaging/HgitAll.HC` directly - the same dependency-ordered
+  concatenation `tools/build-package.sh` already produces - collapsed
+  that to **exactly 8 findings, all real gaps in the tool's own
+  built-ins manifest** (`FilesFind`/`DirTreeDel`/`cnts` - genuine
+  TempleOS kernel globals this parser doesn't know about yet), **zero
+  real errors** in hgit's own source. `tools/lint-package.sh` wraps
+  this, filtering the three known manifest gaps out of its pass/fail
+  decision.
+- Verified the tool actually catches real problems, not just always
+  passing: injected a variable named `pi` into a throwaway copy and it
+  reported `[reserved-name-collision]` - the *exact* `pi`-is-a-
+  reserved-constant quirk this project found the hard way in probe 41,
+  with a message good enough to have shortened that investigation from
+  several QEMU round-trips to instant. Also injected the "two sibling
+  blocks declaring the same local name" quirk (probe 40/41's own
+  "Duplicate member" finding) and got a `[block-shared-scope]` warning
+  with an accurate root-cause explanation.
+- **A real, honestly-confirmed gap**: injected a bare `continue;`
+  inside a `for` loop (the quirk probe 56 found - HolyC has no
+  `continue` keyword) and the linter reported **nothing at all**, even
+  though its own `docs/parse-spec.md` (§5.2) explicitly documents that
+  HolyC lacks `continue`. The knowledge is in the tool's own spec docs
+  but not wired into `holycc lint`'s actual rule set - a real limit on
+  what this tool currently catches, not something to oversell.
+
+**Adopted as standing practice**: run `bash tools/lint-package.sh`
+after every `bash tools/build-package.sh`, before pushing new/changed
+source to QEMU - catches a real, non-trivial class of errors (name
+collisions, cross-file reference mistakes, the no-forward-declarations
+rule) in under a second, for free, without spending the ~1-minute QEMU
+round trip. Does not replace QEMU verification - it has no coverage
+for `continue`, no runtime/execution checking at all, and its built-ins
+manifest is incomplete - but it's a real, verified net time-saver for
+the class of errors it does catch.
+
 ## Unresolved risk
 
 - `holyc-parser` cannot execute anything — it only validates syntax/basic
@@ -53,18 +103,24 @@ checking primarily for whether it can produce a runnable binary (which
   execution, or (b) a working `holyc-lang` (or similar) AOT path for fast
   host-side execution. Neither fully replaces the other; probe 01 shows
   the QEMU path works end-to-end today, so it's the not-blocked option.
-- License unconfirmed for both `holyc-parser` (check `templeos-devkit`'s
-  own license — the parser lives inside that repo, not a separate one)
-  and `holyc-lang`, before depending on either for hgit's own tooling.
+- `holycc lint`'s own rule set has real, confirmed gaps (no `continue`-
+  keyword check, despite the tool's own docs knowing about it; an
+  incomplete built-ins manifest) - it complements QEMU verification,
+  it doesn't replace it.
+- License unconfirmed for `holyc-lang` (unlike `holyc-parser`, whose
+  `Unlicense` was checked directly, `holyc-lang`'s own license was
+  never actually confirmed) before depending on it for hgit's own
+  tooling.
 
 ## Architectural implications so far
 
-- Adopt a two-tier dev-loop model, now that both tiers have real evidence
-  behind them: **host-side lint** (via something like `holyc-parser`, for
-  fast syntax/quirk feedback) **+ QEMU ground truth** (proven in probe
-  01, for actual execution and compile-error capture) — mirroring
-  exactly what `templeos-devkit`'s own `make lint` / `make repl` split
-  already does, not a novel design.
+- **Done, not just recommended**: `tools/lint-package.sh` adopts the
+  two-tier dev-loop model — host-side lint (`holycc lint`, built from
+  `experiments/templeos-devkit/holyc-parser/`) + QEMU ground truth
+  (unchanged) — verified against this project's own real 23-file
+  corpus with zero real errors, and confirmed to actually catch real
+  problems (the `pi` and "Duplicate member" quirks specifically), with
+  its own honestly-documented gaps (no `continue` check).
 - `hgit-core`'s HolyC should be written against the **documented, real**
   quirk list (boot-phase restrictions, the `for`/`switch`/`class`
   surprises, the ~256-char REPL line limit) rather than assumed C-like
