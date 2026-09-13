@@ -364,6 +364,20 @@ design work, not decided or built yet — flagged here for a future ADR.
   mismatch, etc.) — may push toward return-code-based error propagation
   instead of exceptions for anything beyond simple aborts.
 
+## Confirmed HolyC fact: real file deletion is `Del(path, FALSE, FALSE, FALSE)`
+
+There is no `FileDelete`/`FDelete`/`FileDel`-named API — all three are
+plausible-looking guesses that fail (`experiments/71-status-rename-surfacing/`,
+`docs/research/failed-approaches.md`'s 2026-09-13 entry). `DiskDelete`
+also fails, differently (a stranger `Invalid lval`/`Compiler Parse
+Error` pair pointing at the identifier itself, not explained further).
+The real kernel API, confirmed working, is `Del(filename, FALSE,
+FALSE, FALSE)` — first used correctly (with a note flagging the same
+"not FileDel" confusion) all the way back in
+`experiments/21-status-deleted/`'s own test driver, just never
+promoted to this standing-facts doc until probe 71 hit the same
+guessing dead end independently.
+
 ## Architectural implications so far
 
 - Treat `hgit` as being invoked two ways that may need different code

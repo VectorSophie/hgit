@@ -38,6 +38,7 @@ verified, probe by probe.
 | **`Meta.HC`'s own nine `new_buf[16384]` fixed rebuild buffers silently lost data past ~114 real offers — no crash, no error signal at all** | **Resolved — a more severe bug class than every prior crash-based one** — a real 150-offer stress test found `DISPATCH_OK` reported for every single call while 35 of 150 real operation-log entries were silently never recorded and `HEAD` silently stopped advancing 36 offers before the true latest commit; fixed by `MAlloc`-ing all nine from the file's real size, verified growing cleanly past 37,966 bytes with full data-integrity accounting (`OPLOG_COUNT` exactly matching total real operations, `HEAD` correctly resolving to the true last commit) | `experiments/66-meta-dynamic-buffer/` |
 | `HistoryDoc.HC`'s `doc[8192]` (no bound against a repo's real commit count) and `Status.HC`'s `tagged[512]` (no bound against a matched file's real size, same class probe 56 fixed in `Offer.HC`) | **Resolved** — found by proactively auditing every remaining fixed-size buffer after probes 60-62/66 closed out `Offer.HC`/`Index.HC`-call-site/`Meta.HC`'s own instances. `historydoc` reproduced a real GPF against the actual ~300-commit repo probe 66 built; fixed with the same truncation-guard pattern `HgitReconcileOverview` already used. `status` fixed the same way probe 56 fixed `Offer.HC` (`STATUS_TOO_LARGE_TO_CHECK`, skip instead of overflow). Both verified against real reproductions plus a normal-case regression | `experiments/67-historydoc-buffer-guard/` |
 | ADR 0004's entity IDs don't survive a rename (a renamed file, same content/different name, got a fresh ID indistinguishable from delete+create) | **Resolved for the exact-content case** — `Tree.HC`'s `TreeFindEntryByHash` lets `Offer.HC` carry the old entity ID forward when a name lookup fails but a content-hash lookup on the parent tree succeeds; verified with a real rename (identical entity ID carried across two `hgit see` calls) and a real negative case (genuinely different content correctly gets a fresh ID despite an old entry existing under another name). Fuzzy/partial-similarity rename detection remains out of scope, pending a reliable diff algorithm | `docs/adr/0009-rename-detection.md`, `experiments/70-rename-detection/` |
+| A detected rename wasn't surfaced in any command's own output (ADR 0009's own deferred item) | **Resolved for `status`** — the same exact-content matching now also runs in `hgit status` (working directory vs. HEAD's tree instead of old-tree vs. new-tree), reporting `STATUS_RENAMED old -> new` in place of separate `STATUS_NEW`/`STATUS_DELETED` lines; verified against a real repo with an unrelated genuinely-new file and an unrelated genuinely-deleted file present too, confirming no false-positive pairing. `hgit history`/`reconciledoc` don't surface it yet | `docs/adr/0009-rename-detection.md`, `experiments/71-status-rename-surfacing/` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -856,6 +857,29 @@ similarity heuristic still needs a reliable diff algorithm ADR 0008's
 Fossil prototype isn't yet. Regression (probe 65's full command-surface
 test) re-run clean afterward; `tools/lint-package.sh` clean before
 every push.
+
+**`hgit status` now surfaces detected renames too**:
+`experiments/71-status-rename-surfacing/` (PASS) - closes the last
+item ADR 0009's own "what this slice does not do" section flagged.
+`Status.HC`'s NEW/DELETED classification (previously printed
+immediately per file) is now buffered and cross-matched by content
+hash before printing, the same exact-content matching `Offer.HC`
+already does via `TreeFindEntryByHash`, applied to working-directory-
+vs-HEAD-tree status instead of old-tree-vs-new-tree at offer time. A
+real test with an unrelated genuinely-new file and an unrelated
+genuinely-deleted file present *alongside* the real rename confirms no
+false-positive pairing: `STATUS_UNCHANGED`/`STATUS_RENAMED old -> new`/
+`STATUS_NEW`/`STATUS_DELETED` all correct in one run. Found the no-
+`continue`-keyword gap again in new code (caught by
+`tools/lint-package.sh` before ever reaching QEMU) and the "duplicate
+member" sibling-block quirk twice more (documented since probe 41, hit
+independently again) - both fixed the same established ways. Also
+needed a real file-deletion call for the test driver; three guessed
+names (`FileDelete`/`FDelete`/`FileDel`) failed before finding the real
+one, `Del(path, FALSE, FALSE, FALSE)`, already used correctly (if
+undocumented at the standing-facts level) in
+`experiments/21-status-deleted/` from much earlier in this project -
+now promoted into `docs/research/01-templeos-holyc.md`.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

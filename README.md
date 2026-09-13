@@ -275,6 +275,17 @@ same scope as Git's own 100%-similarity rename detection — a fuzzy/
 partial-similarity heuristic still needs a reliable diff algorithm ADR
 0008's Fossil prototype isn't yet.
 
+**`hgit status` now surfaces detected renames too**
+(`experiments/71-status-rename-surfacing/`), closing the last item
+ADR 0009 explicitly deferred - the same exact-content matching now
+also runs against the working directory vs. HEAD's own tree, reporting
+`STATUS_RENAMED old -> new` in place of separate `STATUS_NEW`/
+`STATUS_DELETED` lines, verified with an unrelated genuinely-new and
+genuinely-deleted file present alongside the real rename (no
+false-positive pairing). Also confirmed the real TempleOS file-delete
+call is `Del(path, FALSE, FALSE, FALSE)` - not any `File*`/`Disk*`-
+prefixed name, three of which were tried and failed first.
+
 **Real releases are cut regularly**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
 (M4's reconciliation view underway),

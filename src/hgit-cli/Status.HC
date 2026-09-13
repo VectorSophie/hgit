@@ -31,6 +31,18 @@
 // Both tree-entry walks (TreeFindEntry's new signature, and the manual
 // pass-2 walk below) updated for ADR 0004's 8-byte entity ID field
 // (experiments/49-entity-id/).
+//
+// ADR 0009 addendum (experiments/71-status-rename-surfacing/): status
+// now also surfaces exact-content renames, not just NEW/MODIFIED/
+// UNCHANGED/DELETED. A NEW-on-disk file and a DELETED tree entry that
+// share the same content hash are reported as a single STATUS_RENAMED
+// <old> -> <new> line instead of two separate NEW/DELETED lines - the
+// same exact-content matching Offer.HC already uses to carry an entity
+// ID forward (TreeFindEntryByHash), just applied here to working-dir
+// vs HEAD-tree status instead of old-tree vs new-tree at offer time.
+// This only *reports* the match; it doesn't change what gets committed
+// - the next real `hgit offer` still does its own independent rename
+// detection when the file is actually offered.
 
 U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 {
@@ -80,7 +92,21 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   I64 tree_content_len = tree_record_len - 1; // minus the OBJ_TREE tag byte
 
   // Pass 1: new / modified / unchanged, driven by what's actually on
-  // disk right now.
+  // disk right now. NEW files aren't printed immediately anymore - per
+  // the ADR 0009 addendum above, they're buffered (name + hash) so
+  // pass 2's deleted entries can be checked against them for an
+  // exact-content rename match before anything is printed.
+  I64 disk_count = 0;
+  CDirEntry *count_de = FilesFind(find_mask, 0);
+  CDirEntry *count_de1 = count_de;
+  while (count_de) { disk_count++; count_de = count_de->next; }
+  DirTreeDel(count_de1);
+
+  U8 *new_names = MAlloc(disk_count*256 + 256);   // one 256-byte slot each
+  U8 *new_hashes = MAlloc(disk_count*64 + 64);
+  Bool *new_matched = MAlloc(disk_count + 1);
+  I64 new_count = 0;
+
   CDirEntry *tmpde = FilesFind(find_mask, 0);
   CDirEntry *tmpde1 = tmpde;
   while (tmpde) {
@@ -115,15 +141,24 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
                                     tmpde->full_name+name_start, name_len,
                                     &tree_type, tree_entry_hash, &tree_entity_id);
       if (!in_tree) {
-        CommPrint(1, "STATUS_NEW ");
+        // Buffered, not printed - a possible rename source. Names over
+        // 254 chars are truncated to fit the fixed 256-byte slot; this
+        // repo's own 33-char path ceiling (ADR 0003) means a real name
+        // this project has to handle never gets close to that anyway.
+        I64 cap = name_len; if (cap > 254) cap = 254;
+        for (i=0; i<cap; i++) new_names[new_count*256+i] = tmpde->full_name[name_start+i];
+        new_names[new_count*256+cap] = 0;
+        for (i=0; i<64; i++) new_hashes[new_count*64+i] = file_hash[i];
+        new_matched[new_count] = FALSE;
+        new_count++;
       } else {
         Bool same = TRUE;
         for (i=0; i<64; i++) if (file_hash[i] != tree_entry_hash[i]) same = FALSE;
         if (same) CommPrint(1, "STATUS_UNCHANGED ");
         else CommPrint(1, "STATUS_MODIFIED ");
+        for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
+        CommPrint(1, "\n");
       }
-      for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
-      CommPrint(1, "\n");
     }
     tmpde = tmpde->next;
   }
@@ -132,15 +167,23 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   // Pass 2: deleted - walk every tree entry, check it still exists on
   // disk. This is the only place hgit-core needs "everything the tree
   // says should exist," so it's done inline here rather than adding a
-  // generic tree-iteration API to Tree.HC for a single caller.
+  // generic tree-iteration API to Tree.HC for a single caller. Same as
+  // pass 1, DELETED candidates are buffered (name + hash) instead of
+  // printed immediately, so they can be checked against `new_names`/
+  // `new_hashes` for a rename match first.
   U32 tcount = GetU32LE(tree_content, 0);
+  U8 *del_names = MAlloc(tcount*256 + 256);
+  U8 *del_hashes = MAlloc(tcount*64 + 64);
+  Bool *del_matched = MAlloc(tcount + 1);
+  I64 del_count = 0;
+
   I64 tpos = 4;
   U32 te;
   for (te=0; te<tcount; te++) {
     U8 tname_len = tree_content[tpos]; tpos += 1;
     U8 *tname = tree_content + tpos; tpos += tname_len;
     tpos += 1; // skip type
-    tpos += 64; // skip hash
+    U8 *thash = tree_content + tpos; tpos += 64; // keep for rename match
     tpos += 8; // skip entity_id (ADR 0004)
 
     U8 check_path[256];
@@ -153,12 +196,49 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     I64 check_size;
     U8 *check_buf = FileRead(check_path, &check_size);
     if (check_buf == NULL) {
-      CommPrint(1, "STATUS_DELETED ");
-      for (m=0; m<tname_len; m++) CommPrint(1, "%c", tname[m]);
-      CommPrint(1, "\n");
+      I64 dcap = tname_len; if (dcap > 254) dcap = 254;
+      for (m=0; m<dcap; m++) del_names[del_count*256+m] = tname[m];
+      del_names[del_count*256+dcap] = 0;
+      for (m=0; m<64; m++) del_hashes[del_count*64+m] = thash[m];
+      del_matched[del_count] = FALSE;
+      del_count++;
     }
   }
+
+  // Rename match: exact-content only, same "first match wins"
+  // simplification ADR 0009 already documents for Offer.HC's own
+  // TreeFindEntryByHash - a genuine ambiguity (two deleted files with
+  // identical content, one new file matching both) picks whichever
+  // deleted entry is scanned first, not disambiguated further here.
+  I64 di, ni;
+  for (di=0; di<del_count; di++) {
+    for (ni=0; ni<new_count; ni++) {
+      Bool hmatch = !new_matched[ni];
+      I64 hi;
+      if (hmatch) for (hi=0; hi<64; hi++) if (del_hashes[di*64+hi] != new_hashes[ni*64+hi]) hmatch = FALSE;
+      if (hmatch) {
+        CommPrint(1, "STATUS_RENAMED %s -> %s\n", del_names+di*256, new_names+ni*256);
+        new_matched[ni] = TRUE;
+        del_matched[di] = TRUE;
+        ni = new_count; // matched - stop scanning new[] for this del entry
+      }
+    }
+  }
+
+  for (ni=0; ni<new_count; ni++) {
+    if (!new_matched[ni]) CommPrint(1, "STATUS_NEW %s\n", new_names+ni*256);
+  }
+  for (di=0; di<del_count; di++) {
+    if (!del_matched[di]) CommPrint(1, "STATUS_DELETED %s\n", del_names+di*256);
+  }
+
   CommPrint(1, "STATUS_END\n");
   Free(idx_hashes);
   Free(idx_offsets);
+  Free(new_names);
+  Free(new_hashes);
+  Free(new_matched);
+  Free(del_names);
+  Free(del_hashes);
+  Free(del_matched);
 }

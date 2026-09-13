@@ -2,10 +2,22 @@
 
 ## Status
 
-**Decided and implementing.** Closes the gap ADR 0004 explicitly
-deferred: "an actual rename is NOT detected here... a renamed file
-gets a new ID, indistinguishable from delete+create" - its own "what
-this slice does not do" section.
+**Decided and implemented**, including its own follow-up UI work.
+Closes the gap ADR 0004 explicitly deferred: "an actual rename is NOT
+detected here... a renamed file gets a new ID, indistinguishable from
+delete+create" - its own "what this slice does not do" section.
+
+**Addendum (probe 71, `experiments/71-status-rename-surfacing/`)**:
+the last item this ADR's own "what this slice does not do" section
+flagged - "does not surface the rename to the user in any command's
+own output yet" - is now also done. `hgit status` applies the same
+exact-content matching (working-directory files vs. HEAD's tree,
+rather than old-tree vs. new-tree at offer time) and reports
+`STATUS_RENAMED <old> -> <new>` instead of separate `STATUS_NEW`/
+`STATUS_DELETED` lines when a NEW-on-disk file's content hash matches
+a DELETED tree entry's hash. Verified with a real repo carrying an
+unrelated genuinely-new file and an unrelated genuinely-deleted file
+alongside the real rename, confirming no false-positive pairing.
 
 ## Context
 
@@ -76,11 +88,11 @@ do").
   finds, which could occasionally pick the "wrong" one if a repo
   legitimately had duplicate-content files under different names
   before one of them was renamed.
-- Does not surface the rename to the user in any command's own output
-  (e.g. `hgit status` doesn't yet report `RENAMED old -> new`) - this
-  ADR only fixes the underlying entity-ID continuity; a real `status`/
-  `history` UI improvement to actually *show* a detected rename is
-  separate, real follow-up work.
+- ~~Does not surface the rename to the user in any command's own
+  output~~ **Now done for `status`** (probe 71): `hgit status` reports
+  `STATUS_RENAMED <old> -> <new>`. `hgit history`/`hgit reconciledoc`
+  still don't surface a rename the same way - extending the idea to a
+  commit-vs-commit history view remains separate, real follow-up work.
 
 ## Costs
 

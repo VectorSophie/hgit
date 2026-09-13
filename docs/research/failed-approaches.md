@@ -1025,3 +1025,34 @@ note for future sessions**: if a push of the full package produces a
 confusing, reproducible parse error deep in otherwise-stable code,
 check the package's real byte size against the daemon's own buffer
 size before assuming a source-code bug.
+
+## 2026-09-13 — Guessing TempleOS's real file-delete function name, three ways wrong
+
+**Context:** Building `experiments/71-status-rename-surfacing/`'s test
+driver, which needed to actually delete a file on disk (to test
+`hgit status`'s DELETED/RENAMED classification against a real
+disappearance, not just a name that was never created).
+
+**Happened:** Four guessed names, three different failure shapes:
+- `FileDelete("...")` and `FDelete("...")` - both a clean
+  `Undefined identifier` error (valid call syntax, symbol just doesn't
+  exist).
+- `DiskDelete("...")` and `FileDel("...")` - both a stranger
+  `Invalid lval` + `Compiler Parse Error` pair, pointing at the
+  identifier itself rather than at the call. Not explained - possibly
+  these substrings collide with something else the parser recognizes,
+  but not chased further since the real name was found before it
+  mattered.
+
+**Worked instead:** `Del(filename, FALSE, FALSE, FALSE)` - the real
+TempleOS kernel API. Found not by more guessing but by searching this
+project's own history first: `experiments/21-status-deleted/`'s
+`tested_source.hc` (written much earlier in this project, for the
+exact same "delete a file to test STATUS_DELETED" need) already used
+it, with its own inline comment: `// real API from Kernel/BlkDev/
+DskCopy.HC, not "FileDel"` - meaning this exact wrong guess had already
+been made and corrected once before, just never promoted into
+`docs/research/01-templeos-holyc.md` as a standing fact. Doing so now:
+**the real TempleOS file-delete call is `Del(path, FALSE, FALSE,
+FALSE)`, not any `File*`/`Disk*`-prefixed name** - check prior probes'
+own test drivers before guessing a kernel API name from convention.
