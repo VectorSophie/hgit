@@ -1360,9 +1360,26 @@ probe 94's sibling-block-local-name lesson was applied proactively.
 ADR 0010's own "rendering-command awareness of nested trees" item is
 now **fully closed** across every command that shows file-level
 content (`See.HC`/`Diff.HC`/`Status.HC`). Real, separate scope
-remaining, unchanged from ADR 0010's own original decision:
-cross-directory rename/move detection, and `offertree`'s own
+remaining at the time, unchanged from ADR 0010's own original
+decision: cross-directory rename/move detection, and `offertree`'s own
 relation-tag support.
+
+**`offertree` gains relation-tag support, closing ADR 0010's last item
+but one**: `experiments/96-offertree-relations/` (PASS).
+`HgitOfferTreeWithRelation` parameterizes `HgitOfferTree`'s own body
+with `relation_tag`/`relation_target`/`relation_entity_id` - the same
+relationship `HgitOffer` already has with `HgitOfferWithRelation`.
+Three new commands, `correcttree`/`reverttree`/`reconciletree`, taking
+the same argument shape as flat `correct`/`revert`/`reconcile` (with
+`dir_path` replacing `find_mask`), dispatch through a shared
+`HgitOfferTreeRelatedCmd` helper mirroring `HgitOfferRelatedCmd`.
+Verified: a real nested repo, a `correcttree` editing a nested file
+and relating it back to the first commit (unscoped), `SEE_RELATION
+tag=2 target=... entity=0000000000000000` correctly recorded and read
+back, `hgit check` clean. Full command-surface regression re-run
+clean. With this, every item ADR 0010 ever deferred except
+cross-directory rename/move detection is closed - ADR 0010's own scope
+is now complete.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

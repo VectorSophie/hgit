@@ -5190,8 +5190,15 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
 // `HgitOffer`'s own scope before ADR 0005 added relations) - a real,
 // separate follow-up if `offertree` needs `correct`/`revert`/
 // `reconcile` too.
-U0 HgitOfferTree(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
-                 U64 timestamp)
+// ADR 0010's own last deferred item, now closed (experiments/96-
+// offertree-relations/): `offertree` gains the same real relation-tag
+// support (`correct`/`revert`/`reconcile`) `HgitOfferWithRelation`
+// already has for flat offerings - `HgitOfferTree` itself becomes a
+// thin REL_NONE wrapper over this, the same relationship `HgitOffer`
+// already has with `HgitOfferWithRelation`.
+U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
+                             U64 timestamp, U8 relation_tag, U8 *relation_target,
+                             U64 relation_entity_id)
 {
   I64 rsize;
   U8 *rbuf = FileRead(repo_path, &rsize);
@@ -5264,7 +5271,7 @@ U0 HgitOfferTree(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
                has_parent, timestamp, message, message_len,
-               REL_NONE, NULL, 0);
+               relation_tag, relation_target, relation_entity_id);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
@@ -5306,6 +5313,13 @@ U0 HgitOfferTree(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
 
   CurrentHeadWrite(repo_path, commit_hash);
   Free(archive);
+}
+
+U0 HgitOfferTree(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
+                 U64 timestamp)
+{
+  HgitOfferTreeWithRelation(repo_path, dir_path, message, message_len,
+                            timestamp, REL_NONE, NULL, 0);
 }
 // Logo.HC — `hgit logo`: prints the project logo as ASCII art.
 //
@@ -5436,7 +5450,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.5.0"
+#define HGIT_VERSION "1.6.0"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -5511,6 +5525,39 @@ U0 HgitOfferRelatedCmd(U8 *rest, U8 relation_tag, U8 *cmd_name)
   CommPrint(1, "DISPATCH_OK %s\n", cmd_name);
 }
 
+// ADR 0010's own last deferred item, now closed (experiments/96-
+// offertree-relations/): the same real relation-tag dispatch
+// `HgitOfferRelatedCmd` above already provides for flat offerings,
+// for `offertree`'s own recursive ones - "<repo> <target_hex>
+// <entity_hex> <dir_path> <message...>" (a real directory path where
+// the flat version takes a find_mask), calling
+// `HgitOfferTreeWithRelation` (Offer.HC) instead of
+// `HgitOfferWithRelation`.
+U0 HgitOfferTreeRelatedCmd(U8 *rest, U8 relation_tag, U8 *cmd_name)
+{
+  U8 ort_repo_path[256], ort_hex[129], ort_entity_hex[17], ort_dir_path[256];
+  I64 ort_p = 0;
+  ort_p = ExtractToken(rest, ort_p, ort_repo_path, 256);
+  ort_p = ExtractToken(rest, ort_p, ort_hex, 129);
+  ort_p = ExtractToken(rest, ort_p, ort_entity_hex, 17);
+  ort_p = ExtractToken(rest, ort_p, ort_dir_path, 256);
+  U8 *ort_message = rest + ort_p;
+  I64 ort_mlen = StrLen(ort_message);
+
+  U8 ort_target[64];
+  Bool ort_hok = HexToHash(ort_hex, ort_target);
+  if (!ort_hok) { CommPrint(1, "DISPATCH_ERR bad_hash %s\n", ort_hex); return; }
+
+  U64 ort_entity_id;
+  Bool ort_eok = HexToU64(ort_entity_hex, &ort_entity_id);
+  if (!ort_eok) { CommPrint(1, "DISPATCH_ERR bad_entity_id %s\n", ort_entity_hex); return; }
+
+  U64 ort_ts = cnts.jiffies;
+  HgitOfferTreeWithRelation(ort_repo_path, ort_dir_path, ort_message, ort_mlen,
+                            ort_ts, relation_tag, ort_target, ort_entity_id);
+  CommPrint(1, "DISPATCH_OK %s\n", cmd_name);
+}
+
 // `hgit help` (also `hgit` with an empty/blank string - no command at
 // all): a real, discoverable command listing, closing a real
 // "modern CLI" gap this project otherwise had - `DISPATCH_ERR
@@ -5539,6 +5586,9 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD correct <repo_path> <target_hex> <entity_hex> <find_mask> <message>\n");
   CommPrint(1, "HELP_CMD revert <repo_path> <target_hex> <entity_hex> <find_mask> <message>\n");
   CommPrint(1, "HELP_CMD reconcile <repo_path> <target_hex> <entity_hex> <find_mask> <message>\n");
+  CommPrint(1, "HELP_CMD correcttree <repo_path> <target_hex> <entity_hex> <dir_path> <message> (recursive, ADR 0010)\n");
+  CommPrint(1, "HELP_CMD reverttree <repo_path> <target_hex> <entity_hex> <dir_path> <message> (recursive, ADR 0010)\n");
+  CommPrint(1, "HELP_CMD reconciletree <repo_path> <target_hex> <entity_hex> <dir_path> <message> (recursive, ADR 0010)\n");
   CommPrint(1, "HELP_CMD   (entity_hex: 0000000000000000 for none, ADR 0006)\n");
   CommPrint(1, "HELP_CMD undo <repo_path>\n");
   CommPrint(1, "HELP_CMD redo <repo_path>\n");
@@ -5652,6 +5702,12 @@ U0 Hgit(U8 *cmdline)
     HgitOfferRelatedCmd(rest, REL_REVERTS, "revert");
   } else if (StrCmp(cmd, "reconcile") == 0) {
     HgitOfferRelatedCmd(rest, REL_RECONCILES, "reconcile");
+  } else if (StrCmp(cmd, "correcttree") == 0) {
+    HgitOfferTreeRelatedCmd(rest, REL_CORRECTS, "correcttree");
+  } else if (StrCmp(cmd, "reverttree") == 0) {
+    HgitOfferTreeRelatedCmd(rest, REL_REVERTS, "reverttree");
+  } else if (StrCmp(cmd, "reconciletree") == 0) {
+    HgitOfferTreeRelatedCmd(rest, REL_RECONCILES, "reconciletree");
   } else if (StrCmp(cmd, "undo") == 0) {
     U8 undo_repo_path[256];
     ExtractToken(rest, 0, undo_repo_path, 256);

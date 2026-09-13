@@ -1,0 +1,18 @@
+DISPATCH_OK init C:/Home/P96Repo.hgs
+DISPATCH_OK offertree
+DISPATCH_OK correcttree
+P96_SEE_BEGIN
+SEE_COMMIT ts=1310928 parents=1 msg=correcting_nested_offer
+SEE_RELATION tag=2 target=f681c2e1d1125ab261c28fffae0ec91256ebf5d507fe12b4d59f523b998866c1613172daaae1ba7e83aedb957a36938d2bed37e37cac7ec44e341b0b619adda6 entity=0000000000000000
+SEE_TREE entries=2
+  entry type=2 id=a712b9208adf4ceb name=SubA
+    entry type=1 id=f5560f057f1ab34b name=inner.txt
+  entry type=1 id=381d28b574ab0b0a name=top.txt
+SEE_END
+P96_SEE_END
+P96_CHECK_BEGIN
+CHECK_OK objects=10
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+P96_CHECK_END
+PASS p96_offertree_relations_test

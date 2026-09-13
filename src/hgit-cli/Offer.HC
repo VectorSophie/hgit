@@ -510,8 +510,15 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
 // `HgitOffer`'s own scope before ADR 0005 added relations) - a real,
 // separate follow-up if `offertree` needs `correct`/`revert`/
 // `reconcile` too.
-U0 HgitOfferTree(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
-                 U64 timestamp)
+// ADR 0010's own last deferred item, now closed (experiments/96-
+// offertree-relations/): `offertree` gains the same real relation-tag
+// support (`correct`/`revert`/`reconcile`) `HgitOfferWithRelation`
+// already has for flat offerings - `HgitOfferTree` itself becomes a
+// thin REL_NONE wrapper over this, the same relationship `HgitOffer`
+// already has with `HgitOfferWithRelation`.
+U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
+                             U64 timestamp, U8 relation_tag, U8 *relation_target,
+                             U64 relation_entity_id)
 {
   I64 rsize;
   U8 *rbuf = FileRead(repo_path, &rsize);
@@ -584,7 +591,7 @@ U0 HgitOfferTree(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
                has_parent, timestamp, message, message_len,
-               REL_NONE, NULL, 0);
+               relation_tag, relation_target, relation_entity_id);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
@@ -626,4 +633,11 @@ U0 HgitOfferTree(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
 
   CurrentHeadWrite(repo_path, commit_hash);
   Free(archive);
+}
+
+U0 HgitOfferTree(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
+                 U64 timestamp)
+{
+  HgitOfferTreeWithRelation(repo_path, dir_path, message, message_len,
+                            timestamp, REL_NONE, NULL, 0);
 }

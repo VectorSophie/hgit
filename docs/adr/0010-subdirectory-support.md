@@ -13,8 +13,11 @@ CLI-semantics decision (Decision point 2, below) and wired it in: a
 **new, separate command, `hgit offertree`**, not a change to plain
 `hgit offer`. Every rendering/inspection command that shows file-level
 content (`See.HC`/probe 93, `Diff.HC`/probe 94, `Status.HC`/probe 95)
-is now fully nested-tree-aware too - see "What this slice does not
-do" below for what's still real, deliberately deferred scope.
+is now fully nested-tree-aware too, and `offertree` itself gained
+relation-tag support (`correcttree`/`reverttree`/`reconciletree`,
+probe 96) - the only real, deliberately deferred item left is
+cross-directory rename/move detection (see "What this slice does not
+do" below).
 
 ## Context
 
@@ -159,14 +162,23 @@ considered"):**
   `Graph.HC` don't touch tree/file content at all (they render commit
   chains/relations/branches only, never a file listing) - this item
   never actually applied to them.
-- `offertree` relation-tag support (`correct`/`revert`/`reconcile`
-  equivalents) - a plain offering only, matching `HgitOffer`'s own
-  original scope before ADR 0005 added relations.
+- ~~`offertree` relation-tag support~~ **Closed** (probe 96,
+  `experiments/96-offertree-relations/`): `HgitOfferTreeWithRelation`
+  parameterizes `HgitOfferTree`'s own body with `relation_tag`/
+  `relation_target`/`relation_entity_id` - the same relationship
+  `HgitOffer` already has with `HgitOfferWithRelation`. Three new
+  commands, `correcttree`/`reverttree`/`reconciletree`, dispatch
+  through a shared `HgitOfferTreeRelatedCmd` helper mirroring
+  `HgitOfferRelatedCmd`. Verified: a real nested repo, a
+  `correcttree` editing a nested file and relating it back to the
+  first commit, `SEE_RELATION tag=2 ...` correctly recorded and read
+  back, `hgit check` clean.
+
+With this, every item this ADR ever deferred except cross-directory
+rename/move detection is closed. ADR 0010's own scope is complete.
 
 ## What would justify revisiting this
 
 - Real usage showing same-directory-position-only rename tracking is
   too limited (files routinely moved between directories in normal
-  workflows).
-- Real usage of `offertree` showing the lack of relation-tag support
-  (`correct`/`revert`/`reconcile`) is a practical blocker.
+  workflows) - the one remaining deferred item.
