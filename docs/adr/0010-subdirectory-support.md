@@ -96,8 +96,17 @@ considered"):**
    adversarial case (deliberately breaking a reference *inside* a
    nested tree, to directly observe `CHECK_BROKEN_REF`/dangling firing
    on nested content, rather than just this positive "nothing's wrong"
-   case) hasn't been run yet - a real, low-risk follow-up test, not a
-   code gap.
+   case) is now run too (probe 92, `experiments/92-check-nested-
+   corruption/`): one byte of `SubA`'s own `inner.txt` entry's
+   `child_hash` flipped in place (not re-hashed, so every OTHER real
+   reference to `SubA` stays valid - isolates exactly one failure).
+   Real result: `CHECK_BROKEN_REF tree_child_missing <hash>` (the flat
+   scan found the broken reference *inside* `SubA`'s own content) and
+   `CHECK_DANGLING blob <hash>`/`CHECK_DANGLING_COUNT 1` (the
+   recursive reachability walk correctly lost `inner.txt`'s real blob
+   once its only real reference broke) - both firing from a
+   corruption that exists only inside a nested tree, confirming the
+   negative case matches the positive one probe 91 already showed.
 
 ## Alternatives considered
 
@@ -129,12 +138,20 @@ considered"):**
 - Modifying `hgit offer`'s own live dispatch - `offertree` is a
   separate command instead (see Decision point 2).
 - Cross-directory rename/move detection (see Decision point 1).
-- An adversarial test of `Check.HC` against nested trees (deliberately
-  breaking a reference inside one) - the positive case is real,
-  verified evidence (see Decision point 3); the negative case is a
-  real, low-risk follow-up, not run yet.
-- `Status.HC`/`Diff.HC`/rendering-command (`See.HC`/`HistoryDoc.HC`/
-  `ReconcileDoc.HC`/`Graph.HC`) awareness of nested trees.
+- `Status.HC`/`Diff.HC`/rendering-command awareness of nested trees -
+  `See.HC` closed (probe 93, `experiments/93-see-nested-trees/`:
+  `SeePrintTreeEntries` recurses into any `OBJ_TREE` entry, indenting
+  one level deeper, verified on a real 2-level-deep repo). `Diff.HC`
+  now also closed (probe 94, `experiments/94-diff-nested-trees/`:
+  `DiffPrintTreeChanges` recurses into a modified/new/deleted
+  subdirectory, path-prefixing every real change - `SubA/inner.txt`,
+  not just `SubA`; a same-name kind change reported as a real, honest
+  `DIFF_TYPE_CHANGED` rather than guessed at). `HistoryDoc.HC`/
+  `ReconcileDoc.HC`/`Graph.HC` don't touch tree/file content at all (a
+  re-read while writing this up found they render commit chains/
+  relations/branches only, never a file listing - "flat" doesn't
+  apply, and neither does this item) - only `Status.HC` (comparing a
+  live directory against nested trees) remains genuinely open here.
 - `offertree` relation-tag support (`correct`/`revert`/`reconcile`
   equivalents) - a plain offering only, matching `HgitOffer`'s own
   original scope before ADR 0005 added relations.

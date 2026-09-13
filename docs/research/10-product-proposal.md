@@ -1241,9 +1241,85 @@ referential-integrity scan and its reachability/dangling walk are
 generic per-object-type, not depth-aware, so a nested `OBJ_TREE`
 record gets the exact same treatment as a top-level one automatically
 - exactly what probe 91's own `CHECK_OK objects=5`/`CHECK_REFS_OK`/
-`CHECK_DANGLING_NONE` already showed in practice. Still a real,
-low-risk follow-up: an adversarial test (deliberately breaking a
-reference inside a nested tree) hasn't been run yet.
+`CHECK_DANGLING_NONE` already showed in practice.
+
+**The adversarial follow-up, run for real**: `experiments/92-check-
+nested-corruption/` (PASS). One byte of `SubA`'s own `inner.txt`
+entry's `child_hash` flipped in place (not re-hashed, so `Index.HC`'s
+own hash-keyed lookup means every OTHER real reference to `SubA` -
+just the top-level tree's own entry - still resolves; isolates exactly
+one failure instead of cascading into the whole parent chain). Real
+result: `CHECK_BROKEN_REF tree_child_missing <hash>` (the flat scan
+found the broken reference *inside* `SubA`'s own content, not just at
+the top level) and `CHECK_DANGLING blob <hash>`/
+`CHECK_DANGLING_COUNT 1` (the recursive reachability walk correctly
+lost `inner.txt`'s real blob once its only real reference broke) - the
+negative case now matches probe 91's positive one, closing that item.
+
+**`hgit see` now recurses into nested trees**: `experiments/93-see-
+nested-trees/` (PASS) - closes the `See.HC` part of ADR 0010's own
+remaining "rendering-command awareness of nested trees" item. Before
+this, `hgit see` printed only one flat level of a commit's tree, so a
+subdirectory's own contents (buildable since probe 91's `offertree`)
+were invisible short of some other, not-yet-built command.
+`SeePrintTreeEntries` recurses into any `OBJ_TREE` entry (same
+generic-per-object-type pattern `Check.HC`'s own `CheckMarkReachable`
+already established), indenting one level deeper each time, with a
+real, honest marker for a missing child instead of silently stopping.
+Verified on a real 2-level-deep repo (`SubA/SubB/deep.txt`): both
+nesting levels render correctly indented, `deep.txt` genuinely reached
+through two real recursive lookups. Regression: probe 91's own test
+re-run clean (now additionally showing `inner.txt` nested under
+`SubA` - the new, correct, additive behavior), and the project's full
+command-surface regression (`experiments/65-head-deletion/`)
+unaffected - a flat, non-nested tree's own output is byte-identical to
+before. Applied the project's own established caller-recompile
+discipline again (redefining `See.HC` alone wasn't enough - `Hgit.HC`'s
+own dispatcher needed re-pushing too, since it's `HgitSee`'s own
+caller). Still open at the time: `HistoryDoc.HC`/`ReconcileDoc.HC`/
+`Graph.HC` (still flat) and `Status.HC`/`Diff.HC` (comparing nested
+trees across commits) - real, separate follow-up work, one command at
+a time.
+
+**`hgit diff` also now recurses into nested trees, and a real
+DirTreeDel dead end found along the way**: `experiments/94-diff-
+nested-trees/` (PASS). `DiffPrintTreeChanges` refactors `Diff.HC`'s
+existing NEW/MODIFIED/DELETED/RENAMED logic into a recursive helper,
+same generic-per-object-type pattern as `See.HC`/`Check.HC`: a
+modified subdirectory recurses (real changes reported with their full
+nested path, e.g. `SubA/inner.txt`, not one opaque "`SubA` changed"
+line); a wholly new or deleted subdirectory recurses against an empty
+tree so every real nested entry gets its own line; a same-name kind
+change (file<->directory) reports a new, honest `DIFF_TYPE_CHANGED`
+signal rather than guessing. Verified on a real 2-level-deep repo:
+`DIFF_NEW SubA/SubB/deep.txt` + `DIFF_MODIFIED SubA/inner.txt` for one
+commit, `DIFF_DELETED SubA/SubB/deep.txt` + `DIFF_DELETED SubA/inner.txt`
+for a later one. Also found and fixed a real "duplicate member"
+sibling-block-same-local-name collision (probe 5's own documented
+HolyC quirk, recurring) on first push.
+
+A real, separate dead end surfaced while building this: the test's
+original design used `DirTreeDel` to remove a whole subdirectory from
+disk, which **hung the shared daemon** - isolated (via a second,
+minimal, zero-hgit-code test) to `DirTreeDel` itself, not this
+project's own code. A second, self-inflicted incident happened during
+the first recovery attempt (an under-sized 128KB bootstrap buffer
+receiving a 222KB package push caused a real GPF) - recovered
+correctly the second time with the bootstrap's own `Db`/RX-FIFO sized
+to match `daemon_v2.hc`'s real 512KB bound. Both incidents fully
+logged in `docs/research/failed-approaches.md`'s 2026-09-14 entry,
+with the persistent disk's own repo history confirmed intact after
+each (`CHECK_OK objects=138 → 144 → 150`). Fixed the test itself by
+deleting files individually instead of the whole directory - real,
+if slightly different, coverage of the same DELETED-reporting logic.
+
+Also corrected an assumption in ADR 0010's own "not yet done" list
+while writing this up: `HistoryDoc.HC`/`ReconcileDoc.HC`/`Graph.HC`
+don't touch tree/file content at all (they render commit chains,
+relations, and branch structure, never a file listing) - "still flat"
+didn't actually apply to them, and this item doesn't either. Only
+`Status.HC` (comparing a live directory against nested trees) remains
+genuinely open on that list now.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

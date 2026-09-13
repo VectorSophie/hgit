@@ -1,0 +1,13 @@
+DISPATCH_OK init C:/Home/P93Repo.hgs
+DISPATCH_OK offertree
+P93_SEE_BEGIN
+SEE_COMMIT ts=3317432 parents=0 msg=two_levels_deep
+SEE_TREE entries=2
+  entry type=2 id=e64001523af35e4d name=SubA
+    entry type=2 id=07135df1bd12036c name=SubB
+      entry type=1 id=ed3d308e9080296e name=deep.txt
+    entry type=1 id=8da3c08054028bfd name=mid.txt
+  entry type=1 id=bf6223585c9e81eb name=top.txt
+SEE_END
+P93_SEE_END
+PASS p93_see_nested_test

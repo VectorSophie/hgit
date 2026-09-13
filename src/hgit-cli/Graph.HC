@@ -1,29 +1,42 @@
-// Graph.HC — `hgit graph`: a real DolDoc tree view of a
-// repo's ENTIRE commit history across every declared path, not just
-// one path's own linear chain (`historydoc`) or relation-carrying
-// commits only (`reconcileoverview`). "main"'s own chain renders as
-// the trunk (root at the top, HEAD at the tip, each commit nested one
-// level deeper than its parent), using the same real `$TR$`/
-// `$ID,+2$`/`$ID,-2$` tree-widget nesting `reconcileoverview` already
-// verified (probes 57-59). Every OTHER declared path attaches as its
-// own nested branch at the exact commit it forked from (`path new`
-// copies the current path's HEAD at creation time - Paths.HC's own
-// `PathNew` - so a real, findable fork point always exists on a
-// direct ancestor path) - a real, rendered analogue of `git log
-// --graph --all`, scoped to this project's own actual ref model
-// (named paths, not full branches with merges - no multi-parent
-// commits exist yet, see History.HC's own note).
+// Graph.HC — `hgit graph`: a real DolDoc tree view of a repo's ENTIRE
+// commit history across every declared path, not just one path's own
+// linear chain (`historydoc`) or relation-carrying commits only
+// (`reconcileoverview`). "main"'s own chain is the trunk; every OTHER
+// declared path attaches as its own nested branch at the exact commit
+// it forked from (`path new` copies the current path's HEAD at
+// creation time - Paths.HC's own `PathNew` - so a real, findable fork
+// point always exists on a direct ancestor path) - a real, rendered
+// analogue of `git log --graph --all`, scoped to this project's own
+// actual ref model (named paths, not full branches with merges - no
+// multi-parent commits exist yet, see History.HC's own note).
+//
+// ONE `$TR$` widget per BRANCH (main's own trunk, and each other
+// path), not one per commit - a real redesign (probe 81's own
+// original per-commit nesting, see experiments/81-hgit-graph/'s own
+// follow-up research). Reading TempleOS's own real DolDoc source
+// (D:/Adam/DolDoc/DocRun.HC.Z) confirmed expanding a `$TR$` node
+// REPLACES its own label with its child content, cascading through
+// every nested level - fine for one level, but a per-commit design
+// means fully expanding a real history renders as a string of
+// "-]-]-] <deepest commit only>" with every ancestor's own label
+// gone, not a readable indented list. Wrapping a whole branch's
+// commits as ONE collapsible group, with each commit as a plain
+// (non-widget) line inside it, avoids this entirely: only one label
+// ever gets "replaced" per branch (the group's own summary line,
+// swapped for its real content on expand - the same trade-off any
+// collapsible section makes), and the commits themselves stay
+// visible and readable once that group is open.
 //
 // Scoped honestly: a branch's fork point is found by walking backward
 // from its HEAD until a commit already in MAIN's own chain is hit -
 // if a path was itself created FROM another non-main path (a branch
 // of a branch), and that intermediate path's own unique commits never
 // reach main directly, this renders the grandchild path as its own
-// second top-level tree instead of nesting it under its true
+// second top-level group instead of nesting it under its true
 // immediate parent path. A real, documented simplification for this
-// first version, not a silent wrong answer - the path's own full
-// history is still shown completely, just not nested under the exact
-// right ancestor.
+// version, not a silent wrong answer - the path's own full history is
+// still shown completely, just not nested under the exact right
+// ancestor.
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
 // Index.HC, Hex.HC, Meta.HC (MetaPathCount/MetaPathListInto/
@@ -36,15 +49,29 @@ U0 GraphAppendStr(U8 *doc, I64 *dlen, U8 *s)
   *dlen += gi;
 }
 
-// Opens one commit's own $TR$ tree node (12 hex chars of its hash,
-// then its message) - caller closes with $ID,-2$ once its children
-// (if any) are written. `label_prefix` (e.g. a path name in brackets)
-// is prepended to the node's own text when non-empty - used for the
-// first node of a non-main branch so it's clear which path it is.
-U0 GraphOpenCommitNode(U8 *doc, I64 *dlen, U8 *hash, U8 *content, U8 *label_prefix)
+// Opens one BRANCH's own collapsible $TR$ group node - a real commit
+// count in the label (not a guessed name), so collapsed state alone
+// already tells you how much is inside. Caller closes with $ID,-2$
+// once every commit line (and any nested branch groups) are written.
+U0 GraphOpenBranchNode(U8 *doc, I64 *dlen, U8 *label_prefix, I64 commit_count)
 {
   GraphAppendStr(doc, dlen, "$TR,\"");
   GraphAppendStr(doc, dlen, label_prefix);
+  U8 numbuf[24];
+  I64 ni = 0, nv = commit_count;
+  if (nv == 0) numbuf[ni++] = '0';
+  while (nv > 0) { numbuf[ni++] = '0' + nv%10; nv /= 10; }
+  I64 nj;
+  for (nj=ni-1; nj>=0; nj--) doc[(*dlen)++] = numbuf[nj];
+  GraphAppendStr(doc, dlen, " commits\"$$ID,+2$");
+}
+
+// Appends one commit as a plain (non-widget) line - real hash prefix
+// and real message, no collapsibility of its own. This is the whole
+// point of the redesign: a commit is just readable text, never a
+// vanishing-on-expand label.
+U0 GraphAppendCommitLine(U8 *doc, I64 *dlen, U8 *hash, U8 *content)
+{
   U8 hex[129];
   HashToHex(hash, hex);
   I64 hi;
@@ -54,7 +81,7 @@ U0 GraphOpenCommitNode(U8 *doc, I64 *dlen, U8 *hash, U8 *content, U8 *label_pref
   U8 *msg = CommitMessage(content);
   I64 mi;
   for (mi=0; mi<mlen; mi++) doc[(*dlen)++] = msg[mi];
-  GraphAppendStr(doc, dlen, "\"$$ID,+2$");
+  GraphAppendStr(doc, dlen, "$CR$");
 }
 
 U0 HgitGraph(U8 *repo_path, U8 *doc_path)
@@ -112,7 +139,7 @@ U0 HgitGraph(U8 *repo_path, U8 *doc_path)
 
   // Walk main's own chain, HEAD..root order first (easiest direction
   // to follow parent pointers), then reverse in place so index 0 is
-  // the root and rendering can nest deeper as it moves toward HEAD.
+  // the root and rendering can walk root-to-tip.
   U8 *main_chain = MAlloc(rcount*64 + 64);
   I64 main_count = 0;
   U8 mcur[64];
@@ -230,24 +257,32 @@ U0 HgitGraph(U8 *repo_path, U8 *doc_path)
     }
   }
 
-  // Render: walk main's trunk root-to-tip, nesting one level per
-  // commit. Immediately after opening each trunk node, attach every
-  // path whose fork point is this exact commit as its own fully
-  // self-contained nested subtree (opened and closed before moving on
-  // to the next trunk commit, so the trunk's own nesting depth only
-  // ever grows by one per trunk commit, never by an attached branch).
+  // Render: ONE collapsible group for the whole main trunk, its own
+  // commits as plain lines inside. Immediately after the trunk commit
+  // a path forked from, open THAT path's own nested group (its own
+  // plain commit lines), close it, then continue with main's own next
+  // commit - so at most one extra level of $TR$ nesting ever exists
+  // (a branch group inside the trunk group), never one per commit.
+  GraphOpenBranchNode(doc, &dlen, "main, ", main_count);
   I64 ci;
   for (ci=0; ci<main_count; ci++) {
     I64 coff_rel;
     IndexLookup(idx_hashes, idx_offsets, idx_count, main_chain+ci*64, &coff_rel);
     I64 coff = 16 + coff_rel;
     U8 *ccontent = rbuf + coff + 9;
-    GraphOpenCommitNode(doc, &dlen, main_chain+ci*64, ccontent, "");
+    GraphAppendCommitLine(doc, &dlen, main_chain+ci*64, ccontent);
 
     I64 apn;
     for (apn=0; apn<real_path_count; apn++) {
       if (fork_idx[apn] == ci) {
         U8 *apname = path_names + apn*META_MAX_PATH_NAME;
+        U8 lbl[META_MAX_PATH_NAME+4];
+        I64 li = 0;
+        lbl[li++] = '[';
+        I64 lj;
+        for (lj=0; apname[lj]; lj++) lbl[li++] = apname[lj];
+        lbl[li++] = ']'; lbl[li++] = ' '; lbl[li] = 0;
+        GraphOpenBranchNode(doc, &dlen, lbl, branch_count[apn]);
         I64 bi;
         for (bi=0; bi<branch_count[apn]; bi++) {
           U8 *bhash = branch_chains + (apn*rcount+bi)*64;
@@ -255,24 +290,13 @@ U0 HgitGraph(U8 *repo_path, U8 *doc_path)
           IndexLookup(idx_hashes, idx_offsets, idx_count, bhash, &aoff_rel);
           I64 aoff = 16 + aoff_rel;
           U8 *acontent = rbuf + aoff + 9;
-          if (bi == 0) {
-            U8 lbl[META_MAX_PATH_NAME+4];
-            I64 li = 0;
-            lbl[li++] = '[';
-            I64 lj;
-            for (lj=0; apname[lj]; lj++) lbl[li++] = apname[lj];
-            lbl[li++] = ']'; lbl[li++] = ' '; lbl[li] = 0;
-            GraphOpenCommitNode(doc, &dlen, bhash, acontent, lbl);
-          } else {
-            GraphOpenCommitNode(doc, &dlen, bhash, acontent, "");
-          }
+          GraphAppendCommitLine(doc, &dlen, bhash, acontent);
         }
-        I64 bj;
-        for (bj=0; bj<branch_count[apn]; bj++) GraphAppendStr(doc, &dlen, "$ID,-2$");
+        GraphAppendStr(doc, &dlen, "$ID,-2$");
       }
     }
   }
-  for (ci=0; ci<main_count; ci++) GraphAppendStr(doc, &dlen, "$ID,-2$");
+  GraphAppendStr(doc, &dlen, "$ID,-2$");
 
   FileWrite(doc_path, doc, dlen);
 

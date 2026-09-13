@@ -24,6 +24,58 @@
 // Also prints ADR 0005/0006's relation tag/target/entity, if the
 // commit has one (experiments/51-relation-commands/,
 // experiments/53-entity-scoped-relations/).
+//
+// Recurses into nested trees (ADR 0010, experiments/93-see-nested-
+// trees/) - a real, user-visible gap `hgit offertree` left open:
+// before this, `see` only ever printed one flat level of entries, so
+// a subdirectory's own contents were invisible short of a separate
+// command. `SeePrintTreeEntries` is generic per-object-type (same
+// pattern `CheckMarkReachable` in Check.HC already established for
+// this project) - an `OBJ_TREE` child is looked up and recursed into,
+// indented one level deeper, with no depth limit.
+
+// Recursively prints one tree's own entries, then recurses into any
+// `OBJ_TREE` child at `depth+1` indentation. A missing child object
+// prints a real, honest marker instead of silently stopping or
+// crashing - the same "don't hide a broken reference" stance
+// Check.HC's own referential-integrity pass takes.
+U0 SeePrintTreeEntries(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
+                       U8 *tree_content, I64 depth)
+{
+  U32 tcount = GetU32LE(tree_content, 0);
+  I64 tpos = 4;
+  U32 te;
+  I64 i, d;
+  for (te=0; te<tcount; te++) {
+    U8 nlen = tree_content[tpos]; tpos += 1;
+    U8 *name = tree_content + tpos; tpos += nlen;
+    U8 ttype = tree_content[tpos]; tpos += 1;
+    U8 *child_hash = tree_content + tpos; tpos += 64;
+    U64 entity_id = GetU64LE(tree_content, tpos); tpos += 8; // ADR 0004
+    U8 entity_hex[17];
+    U64ToHex(entity_id, entity_hex);
+
+    for (d=0; d<depth; d++) CommPrint(1, "  ");
+    CommPrint(1, "  entry type=%d id=%s name=", ttype, entity_hex);
+    for (i=0; i<nlen; i++) CommPrint(1, "%c", name[i]);
+    CommPrint(1, "\n");
+
+    if (ttype == OBJ_TREE) {
+      I64 child_off_rel;
+      Bool child_found = IndexLookup(idx_hashes, idx_offsets, idx_count,
+                                      child_hash, &child_off_rel);
+      if (child_found) {
+        I64 child_off = 16 + child_off_rel;
+        U8 *child_content = rbuf + child_off + 9;
+        SeePrintTreeEntries(rbuf, idx_hashes, idx_offsets, idx_count,
+                            child_content, depth+1);
+      } else {
+        for (d=0; d<depth+1; d++) CommPrint(1, "  ");
+        CommPrint(1, "  (missing nested tree object)\n");
+      }
+    }
+  }
+}
 
 U0 HgitSee(U8 *repo_path, U8 *target_hash)
 {
@@ -85,26 +137,8 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
   U8 *tree_content = rbuf + tree_off + 9;
 
   U32 tcount = GetU32LE(tree_content, 0);
-  I64 tpos = 4;
-  U32 te;
   CommPrint(1, "SEE_TREE entries=%d\n", tcount);
-  for (te=0; te<tcount; te++) {
-    U8 nlen = tree_content[tpos]; tpos += 1;
-    U8 *name = tree_content + tpos; tpos += nlen;
-    U8 ttype = tree_content[tpos]; tpos += 1;
-    tpos += 64;
-    U64 entity_id = GetU64LE(tree_content, tpos); tpos += 8; // ADR 0004
-    U8 entity_hex[17];
-    U64ToHex(entity_id, entity_hex); // hex, not %d - a U64 with the high
-                                     // bit set prints as negative under
-                                     // plain %d (hit in practice, see
-                                     // experiments/49-entity-id/); hex
-                                     // round-trips cleanly and is what
-                                     // a user copies into `correct`/etc.
-    CommPrint(1, "  entry type=%d id=%s name=", ttype, entity_hex);
-    for (i=0; i<nlen; i++) CommPrint(1, "%c", name[i]);
-    CommPrint(1, "\n");
-  }
+  SeePrintTreeEntries(rbuf, idx_hashes, idx_offsets, idx_count, tree_content, 0);
   CommPrint(1, "SEE_END\n");
   Free(idx_hashes);
   Free(idx_offsets);

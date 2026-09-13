@@ -1347,3 +1347,71 @@ convention every real command's own `rbuf` usage already follows.
 Skipping the header to save a few bytes in a throwaway test buffer is
 a real, reproducible way to feed garbage into offset math that assumes
 it's there.
+
+## 2026-09-14 — `DirTreeDel` itself hangs, even on a trivial 2-file directory - a real TempleOS-level dead end, not an hgit bug
+
+**Tried:** A probe 94 test for `hgit diff`'s new nested-tree recursion
+(ADR 0010) needed a real "whole subdirectory deleted from disk" case:
+delete every file inside a nested subdirectory, call `DirTreeDel` on
+the subdirectory itself, then re-offer and diff. Ran it against a real
+QEMU daemon exactly like every other probe.
+
+**Happened:** A real hang, same shape as the probe 90 incident (VM
+`system_reset` still reported the guest as `running`, but zero further
+serial output ever appeared - not a crash, a real non-terminating
+loop). First reaction was to suspect `HgitOfferTree`/`TreeBuildRecursive`
+or the new `Diff.HC` recursion, all touched by this same probe.
+
+**Why (isolated, not assumed):** rather than guess which of several
+new pieces was at fault, wrote a second, minimal test with **zero
+hgit code involved at all** - just `DirMk`/`FileWrite` to build a
+trivial 2-file/1-subdirectory tree, then one bare `DirTreeDel` call.
+That alone hung identically, immediately after printing a `BEFORE`
+marker and before any `AFTER` marker - conclusively isolating this to
+`DirTreeDel` itself (a real TempleOS built-in this project had never
+exercised before), not to any of this session's own new code.
+
+**A second, self-inflicted incident during recovery**: the first
+re-bootstrap attempt used the ORIGINAL `BOOTSTRAP_CMDS` default
+(`Db=MAlloc(131072)`, a 128KB buffer) instead of the already-documented
+512KB-buffer fix this project's own standing practice calls for -
+reloading the real 222KB package into an undersized buffer caused a
+**second**, different real `Fault:0x0D General Protection` (confirmed
+via a live screendump of the TempleOS debugger, not assumed), requiring
+a THIRD full reset. Recovered correctly the second time by re-declaring
+`Db`/the RX FIFO at 524288 bytes in the stage-1 bootstrap itself
+(matching stage-2's own `Di<524287` bound), not just relying on
+`daemon_v2.hc`'s own already-fixed body - the bootstrap's OWN
+`Db`/FIFO sizing has to match too, a mismatch between the two isn't
+caught by anything short of actually overflowing it.
+
+**Worked instead:** don't use `DirTreeDel` in test drivers (or,
+provisionally, anywhere else in this project) until its own real
+behavior is separately, properly investigated - delete every real
+file individually instead (`Del(path, FALSE, FALSE, FALSE)` per file),
+leaving now-empty directories in place. `TreeBuildRecursive` handles
+this correctly and was never the problem: an emptied-but-still-present
+subdirectory offers as a real (now-empty) `OBJ_TREE`, and probe 94's
+own real `hgit diff` output correctly showed both files as
+`DIFF_DELETED` with their full nested paths - genuine coverage of the
+recursive-deletion-reporting code path, just via files disappearing
+rather than the whole directory entry vanishing from disk.
+
+**Recovery** (twice, in a row): both times the standard `system_reset`
++ reboot dance + full stage-1→stage-2 re-bootstrap + package reload +
+`experiments/65-head-deletion/test_driver.hc` regression, confirming
+the persistent disk's own repo history survived intact both times
+(object count correctly kept growing: 138 → 144 → 150 across the two
+incidents, never reset or corrupted). A peer session sharing the same
+daemon was messaged proactively before and after each recovery attempt
+and held off touching the shared daemon throughout - real, coordinated
+avoidance of a second collision on top of an already-live incident.
+
+**Standing lesson, twofold**: (1) `DirTreeDel` is now a known, real
+dead end for this project until separately investigated - don't reach
+for it, even for "surely trivial" cleanup, without a `timeout`-guarded
+isolated test first. (2) Any daemon re-bootstrap must size stage-1's
+own `Db`/RX-FIFO to match whatever's about to be pushed through it
+(512KB, matching `daemon_v2.hc`'s own bound) - copying `daemon_v2.hc`
+correctly is not enough if the STAGE-1 bootstrap that gets it running
+still uses the smaller original default.

@@ -100,35 +100,43 @@ loaded) for the same list straight from the live dispatcher.
 `hgit graph` walks every declared path (not just the current one) and
 renders the whole commit history as a real, native DolDoc tree — the
 same collapsible `$TR$` widget TempleOS itself ships, not an ASCII
-approximation. The trunk is whichever path came first; every other
-path attaches as its own nested branch at the exact commit it forked
-from. Reformatted for readability, the document produced by the
-sequence above looks like this:
+approximation. One collapsible node per **branch** (the trunk, and
+each other path), with that branch's own commits as plain lines inside
+it — not one node per commit, which would look fine collapsed but
+swallow every ancestor's own label the moment you expanded deep enough
+(a real property of nested `$TR$` widgets, discovered the hard way —
+see `experiments/81-hgit-graph/`). Every other path attaches its own
+branch node at the exact commit it forked from. Reformatted for
+readability, the document produced by the sequence above looks like
+this:
 
 ```
 hgit history graph
 
-468bbd6656 offer_one
-  0c6b94e6ba offer_two
-    [feature] b0598745e9 offer_on_feature
+[+] main, 3 commits
+      468bbd6656 offer_one
+      0c6b94e6ba offer_two
+      [+] [feature] 1 commits
+            b0598745e9 offer_on_feature
 ```
 
-`offer_one` is the root; `offer_two` nests one level under it (its
-real parent); `feature`'s own unique commit nests a further level
-under `offer_two` — exactly its fork point, not guessed.
+Real screenshot, collapsed (`Ed()`, the exact document `hgit graph`
+produces):
 
-In TempleOS's own editor (`Ed()`), this renders as a real, native,
-**collapsible** `$TR$` tree — collapsed by default (confirmed from
-real shipped TempleOS docs, probe 57; that's DolDoc's own convention,
-not an hgit limitation), one real click away from expanded. No
-screenshot here: this project's headless QEMU test harness drives
-everything through scripted keyboard/serial injection, and a real
-mouse click on a collapsed tree node turned out to be a genuinely hard
-thing to automate reliably (tried keyboard cursor positioning, and
-absolute-positioning mouse clicks via a real `usb-tablet` device across
-several attempts — none of them toggled the node). Rather than publish
-a screenshot that only shows one collapsed line and calling it "the
-graph," the reformatted structure above is the real, complete picture.
+<p align="center">
+  <img src="experiments/81-hgit-graph/evidence/rendered-graph-redesign-collapsed.png" alt="hgit graph, collapsed" width="420">
+</p>
+
+Collapsed by default (DolDoc's own convention, confirmed from real
+shipped TempleOS docs, probe 57 — not an hgit limitation), one real
+click away from expanded — `experiments/81-hgit-graph/`'s own research
+into TempleOS's `DocEntryRun`/`cur_entry` mechanism got a real,
+successful expansion working and screenshotted for an earlier version
+of this feature. This project's headless QEMU harness drives
+everything through scripted keyboard/serial injection rather than a
+mouse, so a fresh expanded screenshot of this exact redesign is still
+an open item — the probe's own README has the honest, dated account of
+what's captured so far and what isn't.
 
 ## How hgit differs from Git
 

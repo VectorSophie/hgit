@@ -1,0 +1,15 @@
+DISPATCH_OK init C:/Home/P94Repo.hgs
+DISPATCH_OK offertree
+DISPATCH_OK offertree
+P94_DIFF1_BEGIN
+DIFF_NEW SubA/SubB/deep.txt
+DIFF_MODIFIED SubA/inner.txt
+DIFF_END
+P94_DIFF1_END
+DISPATCH_OK offertree
+P94_DIFF2_BEGIN
+DIFF_DELETED SubA/SubB/deep.txt
+DIFF_DELETED SubA/inner.txt
+DIFF_END
+P94_DIFF2_END
+PASS p94_diff_nested_test

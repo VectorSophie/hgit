@@ -3357,32 +3357,45 @@ U0 HgitReconcileOverview(U8 *repo_path, U8 *doc_path)
   Free(idx_hashes);
   Free(idx_offsets);
 }
-// Graph.HC — `hgit graph`: a real DolDoc tree view of a
-// repo's ENTIRE commit history across every declared path, not just
-// one path's own linear chain (`historydoc`) or relation-carrying
-// commits only (`reconcileoverview`). "main"'s own chain renders as
-// the trunk (root at the top, HEAD at the tip, each commit nested one
-// level deeper than its parent), using the same real `$TR$`/
-// `$ID,+2$`/`$ID,-2$` tree-widget nesting `reconcileoverview` already
-// verified (probes 57-59). Every OTHER declared path attaches as its
-// own nested branch at the exact commit it forked from (`path new`
-// copies the current path's HEAD at creation time - Paths.HC's own
-// `PathNew` - so a real, findable fork point always exists on a
-// direct ancestor path) - a real, rendered analogue of `git log
-// --graph --all`, scoped to this project's own actual ref model
-// (named paths, not full branches with merges - no multi-parent
-// commits exist yet, see History.HC's own note).
+// Graph.HC — `hgit graph`: a real DolDoc tree view of a repo's ENTIRE
+// commit history across every declared path, not just one path's own
+// linear chain (`historydoc`) or relation-carrying commits only
+// (`reconcileoverview`). "main"'s own chain is the trunk; every OTHER
+// declared path attaches as its own nested branch at the exact commit
+// it forked from (`path new` copies the current path's HEAD at
+// creation time - Paths.HC's own `PathNew` - so a real, findable fork
+// point always exists on a direct ancestor path) - a real, rendered
+// analogue of `git log --graph --all`, scoped to this project's own
+// actual ref model (named paths, not full branches with merges - no
+// multi-parent commits exist yet, see History.HC's own note).
+//
+// ONE `$TR$` widget per BRANCH (main's own trunk, and each other
+// path), not one per commit - a real redesign (probe 81's own
+// original per-commit nesting, see experiments/81-hgit-graph/'s own
+// follow-up research). Reading TempleOS's own real DolDoc source
+// (D:/Adam/DolDoc/DocRun.HC.Z) confirmed expanding a `$TR$` node
+// REPLACES its own label with its child content, cascading through
+// every nested level - fine for one level, but a per-commit design
+// means fully expanding a real history renders as a string of
+// "-]-]-] <deepest commit only>" with every ancestor's own label
+// gone, not a readable indented list. Wrapping a whole branch's
+// commits as ONE collapsible group, with each commit as a plain
+// (non-widget) line inside it, avoids this entirely: only one label
+// ever gets "replaced" per branch (the group's own summary line,
+// swapped for its real content on expand - the same trade-off any
+// collapsible section makes), and the commits themselves stay
+// visible and readable once that group is open.
 //
 // Scoped honestly: a branch's fork point is found by walking backward
 // from its HEAD until a commit already in MAIN's own chain is hit -
 // if a path was itself created FROM another non-main path (a branch
 // of a branch), and that intermediate path's own unique commits never
 // reach main directly, this renders the grandchild path as its own
-// second top-level tree instead of nesting it under its true
+// second top-level group instead of nesting it under its true
 // immediate parent path. A real, documented simplification for this
-// first version, not a silent wrong answer - the path's own full
-// history is still shown completely, just not nested under the exact
-// right ancestor.
+// version, not a silent wrong answer - the path's own full history is
+// still shown completely, just not nested under the exact right
+// ancestor.
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
 // Index.HC, Hex.HC, Meta.HC (MetaPathCount/MetaPathListInto/
@@ -3395,15 +3408,29 @@ U0 GraphAppendStr(U8 *doc, I64 *dlen, U8 *s)
   *dlen += gi;
 }
 
-// Opens one commit's own $TR$ tree node (12 hex chars of its hash,
-// then its message) - caller closes with $ID,-2$ once its children
-// (if any) are written. `label_prefix` (e.g. a path name in brackets)
-// is prepended to the node's own text when non-empty - used for the
-// first node of a non-main branch so it's clear which path it is.
-U0 GraphOpenCommitNode(U8 *doc, I64 *dlen, U8 *hash, U8 *content, U8 *label_prefix)
+// Opens one BRANCH's own collapsible $TR$ group node - a real commit
+// count in the label (not a guessed name), so collapsed state alone
+// already tells you how much is inside. Caller closes with $ID,-2$
+// once every commit line (and any nested branch groups) are written.
+U0 GraphOpenBranchNode(U8 *doc, I64 *dlen, U8 *label_prefix, I64 commit_count)
 {
   GraphAppendStr(doc, dlen, "$TR,\"");
   GraphAppendStr(doc, dlen, label_prefix);
+  U8 numbuf[24];
+  I64 ni = 0, nv = commit_count;
+  if (nv == 0) numbuf[ni++] = '0';
+  while (nv > 0) { numbuf[ni++] = '0' + nv%10; nv /= 10; }
+  I64 nj;
+  for (nj=ni-1; nj>=0; nj--) doc[(*dlen)++] = numbuf[nj];
+  GraphAppendStr(doc, dlen, " commits\"$$ID,+2$");
+}
+
+// Appends one commit as a plain (non-widget) line - real hash prefix
+// and real message, no collapsibility of its own. This is the whole
+// point of the redesign: a commit is just readable text, never a
+// vanishing-on-expand label.
+U0 GraphAppendCommitLine(U8 *doc, I64 *dlen, U8 *hash, U8 *content)
+{
   U8 hex[129];
   HashToHex(hash, hex);
   I64 hi;
@@ -3413,7 +3440,7 @@ U0 GraphOpenCommitNode(U8 *doc, I64 *dlen, U8 *hash, U8 *content, U8 *label_pref
   U8 *msg = CommitMessage(content);
   I64 mi;
   for (mi=0; mi<mlen; mi++) doc[(*dlen)++] = msg[mi];
-  GraphAppendStr(doc, dlen, "\"$$ID,+2$");
+  GraphAppendStr(doc, dlen, "$CR$");
 }
 
 U0 HgitGraph(U8 *repo_path, U8 *doc_path)
@@ -3471,7 +3498,7 @@ U0 HgitGraph(U8 *repo_path, U8 *doc_path)
 
   // Walk main's own chain, HEAD..root order first (easiest direction
   // to follow parent pointers), then reverse in place so index 0 is
-  // the root and rendering can nest deeper as it moves toward HEAD.
+  // the root and rendering can walk root-to-tip.
   U8 *main_chain = MAlloc(rcount*64 + 64);
   I64 main_count = 0;
   U8 mcur[64];
@@ -3589,24 +3616,32 @@ U0 HgitGraph(U8 *repo_path, U8 *doc_path)
     }
   }
 
-  // Render: walk main's trunk root-to-tip, nesting one level per
-  // commit. Immediately after opening each trunk node, attach every
-  // path whose fork point is this exact commit as its own fully
-  // self-contained nested subtree (opened and closed before moving on
-  // to the next trunk commit, so the trunk's own nesting depth only
-  // ever grows by one per trunk commit, never by an attached branch).
+  // Render: ONE collapsible group for the whole main trunk, its own
+  // commits as plain lines inside. Immediately after the trunk commit
+  // a path forked from, open THAT path's own nested group (its own
+  // plain commit lines), close it, then continue with main's own next
+  // commit - so at most one extra level of $TR$ nesting ever exists
+  // (a branch group inside the trunk group), never one per commit.
+  GraphOpenBranchNode(doc, &dlen, "main, ", main_count);
   I64 ci;
   for (ci=0; ci<main_count; ci++) {
     I64 coff_rel;
     IndexLookup(idx_hashes, idx_offsets, idx_count, main_chain+ci*64, &coff_rel);
     I64 coff = 16 + coff_rel;
     U8 *ccontent = rbuf + coff + 9;
-    GraphOpenCommitNode(doc, &dlen, main_chain+ci*64, ccontent, "");
+    GraphAppendCommitLine(doc, &dlen, main_chain+ci*64, ccontent);
 
     I64 apn;
     for (apn=0; apn<real_path_count; apn++) {
       if (fork_idx[apn] == ci) {
         U8 *apname = path_names + apn*META_MAX_PATH_NAME;
+        U8 lbl[META_MAX_PATH_NAME+4];
+        I64 li = 0;
+        lbl[li++] = '[';
+        I64 lj;
+        for (lj=0; apname[lj]; lj++) lbl[li++] = apname[lj];
+        lbl[li++] = ']'; lbl[li++] = ' '; lbl[li] = 0;
+        GraphOpenBranchNode(doc, &dlen, lbl, branch_count[apn]);
         I64 bi;
         for (bi=0; bi<branch_count[apn]; bi++) {
           U8 *bhash = branch_chains + (apn*rcount+bi)*64;
@@ -3614,24 +3649,13 @@ U0 HgitGraph(U8 *repo_path, U8 *doc_path)
           IndexLookup(idx_hashes, idx_offsets, idx_count, bhash, &aoff_rel);
           I64 aoff = 16 + aoff_rel;
           U8 *acontent = rbuf + aoff + 9;
-          if (bi == 0) {
-            U8 lbl[META_MAX_PATH_NAME+4];
-            I64 li = 0;
-            lbl[li++] = '[';
-            I64 lj;
-            for (lj=0; apname[lj]; lj++) lbl[li++] = apname[lj];
-            lbl[li++] = ']'; lbl[li++] = ' '; lbl[li] = 0;
-            GraphOpenCommitNode(doc, &dlen, bhash, acontent, lbl);
-          } else {
-            GraphOpenCommitNode(doc, &dlen, bhash, acontent, "");
-          }
+          GraphAppendCommitLine(doc, &dlen, bhash, acontent);
         }
-        I64 bj;
-        for (bj=0; bj<branch_count[apn]; bj++) GraphAppendStr(doc, &dlen, "$ID,-2$");
+        GraphAppendStr(doc, &dlen, "$ID,-2$");
       }
     }
   }
-  for (ci=0; ci<main_count; ci++) GraphAppendStr(doc, &dlen, "$ID,-2$");
+  GraphAppendStr(doc, &dlen, "$ID,-2$");
 
   FileWrite(doc_path, doc, dlen);
 
@@ -3670,6 +3694,58 @@ U0 HgitGraph(U8 *repo_path, U8 *doc_path)
 // Also prints ADR 0005/0006's relation tag/target/entity, if the
 // commit has one (experiments/51-relation-commands/,
 // experiments/53-entity-scoped-relations/).
+//
+// Recurses into nested trees (ADR 0010, experiments/93-see-nested-
+// trees/) - a real, user-visible gap `hgit offertree` left open:
+// before this, `see` only ever printed one flat level of entries, so
+// a subdirectory's own contents were invisible short of a separate
+// command. `SeePrintTreeEntries` is generic per-object-type (same
+// pattern `CheckMarkReachable` in Check.HC already established for
+// this project) - an `OBJ_TREE` child is looked up and recursed into,
+// indented one level deeper, with no depth limit.
+
+// Recursively prints one tree's own entries, then recurses into any
+// `OBJ_TREE` child at `depth+1` indentation. A missing child object
+// prints a real, honest marker instead of silently stopping or
+// crashing - the same "don't hide a broken reference" stance
+// Check.HC's own referential-integrity pass takes.
+U0 SeePrintTreeEntries(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
+                       U8 *tree_content, I64 depth)
+{
+  U32 tcount = GetU32LE(tree_content, 0);
+  I64 tpos = 4;
+  U32 te;
+  I64 i, d;
+  for (te=0; te<tcount; te++) {
+    U8 nlen = tree_content[tpos]; tpos += 1;
+    U8 *name = tree_content + tpos; tpos += nlen;
+    U8 ttype = tree_content[tpos]; tpos += 1;
+    U8 *child_hash = tree_content + tpos; tpos += 64;
+    U64 entity_id = GetU64LE(tree_content, tpos); tpos += 8; // ADR 0004
+    U8 entity_hex[17];
+    U64ToHex(entity_id, entity_hex);
+
+    for (d=0; d<depth; d++) CommPrint(1, "  ");
+    CommPrint(1, "  entry type=%d id=%s name=", ttype, entity_hex);
+    for (i=0; i<nlen; i++) CommPrint(1, "%c", name[i]);
+    CommPrint(1, "\n");
+
+    if (ttype == OBJ_TREE) {
+      I64 child_off_rel;
+      Bool child_found = IndexLookup(idx_hashes, idx_offsets, idx_count,
+                                      child_hash, &child_off_rel);
+      if (child_found) {
+        I64 child_off = 16 + child_off_rel;
+        U8 *child_content = rbuf + child_off + 9;
+        SeePrintTreeEntries(rbuf, idx_hashes, idx_offsets, idx_count,
+                            child_content, depth+1);
+      } else {
+        for (d=0; d<depth+1; d++) CommPrint(1, "  ");
+        CommPrint(1, "  (missing nested tree object)\n");
+      }
+    }
+  }
+}
 
 U0 HgitSee(U8 *repo_path, U8 *target_hash)
 {
@@ -3731,26 +3807,8 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
   U8 *tree_content = rbuf + tree_off + 9;
 
   U32 tcount = GetU32LE(tree_content, 0);
-  I64 tpos = 4;
-  U32 te;
   CommPrint(1, "SEE_TREE entries=%d\n", tcount);
-  for (te=0; te<tcount; te++) {
-    U8 nlen = tree_content[tpos]; tpos += 1;
-    U8 *name = tree_content + tpos; tpos += nlen;
-    U8 ttype = tree_content[tpos]; tpos += 1;
-    tpos += 64;
-    U64 entity_id = GetU64LE(tree_content, tpos); tpos += 8; // ADR 0004
-    U8 entity_hex[17];
-    U64ToHex(entity_id, entity_hex); // hex, not %d - a U64 with the high
-                                     // bit set prints as negative under
-                                     // plain %d (hit in practice, see
-                                     // experiments/49-entity-id/); hex
-                                     // round-trips cleanly and is what
-                                     // a user copies into `correct`/etc.
-    CommPrint(1, "  entry type=%d id=%s name=", ttype, entity_hex);
-    for (i=0; i<nlen; i++) CommPrint(1, "%c", name[i]);
-    CommPrint(1, "\n");
-  }
+  SeePrintTreeEntries(rbuf, idx_hashes, idx_offsets, idx_count, tree_content, 0);
   CommPrint(1, "SEE_END\n");
   Free(idx_hashes);
   Free(idx_offsets);
@@ -3776,8 +3834,293 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 // FileRead - no need to buffer full file content ahead of time the way
 // `Status.HC`'s NEW-on-disk candidates require.
 //
+// Recurses into nested trees (ADR 0010, experiments/94-diff-nested-
+// trees/) - the same generic-per-object-type recursion pattern this
+// project already established (Check.HC's CheckMarkReachable, See.HC's
+// SeePrintTreeEntries): a subdirectory entry whose own hash changed is
+// diffed recursively instead of just reported as one opaque
+// "MODIFIED <dirname>" line, and a wholly new/deleted subdirectory is
+// recursed into against an empty tree, so every real nested file gets
+// its own DIFF_NEW/DIFF_DELETED line (prefixed with its real path,
+// e.g. "SubA/inner.txt") instead of naming only the directory once.
+// Deliberately out of scope, same as ADR 0010's own deferred item:
+// cross-directory rename detection, and a same-name entry that
+// changes KIND (file<->directory) - reported as a real, honest
+// DIFF_TYPE_CHANGED signal, not silently mis-diffed as a content
+// change or guessed at either side.
+//
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
 // Tree.HC, Index.HC, Fossil.HC, Hex.HC.
+
+// Resolves a tree object's own content/length by its hash, via the
+// same IndexLookup every other real command uses. Returns FALSE (not
+// a crash) if the hash isn't in the index - a broken reference is
+// Check.HC's own job to report, not this file's.
+Bool DiffResolveTreeByHash(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
+                           U8 *hash, U8 **out_content, I64 *out_len)
+{
+  I64 off_rel;
+  if (!IndexLookup(idx_hashes, idx_offsets, idx_count, hash, &off_rel)) return FALSE;
+  I64 off = 16 + off_rel;
+  U64 rec_len = GetU64LE(rbuf, off);
+  *out_content = rbuf + off + 9;
+  *out_len = rec_len - 1;
+  return TRUE;
+}
+
+// Diffs one tree level (old vs new, either side may be NULL - a real,
+// valid base case for recursing into a wholly new/deleted
+// subdirectory against an empty tree, not a special case needing its
+// own logic), printing every real change with `prefix` prepended to
+// its name (e.g. "SubA/"). Recurses into any OBJ_TREE entry whose own
+// hash changed, or that's wholly new/deleted, one directory level at
+// a time.
+U0 DiffPrintTreeChanges(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
+                        U8 *old_tree_content, I64 old_tree_content_len,
+                        U8 *new_tree_content, I64 new_tree_content_len,
+                        U8 *prefix)
+{
+  U32 new_tcount = 0;
+  if (new_tree_content != NULL) new_tcount = GetU32LE(new_tree_content, 0);
+  U32 old_tcount = 0;
+  if (old_tree_content != NULL) old_tcount = GetU32LE(old_tree_content, 0);
+
+  // Buffers sized from each tree's own exact entry count (already
+  // known, same "no premature fixed cap" discipline every other
+  // MAlloc'd index/buffer in this project already follows). Only
+  // OBJ_BLOB entries ever populate these - a tree entry is either
+  // handled immediately (recursed into) or reported directly, never
+  // buffered as a rename candidate (see file header).
+  U8 *new_names = MAlloc(new_tcount*256 + 256);
+  U8 *new_hashes = MAlloc(new_tcount*64 + 64);
+  Bool *new_matched = MAlloc(new_tcount + 1);
+  I64 new_count = 0;
+
+  U8 *del_names = MAlloc(old_tcount*256 + 256);
+  U8 *del_hashes = MAlloc(old_tcount*64 + 64);
+  Bool *del_matched = MAlloc(old_tcount + 1);
+  I64 del_count = 0;
+
+  I64 pos = 4;
+  U32 te;
+  I64 i;
+  if (new_tree_content != NULL) {
+    for (te=0; te<new_tcount; te++) {
+      U8 nlen = new_tree_content[pos]; pos += 1;
+      U8 *name = new_tree_content + pos; pos += nlen;
+      U8 new_type = new_tree_content[pos]; pos += 1;
+      U8 *hash = new_tree_content + pos; pos += 64;
+      pos += 8; // entity_id - not needed here
+
+      U8 full_name[256];
+      I64 fi = 0, fj;
+      for (fj=0; prefix[fj]; fj++) full_name[fi++] = prefix[fj];
+      I64 cap = nlen; if (fi + cap > 254) cap = 254 - fi;
+      for (fj=0; fj<cap; fj++) full_name[fi++] = name[fj];
+      full_name[fi] = 0;
+
+      Bool found_by_name = FALSE;
+      U8 old_type;
+      U8 old_hash[64];
+      U64 old_entity_id;
+      if (old_tree_content != NULL) {
+        found_by_name = TreeFindEntry(old_tree_content, old_tree_content_len,
+                                      name, nlen, &old_type, old_hash, &old_entity_id);
+      }
+
+      if (new_type == OBJ_TREE) {
+        if (found_by_name && old_type == OBJ_TREE) {
+          Bool same_a = TRUE;
+          for (i=0; i<64; i++) if (hash[i] != old_hash[i]) same_a = FALSE;
+          if (!same_a) {
+            U8 *sub_old_content_a = NULL; I64 sub_old_len_a = 0;
+            U8 *sub_new_content_a = NULL; I64 sub_new_len_a = 0;
+            DiffResolveTreeByHash(rbuf, idx_hashes, idx_offsets, idx_count,
+                                 old_hash, &sub_old_content_a, &sub_old_len_a);
+            DiffResolveTreeByHash(rbuf, idx_hashes, idx_offsets, idx_count,
+                                 hash, &sub_new_content_a, &sub_new_len_a);
+            U8 sub_prefix_a[256];
+            I64 spi_a=0, spj_a;
+            for (spj_a=0; full_name[spj_a]; spj_a++) sub_prefix_a[spi_a++] = full_name[spj_a];
+            sub_prefix_a[spi_a++] = '/'; sub_prefix_a[spi_a] = 0;
+            DiffPrintTreeChanges(rbuf, idx_hashes, idx_offsets, idx_count,
+                                 sub_old_content_a, sub_old_len_a,
+                                 sub_new_content_a, sub_new_len_a, sub_prefix_a);
+          }
+        } else if (found_by_name) {
+          // Same name, old side isn't a tree - a real kind-change
+          // (file->directory), deliberately out of scope (see file
+          // header): report it plainly, don't guess at either side.
+          CommPrint(1, "DIFF_TYPE_CHANGED ");
+          for (i=0; full_name[i]; i++) CommPrint(1, "%c", full_name[i]);
+          CommPrint(1, "\n");
+        } else {
+          // A wholly new subdirectory - recurse against an empty old
+          // tree so every real nested entry gets its own DIFF_NEW
+          // line, not just one line naming the directory.
+          U8 *sub_new_content_b = NULL; I64 sub_new_len_b = 0;
+          DiffResolveTreeByHash(rbuf, idx_hashes, idx_offsets, idx_count,
+                               hash, &sub_new_content_b, &sub_new_len_b);
+          U8 sub_prefix_b[256];
+          I64 spi_b=0, spj_b;
+          for (spj_b=0; full_name[spj_b]; spj_b++) sub_prefix_b[spi_b++] = full_name[spj_b];
+          sub_prefix_b[spi_b++] = '/'; sub_prefix_b[spi_b] = 0;
+          DiffPrintTreeChanges(rbuf, idx_hashes, idx_offsets, idx_count,
+                               NULL, 0, sub_new_content_b, sub_new_len_b, sub_prefix_b);
+        }
+      } else {
+        // OBJ_BLOB: unchanged from before - same name/same type in old
+        // tree -> UNCHANGED (silent) or MODIFIED (printed immediately);
+        // no match by name -> buffered as a rename candidate.
+        if (found_by_name && old_type == OBJ_BLOB) {
+          Bool same_b = TRUE;
+          for (i=0; i<64; i++) if (hash[i] != old_hash[i]) same_b = FALSE;
+          if (!same_b) {
+            CommPrint(1, "DIFF_MODIFIED ");
+            for (i=0; full_name[i]; i++) CommPrint(1, "%c", full_name[i]);
+            CommPrint(1, "\n");
+          }
+        } else if (found_by_name) {
+          CommPrint(1, "DIFF_TYPE_CHANGED ");
+          for (i=0; full_name[i]; i++) CommPrint(1, "%c", full_name[i]);
+          CommPrint(1, "\n");
+        } else {
+          I64 ncap = fi; if (ncap > 254) ncap = 254;
+          for (i=0; i<ncap; i++) new_names[new_count*256+i] = full_name[i];
+          new_names[new_count*256+ncap] = 0;
+          for (i=0; i<64; i++) new_hashes[new_count*64+i] = hash[i];
+          new_matched[new_count] = FALSE;
+          new_count++;
+        }
+      }
+    }
+  }
+
+  // Deletion pass over the old tree: an entry found in the new tree by
+  // name (any type) was already handled above (unchanged/modified/
+  // recursed/type-changed) - skip it here to avoid double-reporting.
+  if (old_tree_content != NULL) {
+    I64 opos = 4;
+    U32 oe;
+    for (oe=0; oe<old_tcount; oe++) {
+      U8 onlen = old_tree_content[opos]; opos += 1;
+      U8 *oname = old_tree_content + opos; opos += onlen;
+      U8 old_type2 = old_tree_content[opos]; opos += 1;
+      U8 *ohash = old_tree_content + opos; opos += 64;
+      opos += 8; // entity_id
+
+      U8 dummy_type;
+      U8 dummy_hash[64];
+      U64 dummy_entity_id;
+      Bool found_in_new = FALSE;
+      if (new_tree_content != NULL) {
+        found_in_new = TreeFindEntry(new_tree_content, new_tree_content_len,
+                                     oname, onlen, &dummy_type, dummy_hash, &dummy_entity_id);
+      }
+      if (!found_in_new) {
+        U8 full_oname[256];
+        I64 ofi = 0, ofj;
+        for (ofj=0; prefix[ofj]; ofj++) full_oname[ofi++] = prefix[ofj];
+        I64 ocap = onlen; if (ofi + ocap > 254) ocap = 254 - ofi;
+        for (ofj=0; ofj<ocap; ofj++) full_oname[ofi++] = oname[ofj];
+        full_oname[ofi] = 0;
+
+        if (old_type2 == OBJ_TREE) {
+          // A wholly deleted subdirectory - recurse against an empty
+          // new tree so every real nested entry gets its own
+          // DIFF_DELETED line.
+          U8 *sub_old_content_c = NULL; I64 sub_old_len_c = 0;
+          DiffResolveTreeByHash(rbuf, idx_hashes, idx_offsets, idx_count,
+                               ohash, &sub_old_content_c, &sub_old_len_c);
+          U8 sub_prefix_c[256];
+          I64 spi_c=0, spj_c;
+          for (spj_c=0; full_oname[spj_c]; spj_c++) sub_prefix_c[spi_c++] = full_oname[spj_c];
+          sub_prefix_c[spi_c++] = '/'; sub_prefix_c[spi_c] = 0;
+          DiffPrintTreeChanges(rbuf, idx_hashes, idx_offsets, idx_count,
+                               sub_old_content_c, sub_old_len_c, NULL, 0, sub_prefix_c);
+        } else {
+          I64 dcap = ofi; if (dcap > 254) dcap = 254;
+          for (i=0; i<dcap; i++) del_names[del_count*256+i] = full_oname[i];
+          del_names[del_count*256+dcap] = 0;
+          for (i=0; i<64; i++) del_hashes[del_count*64+i] = ohash[i];
+          del_matched[del_count] = FALSE;
+          del_count++;
+        }
+      }
+    }
+  }
+
+  // Rename pass 1: exact content match, same "first match wins"
+  // simplification every other rename check in this project documents.
+  // Blob-only, same as before - a tree's own serialized content isn't
+  // meaningful to compare this way (see file header).
+  I64 di, ni;
+  for (di=0; di<del_count; di++) {
+    for (ni=0; ni<new_count; ni++) {
+      Bool hmatch = !new_matched[ni];
+      I64 hi;
+      if (hmatch) for (hi=0; hi<64; hi++) if (del_hashes[di*64+hi] != new_hashes[ni*64+hi]) hmatch = FALSE;
+      if (hmatch) {
+        CommPrint(1, "DIFF_RENAMED %s -> %s\n", del_names+di*256, new_names+ni*256);
+        new_matched[ni] = TRUE;
+        del_matched[di] = TRUE;
+        ni = new_count;
+      }
+    }
+  }
+
+  // Rename pass 2: fuzzy match (ADR 0008/0009, Fossil.HC's own
+  // similarity measure), same git-style -M50% threshold Offer.HC and
+  // Status.HC already use. Both sides resolved on demand via the
+  // index - no content buffering needed ahead of time, since both are
+  // already-stored blobs.
+  for (di=0; di<del_count; di++) {
+    if (!del_matched[di]) {
+      I64 del_off_rel;
+      if (IndexLookup(idx_hashes, idx_offsets, idx_count, del_hashes+di*64, &del_off_rel)) {
+        I64 del_off = 16 + del_off_rel;
+        U64 del_rec_len = GetU64LE(rbuf, del_off);
+        U8 *del_content = rbuf + del_off + 9;
+        I64 del_content_len = del_rec_len - 1;
+
+        I64 best_ni = -1, best_sim = -1;
+        for (ni=0; ni<new_count; ni++) {
+          if (!new_matched[ni]) {
+            I64 new_off_rel;
+            if (IndexLookup(idx_hashes, idx_offsets, idx_count, new_hashes+ni*64, &new_off_rel)) {
+              I64 new_off = 16 + new_off_rel;
+              U64 new_rec_len = GetU64LE(rbuf, new_off);
+              U8 *new_content = rbuf + new_off + 9;
+              I64 new_content_len = new_rec_len - 1;
+              I64 sim = FossilSimilarityPercent(del_content, del_content_len,
+                                                new_content, new_content_len);
+              if (sim > best_sim) { best_sim = sim; best_ni = ni; }
+            }
+          }
+        }
+        if (best_ni >= 0 && best_sim >= FOSSIL_RENAME_SIMILARITY_THRESHOLD) {
+          CommPrint(1, "DIFF_RENAMED %s -> %s\n", del_names+di*256, new_names+best_ni*256);
+          new_matched[best_ni] = TRUE;
+          del_matched[di] = TRUE;
+        }
+      }
+    }
+  }
+
+  for (ni=0; ni<new_count; ni++) {
+    if (!new_matched[ni]) CommPrint(1, "DIFF_NEW %s\n", new_names+ni*256);
+  }
+  for (di=0; di<del_count; di++) {
+    if (!del_matched[di]) CommPrint(1, "DIFF_DELETED %s\n", del_names+di*256);
+  }
+
+  Free(new_names);
+  Free(new_hashes);
+  Free(new_matched);
+  Free(del_names);
+  Free(del_hashes);
+  Free(del_matched);
+}
 
 U0 HgitDiff(U8 *repo_path, U8 *commit_hash)
 {
@@ -3841,163 +4184,15 @@ U0 HgitDiff(U8 *repo_path, U8 *commit_hash)
     }
   }
 
-  U32 new_tcount = GetU32LE(new_tree_content, 0);
-  U32 old_tcount = 0;
-  if (old_tree_content != NULL) old_tcount = GetU32LE(old_tree_content, 0);
-
-  // Buffers sized from each tree's own exact entry count (already
-  // known, same "no premature fixed cap" discipline every other
-  // MAlloc'd index/buffer in this project already follows).
-  U8 *new_names = MAlloc(new_tcount*256 + 256);
-  U8 *new_hashes = MAlloc(new_tcount*64 + 64);
-  Bool *new_matched = MAlloc(new_tcount + 1);
-  I64 new_count = 0;
-
-  U8 *del_names = MAlloc(old_tcount*256 + 256);
-  U8 *del_hashes = MAlloc(old_tcount*64 + 64);
-  Bool *del_matched = MAlloc(old_tcount + 1);
-  I64 del_count = 0;
-
-  // Pass 1 over the new tree: same name in old tree -> UNCHANGED
-  // (silent, matching every real diff tool's own default) or MODIFIED
-  // (printed immediately); no match by name -> buffered as a rename
-  // candidate.
-  I64 pos = 4;
-  U32 te;
-  I64 i;
-  for (te=0; te<new_tcount; te++) {
-    U8 nlen = new_tree_content[pos]; pos += 1;
-    U8 *name = new_tree_content + pos; pos += nlen;
-    pos += 1; // child_type
-    U8 *hash = new_tree_content + pos; pos += 64;
-    pos += 8; // entity_id - not needed here
-
-    Bool found_by_name = FALSE;
-    U8 old_type;
-    U8 old_hash[64];
-    U64 old_entity_id;
-    if (old_tree_content != NULL) {
-      found_by_name = TreeFindEntry(old_tree_content, old_tree_content_len,
-                                    name, nlen, &old_type, old_hash, &old_entity_id);
-    }
-    if (found_by_name) {
-      Bool same = TRUE;
-      for (i=0; i<64; i++) if (hash[i] != old_hash[i]) same = FALSE;
-      if (!same) {
-        CommPrint(1, "DIFF_MODIFIED ");
-        for (i=0; i<nlen; i++) CommPrint(1, "%c", name[i]);
-        CommPrint(1, "\n");
-      }
-    } else {
-      I64 cap = nlen; if (cap > 254) cap = 254;
-      for (i=0; i<cap; i++) new_names[new_count*256+i] = name[i];
-      new_names[new_count*256+cap] = 0;
-      for (i=0; i<64; i++) new_hashes[new_count*64+i] = hash[i];
-      new_matched[new_count] = FALSE;
-      new_count++;
-    }
-  }
-
-  // Pass 2 over the old tree: no match by name in the new tree ->
-  // buffered as a deleted/renamed-from candidate.
-  if (old_tree_content != NULL) {
-    I64 opos = 4;
-    U32 oe;
-    for (oe=0; oe<old_tcount; oe++) {
-      U8 onlen = old_tree_content[opos]; opos += 1;
-      U8 *oname = old_tree_content + opos; opos += onlen;
-      opos += 1; // child_type
-      U8 *ohash = old_tree_content + opos; opos += 64;
-      opos += 8; // entity_id
-
-      U8 dummy_type;
-      U8 dummy_hash[64];
-      U64 dummy_entity_id;
-      Bool found_in_new = TreeFindEntry(new_tree_content, new_tree_content_len,
-                                        oname, onlen, &dummy_type, dummy_hash, &dummy_entity_id);
-      if (!found_in_new) {
-        I64 dcap = onlen; if (dcap > 254) dcap = 254;
-        for (i=0; i<dcap; i++) del_names[del_count*256+i] = oname[i];
-        del_names[del_count*256+dcap] = 0;
-        for (i=0; i<64; i++) del_hashes[del_count*64+i] = ohash[i];
-        del_matched[del_count] = FALSE;
-        del_count++;
-      }
-    }
-  }
-
-  // Rename pass 1: exact content match, same "first match wins"
-  // simplification every other rename check in this project documents.
-  I64 di, ni;
-  for (di=0; di<del_count; di++) {
-    for (ni=0; ni<new_count; ni++) {
-      Bool hmatch = !new_matched[ni];
-      I64 hi;
-      if (hmatch) for (hi=0; hi<64; hi++) if (del_hashes[di*64+hi] != new_hashes[ni*64+hi]) hmatch = FALSE;
-      if (hmatch) {
-        CommPrint(1, "DIFF_RENAMED %s -> %s\n", del_names+di*256, new_names+ni*256);
-        new_matched[ni] = TRUE;
-        del_matched[di] = TRUE;
-        ni = new_count;
-      }
-    }
-  }
-
-  // Rename pass 2: fuzzy match (ADR 0008/0009, Fossil.HC's own
-  // similarity measure), same git-style -M50% threshold Offer.HC and
-  // Status.HC already use. Both sides resolved on demand via the
-  // index - no content buffering needed ahead of time, since both are
-  // already-stored blobs.
-  for (di=0; di<del_count; di++) {
-    if (!del_matched[di]) {
-      I64 del_off_rel;
-      if (IndexLookup(idx_hashes, idx_offsets, idx_count, del_hashes+di*64, &del_off_rel)) {
-        I64 del_off = 16 + del_off_rel;
-        U64 del_rec_len = GetU64LE(rbuf, del_off);
-        U8 *del_content = rbuf + del_off + 9;
-        I64 del_content_len = del_rec_len - 1;
-
-        I64 best_ni = -1, best_sim = -1;
-        for (ni=0; ni<new_count; ni++) {
-          if (!new_matched[ni]) {
-            I64 new_off_rel;
-            if (IndexLookup(idx_hashes, idx_offsets, idx_count, new_hashes+ni*64, &new_off_rel)) {
-              I64 new_off = 16 + new_off_rel;
-              U64 new_rec_len = GetU64LE(rbuf, new_off);
-              U8 *new_content = rbuf + new_off + 9;
-              I64 new_content_len = new_rec_len - 1;
-              I64 sim = FossilSimilarityPercent(del_content, del_content_len,
-                                                new_content, new_content_len);
-              if (sim > best_sim) { best_sim = sim; best_ni = ni; }
-            }
-          }
-        }
-        if (best_ni >= 0 && best_sim >= FOSSIL_RENAME_SIMILARITY_THRESHOLD) {
-          CommPrint(1, "DIFF_RENAMED %s -> %s\n", del_names+di*256, new_names+best_ni*256);
-          new_matched[best_ni] = TRUE;
-          del_matched[di] = TRUE;
-        }
-      }
-    }
-  }
-
-  for (ni=0; ni<new_count; ni++) {
-    if (!new_matched[ni]) CommPrint(1, "DIFF_NEW %s\n", new_names+ni*256);
-  }
-  for (di=0; di<del_count; di++) {
-    if (!del_matched[di]) CommPrint(1, "DIFF_DELETED %s\n", del_names+di*256);
-  }
+  U8 root_prefix[1]; root_prefix[0] = 0;
+  DiffPrintTreeChanges(rbuf, idx_hashes, idx_offsets, idx_count,
+                       old_tree_content, old_tree_content_len,
+                       new_tree_content, new_tree_content_len, root_prefix);
 
   CommPrint(1, "DIFF_END\n");
 
   Free(idx_hashes);
   Free(idx_offsets);
-  Free(new_names);
-  Free(new_hashes);
-  Free(new_matched);
-  Free(del_names);
-  Free(del_hashes);
-  Free(del_matched);
 }
 // OpLog.HC — the tool-operation log, separate from project history
 // (commits), per the product thesis: "Project history and tool-

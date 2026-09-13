@@ -157,6 +157,50 @@ shipped, tested feature's own output shape.
 `dlen0` declared in two sibling early-return blocks), fixed by
 renaming the second pair before ever reaching QEMU.
 
+**Fourth real attempt - the per-branch redesign above was actually
+implemented, and verified**: `Graph.HC` was rewritten exactly as the
+"real product implication" note above described - one `$TR$` per
+BRANCH (main's own trunk, and each other path), commits inside it as
+plain non-widget lines, so expanding a branch group can never swallow
+an ancestor commit's own label (there IS no ancestor `$TR$` inside a
+branch group - at most one extra nesting level exists anywhere in the
+whole document: a `[path]` branch group nested inside the trunk
+group, never commit-inside-commit).
+
+Verified two ways:
+- **Byte-exact structure**: a fork test (`main`: `offer_one`,
+  `offer_two`, `offer_four_on_main`; `feature` forked after
+  `offer_two` with its own `offer_on_feature`) produced exactly:
+  `$TR,"main, 3 commits"$$ID,+2$9d2d378d51 offer_one$CR$738c3565fc
+  offer_two$CR$$TR,"[feature] 1 commits"$$ID,+2$b2f5318a5a
+  offer_on_feature$CR$$ID,-2$9b5325d17c offer_four_on_main$CR$$ID,-2$`
+  - confirmed by exact string match against the raw `.DD` bytes, not
+  visual inspection. The commit count in each branch's own label (not
+  a guessed name) means the collapsed state alone already tells you
+  how much is inside.
+- **Rendered, collapsed**: `evidence/rendered-graph-redesign-collapsed.png`
+  - real `Ed()` screenshot, shows `[+] main, 3 commits` as one clean
+  line, matching the fix's intent.
+
+**Not captured: a rendered, expanded screenshot of this specific
+redesign.** Real attempt made (Right-arrow character-stepping onto the
+tree entry, the same technique that worked for the OLD design above),
+but the shared, long-running dev QEMU daemon used for this attempt had
+accumulated an unrelated, un-dismissable floating window (a "System
+Keys Quick Guide" help overlay, apparently stuck open from an earlier
+research session on this same daemon) that kept redrawing on top of
+the document pane and intercepting keystrokes meant for `Ed()`. `ESC`/
+`SHIFT-ESC` reliably closed `Ed()` itself (confirmed via `POST_ED_P123`
+in the daemon's own log - the daemon was left idle and healthy
+afterward) but never dismissed that stray window. Not pursued into a
+fresh isolated session given time already spent chasing UI automation
+across three prior attempts - the byte-exact structure test above
+already proves the fix (no ancestor label is ever nested inside
+another `$TR$`), and the OLD design's own real `rendered-graph-one-level-expanded.png`
+already proves TempleOS's tree-expand mechanism works correctly once
+`cur_entry` is on the right widget. A real, honest gap for a future
+session with a clean daemon, not a claim of something unverified.
+
 ## Not yet done
 
 - Only single-level fork attachment against `main` is computed - a
