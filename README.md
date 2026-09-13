@@ -1,28 +1,77 @@
 <p align="center">
-  <img src="docs/brand/hgitlogowithtext.png" alt="hgit" width="220">
+  <img src="docs/brand/hgitlogowithtext.png" alt="hgit" width="160">
 </p>
 
-# hgit
+<h1 align="center">hgit</h1>
 
-A lightweight, modular, self-contained version-control system, written in
-HolyC, native to TempleOS — with persistent file/symbol identity,
-executable DolDoc reconciliation, truthful non-destructive history, and a
-consistent modern CLI.
+<p align="center">
+  A version-control system written in HolyC, native to TempleOS —
+  persistent file/symbol identity, executable DolDoc reconciliation,
+  truthful non-destructive history, and a consistent modern CLI.
+</p>
 
-**Status: M0 complete (7/7 acceptance items); M1 complete, including
-command-surface polish.** See `docs/research/10-product-proposal.md`.
-The full object storage layer — canonical encoding, BLAKE2b-512
-(single-block and streaming), typed objects (blob/tree/commit), a
-hash→offset index — is built and verified running natively on real
-TempleOS under QEMU, not simulated. All five M1 commands
-(`init`/`status`/`offer`/`history`/`see`) exist, are independently
-verified, and are composed behind a real entry point: one dispatcher
-function, `Hgit(cmdline)`, called exactly the way TempleOS's own native
-commands are (`Hgit("init \"C:/Home/My Repo.hgs\"");` — quoted
-arguments with spaces work) — there is no argv/shell syntax in TempleOS
-to build a traditional CLI around, confirmed from primary source, so
-this is the idiomatic shape, not a workaround. The whole toolchain
-packages into one file, loadable with a single `#include`.
+<p align="center">
+  <a href="https://github.com/VectorSophie/hgit/releases/latest"><img src="https://img.shields.io/github/v/release/VectorSophie/hgit?label=release&color=blue" alt="latest release"></a>
+  <a href="docs/research/01-templeos-holyc.md"><img src="https://img.shields.io/badge/language-HolyC-8B0000" alt="written in HolyC"></a>
+  <a href="docs/research/08-qemu-testing.md"><img src="https://img.shields.io/badge/platform-TempleOS-000000" alt="native TempleOS"></a>
+  <a href="docs/research/08-qemu-testing.md"><img src="https://img.shields.io/badge/tested-real%20QEMU-brightgreen" alt="tested on real QEMU"></a>
+  <a href="INSTALL.md"><img src="https://img.shields.io/badge/install-single%20%23include-lightgrey" alt="install: single include"></a>
+</p>
+
+<p align="center">
+  <a href="INSTALL.md">Install</a> ·
+  <a href="docs/research/10-product-proposal.md">Milestone plan</a> ·
+  <a href="#what-hgit-actually-does">Commands</a> ·
+  <a href="docs/adr/">ADRs</a> ·
+  <a href="docs/research/failed-approaches.md">Dead ends</a>
+</p>
+
+M0 through M4 of the milestone plan are complete and independently
+verified on real TempleOS under QEMU — object storage (canonical
+encoding, BLAKE2b-512, typed blob/tree/commit objects, a hash→offset
+index), the full command surface (`init`/`status`/`offer`/`history`/
+`see`/`check`/`undo`/`redo`/named paths/`correct`/`revert`/`reconcile`/
+`export`/`import`/`historydoc`/`reconciledoc`/`help`/`version`/`logo`),
+stable entity identity across renames, and executable DolDoc
+reconciliation views. See `docs/research/10-product-proposal.md` for
+the live, dated, self-correcting record of what's actually built vs.
+still open — nothing here is claimed without a real, re-runnable test
+behind it.
+
+The whole toolchain packages into one file
+(`packaging/HgitAll.HC`), loadable with a single `#include` — there is
+no argv/shell syntax in TempleOS to build a traditional CLI around
+(confirmed from primary source), so `Hgit(cmdline)` is the idiomatic
+shape, not a workaround:
+
+```c
+#include "C:/Home/HgitAll.HC";
+Hgit("init C:/Home/MyRepo.hgs");
+Hgit("offer C:/Home/MyRepo.hgs *.txt first_offer");
+Hgit("history C:/Home/MyRepo.hgs");
+```
+
+## What hgit actually does
+
+Every command below is real, dispatched, and independently verified
+on TempleOS under QEMU — not a design sketch. Run `hgit help` (once
+loaded) for the same list straight from the live dispatcher.
+
+| Command | What it does |
+|---|---|
+| `init` | Create a new, empty repository |
+| `offer` | Snapshot matching files as a new commit (hgit's own name for git's "commit") |
+| `status` | Compare the working directory against HEAD — new/modified/deleted, **and renamed** (exact-content match, ADR 0009) |
+| `history` | Walk the current path's commit chain |
+| `see` | Show one commit's tree, message, and relation |
+| `check` | Repo integrity: hash verification, referential integrity (`git fsck`-style missing-object check), **and dangling/unreachable-object detection** |
+| `undo` / `redo` | Step through the operation log — reversible, not destructive |
+| `operation history` / `operation restore` | Full operation-log vocabulary — jump to any past point |
+| `path list` / `new` / `go` / `close` | Named, branch-like alternate histories sharing one object store |
+| `correct` / `revert` / `reconcile` | Typed relations between commits (ADR 0005/0006) — a commit can *point at* another with real semantics, optionally scoped to one tracked entity |
+| `historydoc` / `reconciledoc` / `reconcileoverview` | Executable DolDoc views — real rendered documents (colored, with live `$LK$` links and collapsible `$TR$` trees), not plain text logs |
+| `export` / `import` | Whole-repo portability, own paths and history intact |
+| `help` / `version` / `logo` | Discoverability and a bit of fun |
 
 ## What's here
 
@@ -57,9 +106,10 @@ packages into one file, loadable with a single `#include`.
   list/current-path, and operation-log storage in one file, immune to
   the real 33-char path-length ceiling; `Paths.HC` now runs on it),
   `Fossil.HC` (ADR 0008 — a prototype of Fossil's delta compression
-  format; byte-level mechanics verified correct in a controlled test,
-  but a real, unresolved reliability gap means it's **not** wired into
-  any real command yet — see that ADR).
+  format; byte-level mechanics verified correct and reliable — a real
+  root-cause bug found and fixed, see the ADR — but it's **not** wired
+  into any real command yet, since it has no real diff algorithm and
+  no compression value on its own).
 - `src/hgit-cli/` — the command surface: `Init.HC`, `Check.HC`
   (`hgit check` — repo integrity verification: M0's own `Archive.HC`
   `ArchiveVerify` for hash integrity, plus a real referential-integrity
@@ -338,6 +388,21 @@ bug's exact known trigger - not a full root cause yet, but no longer
 an unexplained black box, and a genuinely new tool for future HolyC
 quirk investigations generally.
 
+**ADR 0008's Fossil.HC bug is RESOLVED** (`experiments/80-fossil-checksum-root-cause/`),
+after three more hypotheses ruled out in `experiments/79-fossil-checksum-isolation/`.
+The real root cause: a raw byte cast to `(U64)` doesn't reliably
+zero-extend once composed with *other* `(U64)`-cast byte reads in one
+shifted-OR expression - garbage above bit 7 leaks in, varying by
+caller shape (what was previously in that register/stack slot).
+Explicit `& 0xFF` masking after each cast fixes it - verified against
+an independently-computed ground-truth checksum, matching exactly
+where every unmasked version had matched nothing (not even the
+mathematically correct value, in any caller shape). `Canon.HC`'s
+`GetU32LE`/`GetU64LE` were checked directly and confirmed unaffected -
+each composes its bytes in a structurally different, safe way.
+`Fossil.HC` still isn't wired into a real command, but now only
+because it has no real diff algorithm yet, not for reliability.
+
 **Real releases are cut regularly**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
 (M4's reconciliation view underway),
@@ -355,9 +420,15 @@ and [`v0.8.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.8.0)
 (check detects dangling/unreachable objects), [`v0.12.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.12.0)
 (hgit help), [`v0.13.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.13.0)
 (hgit version - the first release tag whose own `HGIT_VERSION` string
-matches it exactly), and
+matches it exactly),
 [`v0.14.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.14.0)
-(hgit logo + real project branding). Each attaches
+(hgit logo + real project branding), and
+[`v1.0.0`](https://github.com/VectorSophie/hgit/releases/tag/v1.0.0)
+(`hgit graph`, ADR 0008's Fossil.HC bug root-caused and fixed, this
+README's own redesign — the first release under a new versioning
+policy: a major bump now marks a real product milestone rather than
+every single change getting its own version number, see
+`docs/research/09-packaging-and-releases.md`). Each attaches
 `packaging/HgitAll.HC` — verified downloaded and byte-identical to the
 local build before being announced done. Matches TempleOS's own
 convention (no installer/package manager; a program is `#include`d as

@@ -60,7 +60,8 @@
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
 // Tree.HC, Commit.HC, Index.HC, Init.HC, WorkDir.HC,
-// Status.HC, History.HC, See.HC, Hex.HC, Offer.HC, Logo.HC.
+// Status.HC, History.HC, See.HC, Hex.HC, Offer.HC, Logo.HC,
+// Graph.HC.
 //
 // HGIT_VERSION (experiments/74-hgit-version/, docs/research/09-packaging-and-releases.md's
 // own "not built yet" gap): a real version string, printed by `hgit
@@ -71,7 +72,19 @@
 // same "keep it truthful, not automated" discipline this project
 // already applies to its own dispatch-table-vs-help-text pairing
 // (probe 73).
-#define HGIT_VERSION "0.13.0"
+//
+// Versioning policy (decided at v1.0.0, per the project owner):
+// 0.x releases (v0.3.0 through v0.14.0) shipped one real, verified
+// change at a time - useful during heavy iteration, but 0.x forever
+// reads as "not stable" once a project actually is. Going forward,
+// a MAJOR version bump (X.0.0) marks a real product milestone (a
+// completed milestone-phase, a headline feature, a long-standing
+// bug's real root-cause fix) rather than every single probe getting
+// its own patch bump - the same "don't version-churn cosmetic
+// changes" instinct semver itself recommends, applied deliberately
+// here rather than left as an accident of this project's own
+// iteration cadence.
+#define HGIT_VERSION "1.0.0"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -167,6 +180,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD historydoc <repo_path> <dest.DD>\n");
   CommPrint(1, "HELP_CMD reconciledoc <repo_path> <commit_hex> <dest.DD>\n");
   CommPrint(1, "HELP_CMD reconcileoverview <repo_path> <dest.DD>\n");
+  CommPrint(1, "HELP_CMD graph <repo_path> <dest.DD>\n");
   CommPrint(1, "HELP_CMD correct <repo_path> <target_hex> <entity_hex> <find_mask> <message>\n");
   CommPrint(1, "HELP_CMD revert <repo_path> <target_hex> <entity_hex> <find_mask> <message>\n");
   CommPrint(1, "HELP_CMD reconcile <repo_path> <target_hex> <entity_hex> <find_mask> <message>\n");
@@ -342,6 +356,12 @@ U0 Hgit(U8 *cmdline)
     ExtractToken(rest, rov_p, rov_dest, 256);
     HgitReconcileOverview(rov_repo, rov_dest);
     CommPrint(1, "DISPATCH_OK reconcileoverview\n");
+  } else if (StrCmp(cmd, "graph") == 0) {
+    U8 hg_repo[256], hg_dest[256];
+    I64 hg_p = ExtractToken(rest, 0, hg_repo, 256);
+    ExtractToken(rest, hg_p, hg_dest, 256);
+    HgitGraph(hg_repo, hg_dest);
+    CommPrint(1, "DISPATCH_OK graph\n");
   } else if (StrCmp(cmd, "export") == 0) {
     U8 export_src[256], export_dest[256];
     I64 export_p = ExtractToken(rest, 0, export_src, 256);

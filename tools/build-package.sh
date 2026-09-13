@@ -41,6 +41,7 @@ cat \
   src/hgit-cli/Check.HC \
   src/hgit-cli/HistoryDoc.HC \
   src/hgit-cli/ReconcileDoc.HC \
+  src/hgit-cli/Graph.HC \
   src/hgit-cli/See.HC \
   src/hgit-cli/OpLog.HC \
   src/hgit-cli/Portable.HC \

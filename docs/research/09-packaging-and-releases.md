@@ -44,6 +44,22 @@ describing what's verified and what isn't, is the natural "release" —
 not a compiled binary, not an installer, because none of those concepts
 apply here.
 
+**Versioning policy** (decided at v1.0.0, per the project owner):
+v0.3.0 through v0.14.0 each shipped one real, verified change at a
+time — a reasonable cadence during heavy iteration, but staying under
+1.0 forever reads as "not stable" once a project actually is one.
+Going forward, a **major** version bump (`X.0.0`) marks a real product
+milestone — a completed milestone-phase, a headline user-facing
+feature, a long-standing bug's actual root-cause fix — rather than
+every probe getting its own patch release. v1.0.0 itself is the first
+one: M0 through M4 complete and independently verified, the CLI
+command surface polished (`help`/`version`/`logo`/`graph`), ADR 0008's
+long-open Fossil.HC reliability bug root-caused and fixed, and a real
+public-facing README. Smaller, single-change work still gets its own
+patch/minor bump as before (unchanged from v0.3.0 onward) — this
+policy only changes what triggers a *major* bump, not the cadence of
+ordinary releases.
+
 ## Ideas worth borrowing / open questions
 
 - Whether to ship the file compressed (`.HC.Z`, matching TempleOS's own

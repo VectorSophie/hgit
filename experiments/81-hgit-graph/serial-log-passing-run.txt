@@ -1,0 +1,8 @@
+P80_GRAPH_BEGIN
+DISPATCH_OK graph
+P80_GRAPH_END
+P80_GRAPH_SIZE=182
+P80_GRAPH_RAW_BEGIN
+$FG,5$hgit history graph$FG$$CR$$CR$$TR,"468bbd6656 offer_one"$$ID,+2$$TR,"0c6b94e6ba offer_two"$$ID,+2$$TR,"[feature] b0598745e9 offer_three_on_feature"$$ID,+2$$ID,-2$$ID,-2$$ID,-2$
+P80_GRAPH_RAW_END
+PASS p80_historygraph_test

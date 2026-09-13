@@ -1030,6 +1030,28 @@ re-run clean. `Fossil.HC` still isn't wired into `tools/build-package.sh`
 - not for reliability anymore, but because it has no real diff
 algorithm yet and provides no compression value on its own.
 
+**`hgit graph`**: `experiments/81-hgit-graph/` (PASS) - a user-
+requested feature ("finishing off with a git graph like thing"), not
+a milestone-plan item. Renders a real DolDoc tree view of a repo's
+entire commit history across every declared path (not just one
+path's own linear chain, like `historydoc`) - "main"'s own chain as
+the trunk, every other path attached as its own nested branch at the
+exact commit it forked from (`path new` copies the current path's
+HEAD at creation time, so a real, findable fork point always exists).
+Uses the same `$TR$`/`$ID,+2$`/`$ID,-2$` tree-widget nesting
+`reconcileoverview` already verified. Verified against a real fork
+(`offer_one` -> `offer_two` on main, then a `feature` path created at
+`offer_two` with its own commit) - the rendered tree nests
+`[feature]`'s own unique commit exactly one level under `offer_two`,
+confirmed by exact string match against the raw output, not visual
+inspection. Regression re-run clean. `tools/lint-package.sh` caught a
+real "duplicate member" collision in this file's own first draft
+before it ever reached QEMU. README.md also redesigned with a
+resized logo, a real badge row (release version, language, platform,
+tested-on, install), and a command reference table - grounded in real
+research (fetched three well-known projects' own READMEs - jj, Sapling,
+lazygit - for actual conventions rather than guessing).
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided
