@@ -61,6 +61,17 @@
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
 // Tree.HC, Commit.HC, Index.HC, Init.HC, WorkDir.HC,
 // Status.HC, History.HC, See.HC, Hex.HC, Offer.HC.
+//
+// HGIT_VERSION (experiments/74-hgit-version/, docs/research/09-packaging-and-releases.md's
+// own "not built yet" gap): a real version string, printed by `hgit
+// version` and shown once by `hgit help`, so a user who's loaded
+// `packaging/HgitAll.HC` can confirm what they actually have. Bumped
+// by hand alongside each real GitHub release tag - this file's own
+// value should always match the most recent `vX.Y.Z` release, the
+// same "keep it truthful, not automated" discipline this project
+// already applies to its own dispatch-table-vs-help-text pairing
+// (probe 73).
+#define HGIT_VERSION "0.13.0"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -146,6 +157,7 @@ U0 HgitOfferRelatedCmd(U8 *rest, U8 relation_tag, U8 *cmd_name)
 U0 HgitHelp()
 {
   CommPrint(1, "HELP_BEGIN\n");
+  CommPrint(1, "HELP_VERSION %s\n", HGIT_VERSION);
   CommPrint(1, "HELP_CMD init <repo_path>\n");
   CommPrint(1, "HELP_CMD status <repo_path> <find_mask> <dir_prefix>\n");
   CommPrint(1, "HELP_CMD offer <repo_path> <find_mask> <message>\n");
@@ -170,6 +182,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD export <src_repo_path> <dest_repo_path>\n");
   CommPrint(1, "HELP_CMD import <src_repo_path> <dest_repo_path>\n");
   CommPrint(1, "HELP_CMD help\n");
+  CommPrint(1, "HELP_CMD version\n");
   CommPrint(1, "HELP_END\n");
 }
 
@@ -187,6 +200,8 @@ U0 Hgit(U8 *cmdline)
 
   if (StrCmp(cmd, "") == 0 || StrCmp(cmd, "help") == 0) {
     HgitHelp();
+  } else if (StrCmp(cmd, "version") == 0) {
+    CommPrint(1, "HGIT_VERSION %s\n", HGIT_VERSION);
   } else if (StrCmp(cmd, "init") == 0) {
     U8 init_path[256];
     ExtractToken(rest, 0, init_path, 256);

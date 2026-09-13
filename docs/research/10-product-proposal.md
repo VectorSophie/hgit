@@ -41,6 +41,7 @@ verified, probe by probe.
 | A detected rename wasn't surfaced in any command's own output (ADR 0009's own deferred item) | **Resolved for `status`** — the same exact-content matching now also runs in `hgit status` (working directory vs. HEAD's tree instead of old-tree vs. new-tree), reporting `STATUS_RENAMED old -> new` in place of separate `STATUS_NEW`/`STATUS_DELETED` lines; verified against a real repo with an unrelated genuinely-new file and an unrelated genuinely-deleted file present too, confirming no false-positive pairing. `hgit history`/`reconciledoc` don't surface it yet | `docs/adr/0009-rename-detection.md`, `experiments/71-status-rename-surfacing/` |
 | `hgit check` skipped `git fsck`'s "dangling"/"unreachable" object categories (only "missing object" referential integrity was built) | **Resolved** — `CheckMarkReachable` walks the real object graph from every declared path's own HEAD (a repo's only real ref concept), reporting anything left unmarked as `CHECK_DANGLING <kind> <hash>`. Verified against a real, naturally-occurring case (`undo` leaves a commit's own unique objects genuinely unreachable, without deleting them — hgit's own non-destructive-history design). A real correctness bug was found and fixed along the way: duplicate-content objects (the store never dedupes) were false-positive-reported dangling until a coalescing pass was added; caught by testing against a long-lived real repo, not a fresh fixture | `experiments/72-check-dangling-objects/` |
 | No command discoverability - `DISPATCH_ERR unknown_command` said what was wrong but never what to try, no full command listing existed short of reading `Hgit.HC`'s own source | **Resolved** — `hgit help` (also a bare/empty command, also a new `DISPATCH_HINT` line after `unknown_command`) prints every real command with its literal argument shape. Writing it surfaced a real mismatch between an initial guess and the dispatcher's actual `correct`/`revert`/`reconcile` argument order, corrected against the real code before finalizing | `experiments/73-hgit-help/` |
+| No version string embedded in the packaged file (doc 09's own flagged gap) | **Resolved** — `hgit version` (and `hgit help`'s own first line) prints `HGIT_VERSION`, bumped by hand alongside each real release tag | `experiments/74-hgit-version/`, `docs/research/09-packaging-and-releases.md` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -939,6 +940,16 @@ against `HgitOfferRelatedCmd`'s real parameter order and several prior
 probes' own test-driver command strings before finalizing the help
 text. Verified on real QEMU; regression (probe 65's full
 command-surface test) re-run clean.
+
+**`hgit version` now exists**: `experiments/74-hgit-version/` (PASS) -
+closes doc 09's own explicitly-flagged gap ("no version string is
+embedded in the packaged file itself yet"). `Hgit.HC` defines
+`HGIT_VERSION`, printed by a real `hgit version` command and shown as
+`hgit help`'s own first line - bumped by hand alongside each real
+release tag, same discipline probe 73 established for keeping help
+text in sync with the dispatcher. This probe's own version (`0.13.0`)
+is the release it ships as - the first real test of that discipline.
+Verified on real QEMU; regression re-run clean.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

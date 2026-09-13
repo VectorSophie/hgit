@@ -306,6 +306,12 @@ mismatch between a first guess and `correct`/`revert`/`reconcile`'s
 actual dispatcher argument order, corrected against the real code
 before shipping.
 
+**`hgit version` now exists** (`experiments/74-hgit-version/`),
+closing a gap `docs/research/09-packaging-and-releases.md` explicitly
+flagged: a real `HGIT_VERSION` string, printed by `hgit version` and
+shown as `hgit help`'s own first line, bumped by hand alongside each
+real release tag.
+
 **Real releases are cut regularly**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
 (M4's reconciliation view underway),
@@ -319,9 +325,10 @@ and [`v0.8.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.8.0)
 (referential integrity checking, host-side lint tooling),
 [`v0.9.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.9.0)
 (exact-content rename detection), [`v0.10.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.10.0)
-(status surfaces detected renames), and
-[`v0.11.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.11.0)
-(check detects dangling/unreachable objects). Each attaches
+(status surfaces detected renames), [`v0.11.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.11.0)
+(check detects dangling/unreachable objects), and
+[`v0.12.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.12.0)
+(hgit help). Each attaches
 `packaging/HgitAll.HC` — verified downloaded and byte-identical to the
 local build before being announced done. Matches TempleOS's own
 convention (no installer/package manager; a program is `#include`d as

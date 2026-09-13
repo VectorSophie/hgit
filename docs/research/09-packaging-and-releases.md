@@ -52,10 +52,13 @@ apply here.
   compressed matches native convention more closely. Shipping plain
   text for now (simpler, and GitHub's own release UI doesn't need a
   TempleOS-native format to be useful).
-- No version string is embedded in the packaged file itself yet — a
-  real release should probably print its own version via a real
-  command (e.g. `Hgit("version");`) so a user can confirm what they
-  loaded. Not built yet — real follow-up work.
+- ~~No version string is embedded in the packaged file itself yet~~
+  **Done** (`experiments/74-hgit-version/`): `Hgit.HC` defines
+  `HGIT_VERSION`, printed by a real `hgit version` command and shown
+  as `hgit help`'s own first line. Bumped by hand alongside each real
+  release tag - the same discipline probe 73 already established for
+  keeping `hgit help`'s text in sync with the dispatcher's real code,
+  not generated or automatically verified against the actual git tag.
 - No install script/instructions doc exists yet beyond this file and
   the top-level README's own description of `tools/build-package.sh`.
 
