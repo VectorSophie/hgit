@@ -33,12 +33,12 @@ cat \
   src/hgit-core/Index.HC \
   src/hgit-core/Meta.HC \
   src/hgit-cli/Init.HC \
-  src/hgit-cli/Check.HC \
   src/hgit-cli/Paths.HC \
   src/hgit-cli/WorkDir.HC \
   src/hgit-cli/Status.HC \
   src/hgit-cli/History.HC \
   src/hgit-cli/Hex.HC \
+  src/hgit-cli/Check.HC \
   src/hgit-cli/HistoryDoc.HC \
   src/hgit-cli/ReconcileDoc.HC \
   src/hgit-cli/See.HC \

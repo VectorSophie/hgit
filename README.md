@@ -57,8 +57,9 @@ packages into one file, loadable with a single `#include`.
   but a real, unresolved reliability gap means it's **not** wired into
   any real command yet — see that ADR).
 - `src/hgit-cli/` — the command surface: `Init.HC`, `Check.HC`
-  (`hgit check` — repo integrity verification, a thin wrapper over
-  M0's own `Archive.HC` `ArchiveVerify`), `WorkDir.HC`,
+  (`hgit check` — repo integrity verification: M0's own `Archive.HC`
+  `ArchiveVerify` for hash integrity, plus a real referential-integrity
+  pass modeled on `git fsck`'s own "missing object" check), `WorkDir.HC`,
   `Paths.HC` (named paths, backed by
   `Meta.HC`), `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
   (hex string ↔ hash bytes), `HistoryDoc.HC` (`hgit historydoc` — a
@@ -190,7 +191,16 @@ is a generated, read-only document, not an interactive form.
 check" (repo integrity verification), a thin wrapper over M0's own
 `ArchiveVerify` — verified against a real repo and against a
 deliberately corrupted one (correctly reports `CHECK_FAIL`, not a
-false pass). `Head.HC` (unused since ADR 0003, previously left
+false pass). `hgit check` was then extended with real **referential**
+integrity checking (`experiments/69-check-referential-integrity/`),
+modeled on real `git fsck`'s own "missing object" check — walks every
+commit/tree's own hash references and confirms each resolves, verified
+against both a valid repo (`CHECK_REFS_OK`) and a deliberately
+corrupted one (`CHECK_REFS_FAIL`). Finding this also surfaced a real
+test-harness limit: the package had grown past the QEMU daemon's own
+128KB receive buffer, causing a genuine reproducible (not random)
+truncated-compile error — fixed by rebootstrapping with a 512KB
+buffer. `Head.HC` (unused since ADR 0003, previously left
 undeleted as "a separate decision") is now actually deleted — confirmed
 zero real callers, then verified on a truly fresh QEMU boot with a
 full command-surface regression, nothing broke

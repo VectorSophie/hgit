@@ -1,0 +1,13 @@
+--- clean, valid repo (init -> offer -> offer -> correct -> check) ---
+DISPATCH_OK init C:/Home/P69Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK offer
+DISPATCH_OK correct
+CHECK_OK objects=9
+CHECK_REFS_OK
+PASS p69_reftest_clean
+
+--- after deliberately corrupting the last commit's own tree_hash bytes ---
+CHECK_FAIL objects=9 ok=8 corrupt=1
+CHECK_BROKEN_REF commit_tree_missing ff31a97ebd930c4e2c003635463f51af32fcb4f2d251ae9572a68e67dd22fd2b1446f8615e615605cbef9e4c31aa8bfb56e57e256d8b22dd66344dab03336b46
+CHECK_REFS_FAIL broken=1

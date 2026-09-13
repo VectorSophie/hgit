@@ -136,3 +136,14 @@ unmodified on this Linux host.
   how hgit's own error paths should look, since this may be the same
   general exception-capture primitive HolyC application code has access
   to, not just something internal to the compiler.
+- **The daemon's own receive buffer has a real, hit-in-practice size
+  limit**, found in probe 69: the stage-1/stage-2 `Db` buffer was
+  `MAlloc(131072)` (128KB) from this harness's earliest bootstrap, and
+  the real hgit package eventually grew past it (133,804 bytes),
+  causing a confusing, *reproducible* (not random) truncated-compile
+  error deep in otherwise-stable code. Rebootstrapped with 512KB
+  (`Db=MAlloc(524288)`, matching `Di<524287` bound in both `D()` and
+  `D2()`) - if a future push of a large, still-growing package produces
+  a strange parse error in code that's never had problems before, check
+  the package's real byte size against the daemon's current buffer size
+  before assuming a source bug.

@@ -991,3 +991,37 @@ dead end and not a fix. Recorded so a future investigation (with
 access to disassembly, which this session doesn't have) has a much
 more specific starting point than "add some locals and see." Full
 writeup: `experiments/68-fossil-delta-format/README.md`.
+
+## 2026-09-13 — The test-harness's own daemon receive buffer was too small for the grown package
+
+**Tried:** Pushing the rebuilt `packaging/HgitAll.HC` (133,804 bytes,
+after adding `hgit check`'s referential-integrity pass) to the
+long-running QEMU daemon session.
+
+**Happened:** A compile error, `Missing ';' at "T:0"`, cutting off
+mid-source inside `Hgit.HC`'s own path-dispatch code - code that has
+been stable and repeatedly verified working all session. Reproduced
+identically on a second attempt (same error, same cutoff point) - not
+random corruption, which would differ between attempts.
+
+**Why:** `experiments/01-temple-repl`'s stage-1/stage-2 daemon receive
+buffer (`Db`) has always been `MAlloc(131072)` (128KB, with a matching
+`Di<131071` bound), unchanged since this project's earliest probes.
+The package had simply grown past that limit - 133,804 bytes exceeds
+131,072 by 2,732 bytes, silently truncating every push past that
+point with no error from the push mechanism itself (only the resulting
+garbled compile revealed it).
+
+**Worked instead:** Rebooted and rebootstrapped with a 512KB buffer
+(`Db=MAlloc(524288)`, bound `Di<524287`, both stage-1's `D()` and
+stage-2's `D2()`) - confirmed the identical package then compiles
+cleanly (`COMPILE_OK`) with no other change. Also found and fixed a
+real, separate bug while investigating: `Check.HC` was ordered before
+`Hex.HC` in `tools/build-package.sh` (an ordering left over from probe
+64, before `Check.HC` needed `HashToHex`) - moved it after `Hex.HC`,
+matching real HolyC's own no-forward-declarations rule. Full writeup:
+`experiments/69-check-referential-integrity/README.md`. **Standing
+note for future sessions**: if a push of the full package produces a
+confusing, reproducible parse error deep in otherwise-stable code,
+check the package's real byte size against the daemon's own buffer
+size before assuming a source-code bug.

@@ -819,6 +819,24 @@ into `tools/build-package.sh` or any real command - a real, live
 reliability question remains before this format can be trusted inside
 an actual hgit command's own (necessarily larger) function bodies.
 
+**`hgit check` now does real referential integrity checking too**:
+`experiments/69-check-referential-integrity/` (PASS) - closes the gap
+probe 64's own README flagged, modeled directly on real `git fsck`'s
+own "missing object" check (confirmed via its real docs). Walks every
+commit/tree's own outgoing hash references (tree_hash, parents,
+relation-target, tree child entries) and confirms each resolves to a
+real object. Verified with a real valid repo (`CHECK_OK`/
+`CHECK_REFS_OK`) and a deliberately corrupted `tree_hash`
+(`CHECK_FAIL`/`CHECK_REFS_FAIL`, both independent checks correctly
+firing). Along the way, found and fixed a genuine test-harness limit:
+the package (now 133,804 bytes) had grown past the QEMU injection
+daemon's own 128KB receive buffer, causing a real, reproducible
+truncated-push compile error on two separate attempts - rebootstrapped
+with a 512KB buffer, confirmed the identical package then compiles
+cleanly. Also fixed a real build-order bug (`Check.HC` needed
+`Hex.HC`'s `HashToHex` but was ordered before it in
+`tools/build-package.sh`).
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided
