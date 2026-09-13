@@ -1,0 +1,24 @@
+--- hgit historydoc against the real ~300-commit P66Repo.hgs (fresh boot) ---
+DISPATCH_OK historydoc
+PASS p67_historydoc_big_repo
+
+--- raw doc tail confirms clean truncation, not corruption ---
+DOC_SIZE=7978
+TAIL_BEGIN
+a3ecb1b2$FG$ $FG,4$274798$FG$ offer_number_17$CR$(truncated - too much history for one document)$CR$
+TAIL_END
+
+--- hgit status against a deliberately oversized (600-byte) matched file ---
+DISPATCH_OK init C:/Home/P67CRepo.hgs
+DISPATCH_OK offer
+STATUS_TOO_LARGE_TO_CHECK P67CBig.txt
+STATUS_END
+PASS p67c_status_large_file
+
+--- normal small-repo regression, unaffected ---
+DISPATCH_OK init C:/Home/P67DRepo.hgs
+DISPATCH_OK offer
+STATUS_UNCHANGED P67DFileA.txt
+STATUS_END
+DISPATCH_OK historydoc
+PASS p67d_normal_regression

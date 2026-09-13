@@ -863,3 +863,45 @@ persisted at scale - this project's own crash-based bugs (loud, easy
 to notice) had made that easy to forget. Real corpus-scale testing,
 checking the actual persisted state independently rather than trusting
 a success code, is the only way this class of bug surfaces.
+
+## 2026-09-13 — Two more real buffer bugs, found by auditing the codebase directly rather than waiting for a crash
+
+**Tried:** After probes 60-62/66 closed out every fixed-buffer bug this
+project had actually reproduced, grepped the whole codebase for every
+remaining fixed-size stack array (`experiments/67-historydoc-buffer-guard/`)
+rather than assuming the class of bug was fully closed.
+
+**Happened:** Two real, live risks turned up: `HistoryDoc.HC`'s
+`doc[8192]` (no bound against a repo's real commit count) and
+`Status.HC`'s `tagged[512]` (no bound against a matched file's real
+size). Tested the first directly against the real ~300-commit repo
+probe 66's own stress test left behind (no synthetic setup needed) and
+got a genuine kernel GPF, `RIP:...&StrNew` - the crash surfacing
+inside an unrelated kernel function is the same signature as probe
+60's own `CommitEncode` crash: stack corruption from the buffer's own
+overflow, manifesting wherever the corrupted stack next gets used.
+
+**Why:** `HistoryDoc.HC`'s sibling function, `HgitReconcileOverview`
+(probe 59), already had a truncation guard for the identical
+`doc[8192]` risk - it was just never applied to `HistoryDoc.HC` itself
+when that guard was added. `Status.HC`'s `tagged[512]` is the exact
+same per-file-size bug probe 56 already fixed in `Offer.HC`'s
+`blob_tagged[512]` - also never applied here.
+
+**Worked instead:** Applied the same two already-proven fixes:
+`HistoryDoc.HC` now stops cleanly with a `(truncated - too much
+history for one document)` notice before overflowing; `Status.HC` now
+reports `STATUS_TOO_LARGE_TO_CHECK <name>` and skips a file that
+doesn't fit, instead of corrupting memory. Verified against the real
+crash reproduction (now completes cleanly, confirmed by reading the
+generated document's actual raw bytes, not just the dispatch code) and
+a real oversized-file reproduction for `status`, plus an unaffected
+normal-case regression. Full writeup:
+`experiments/67-historydoc-buffer-guard/README.md`.
+
+**Standing lesson**: fixing a bug in one function doesn't mean an
+identical bug in a sibling function is also fixed - each of this
+project's five fixed-buffer probes so far (56/60/61/62/66/67) found
+its own bug independently; the fix pattern was known each time, but
+applying it required actually finding every call site, not assuming
+"the same kind of bug" implies "already fixed everywhere."

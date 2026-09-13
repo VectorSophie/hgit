@@ -86,33 +86,45 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   while (tmpde) {
     I64 fsize;
     U8 *fbuf = FileRead(tmpde->full_name, &fsize);
-    U8 tagged[512];
-    tagged[0] = OBJ_BLOB;
-    I64 i;
-    for (i=0; i<fsize; i++) tagged[1+i] = fbuf[i];
-    U8 file_hash[64];
-    B2Hash512Any(tagged, fsize+1, file_hash);
 
     I64 name_start = 0, j;
     for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
     I64 name_len = j - name_start;
 
-    U8 tree_type;
-    U8 tree_entry_hash[64];
-    U64 tree_entity_id;
-    Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
-                                  tmpde->full_name+name_start, name_len,
-                                  &tree_type, tree_entry_hash, &tree_entity_id);
-    if (!in_tree) {
-      CommPrint(1, "STATUS_NEW ");
+    // Real bug found and fixed (experiments/67-historydoc-buffer-guard/),
+    // same class as probe 56's own Offer.HC finding: `tagged[512]` had
+    // no bound against a matched file's real size - a file over 511
+    // bytes overflows it. Guarded the same way: skip with a clear
+    // message instead of corrupting memory.
+    if (fsize+1 > 512) {
+      CommPrint(1, "STATUS_TOO_LARGE_TO_CHECK ");
+      for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
+      CommPrint(1, "\n");
     } else {
-      Bool same = TRUE;
-      for (i=0; i<64; i++) if (file_hash[i] != tree_entry_hash[i]) same = FALSE;
-      if (same) CommPrint(1, "STATUS_UNCHANGED ");
-      else CommPrint(1, "STATUS_MODIFIED ");
+      U8 tagged[512];
+      tagged[0] = OBJ_BLOB;
+      I64 i;
+      for (i=0; i<fsize; i++) tagged[1+i] = fbuf[i];
+      U8 file_hash[64];
+      B2Hash512Any(tagged, fsize+1, file_hash);
+
+      U8 tree_type;
+      U8 tree_entry_hash[64];
+      U64 tree_entity_id;
+      Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
+                                    tmpde->full_name+name_start, name_len,
+                                    &tree_type, tree_entry_hash, &tree_entity_id);
+      if (!in_tree) {
+        CommPrint(1, "STATUS_NEW ");
+      } else {
+        Bool same = TRUE;
+        for (i=0; i<64; i++) if (file_hash[i] != tree_entry_hash[i]) same = FALSE;
+        if (same) CommPrint(1, "STATUS_UNCHANGED ");
+        else CommPrint(1, "STATUS_MODIFIED ");
+      }
+      for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
+      CommPrint(1, "\n");
     }
-    for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
-    CommPrint(1, "\n");
     tmpde = tmpde->next;
   }
   DirTreeDel(tmpde1);

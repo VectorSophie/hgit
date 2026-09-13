@@ -36,6 +36,7 @@ verified, probe by probe.
 | `Offer.HC`'s own `old_idx_hashes[64*64]`/`old_idx_offsets[64]` (ADR 0004's parent-tree lookup) is a hardcoded 64-*object*-in-the-whole-repo cap, unrelated to `archive` | **Resolved** — found only once ADR 0007's own fix lifted the `archive` ceiling and let real growth reach this next fixed buffer (~21 offers, ~3 objects/offer); fixed the same way, `MAlloc`'d from the repo's own exact object count (`rcount`, already known from the `.HGS` header) | `experiments/61-dynamic-archive/` |
 | The same `idx_hashes[64*64]`/`idx_offsets[64]` pattern also existed in `History.HC`, `HistoryDoc.HC`, `Status.HC`, `See.HC`, and `ReconcileDoc.HC` (twice) | **Resolved** — all six call sites now `MAlloc` from the repo's real object count, same as `Offer.HC`; verified with a real 26-offer/~78-object repo against all five affected commands (`see`/`history`/`status`/`historydoc`/`reconcileoverview`), all correct, no crash | `experiments/62-index-buffer-sweep/` |
 | **`Meta.HC`'s own nine `new_buf[16384]` fixed rebuild buffers silently lost data past ~114 real offers — no crash, no error signal at all** | **Resolved — a more severe bug class than every prior crash-based one** — a real 150-offer stress test found `DISPATCH_OK` reported for every single call while 35 of 150 real operation-log entries were silently never recorded and `HEAD` silently stopped advancing 36 offers before the true latest commit; fixed by `MAlloc`-ing all nine from the file's real size, verified growing cleanly past 37,966 bytes with full data-integrity accounting (`OPLOG_COUNT` exactly matching total real operations, `HEAD` correctly resolving to the true last commit) | `experiments/66-meta-dynamic-buffer/` |
+| `HistoryDoc.HC`'s `doc[8192]` (no bound against a repo's real commit count) and `Status.HC`'s `tagged[512]` (no bound against a matched file's real size, same class probe 56 fixed in `Offer.HC`) | **Resolved** — found by proactively auditing every remaining fixed-size buffer after probes 60-62/66 closed out `Offer.HC`/`Index.HC`-call-site/`Meta.HC`'s own instances. `historydoc` reproduced a real GPF against the actual ~300-commit repo probe 66 built; fixed with the same truncation-guard pattern `HgitReconcileOverview` already used. `status` fixed the same way probe 56 fixed `Offer.HC` (`STATUS_TOO_LARGE_TO_CHECK`, skip instead of overflow). Both verified against real reproductions plus a normal-case regression | `experiments/67-historydoc-buffer-guard/` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -771,6 +772,26 @@ regression of probe 55's own end-to-end scenario. Also hit and fixed a
 real HolyC quirk while writing the fix - no `continue` keyword,
 already documented in `experiments/templeos-devkit`'s own bug-compat
 corpus but not previously hit directly in this project's own code.
+
+**Two more real buffer bugs found by proactively auditing, not
+waiting for a crash to find them**: `experiments/67-historydoc-buffer-guard/`
+(PASS). After probes 60-62/66 closed out every fixed-buffer bug this
+project had actually reproduced, a direct audit of every *remaining*
+fixed-size buffer in the codebase found two more real, live risks.
+`HistoryDoc.HC`'s `doc[8192]` had no bound against a repo's real
+commit count (unlike its sibling `HgitReconcileOverview`, which
+already had probe 59's own truncation guard) - reproduced a genuine
+GPF against the real ~300-commit repo probe 66's own stress test left
+behind (`RIP:...&StrNew`, same stack-corruption-surfaces-elsewhere
+signature as probe 60's crash), fixed with the same truncation-guard
+pattern. `Status.HC`'s `tagged[512]` had the identical per-file-size
+bug probe 56 already fixed in `Offer.HC`, just never applied here -
+fixed the same way (`STATUS_TOO_LARGE_TO_CHECK`, skip instead of
+overflow). Both verified against real reproductions (a real crash
+turned into a clean truncation notice, confirmed by reading the actual
+generated document's raw bytes; a real 600-byte file correctly
+reported too-large instead of crashing) plus an unaffected
+normal-case regression.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

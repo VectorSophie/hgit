@@ -57,6 +57,7 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
   I64 k;
   for (k=0; k<64; k++) cur_hash[k] = head_hash[k];
   Bool has_cur = TRUE;
+  Bool truncated = FALSE;
 
   while (has_cur) {
     I64 off_rel;
@@ -69,9 +70,22 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
     U8 *content = rbuf + off + 9;
     if (obj_type != OBJ_COMMIT) break;
 
+    // Real bug found and fixed (experiments/67-historydoc-buffer-guard/):
+    // `doc[8192]` was unbounded against a repo's real commit count -
+    // reproduced a genuine kernel GPF against a real ~300-commit repo
+    // (RIP inside &StrNew, stack corruption from this buffer's own
+    // overflow manifesting elsewhere, same pattern as probe 60's own
+    // crash). Guarded the same way `HgitReconcileOverview` already is
+    // (probe 59): stop cleanly with a margin before the buffer's own
+    // capacity, instead of overflowing it.
+    U32 mlen = CommitMessageLen(content);
+    if (dlen + mlen > 8192 - 256) {
+      truncated = TRUE;
+      break;
+    }
+
     U8 pcount = CommitParentCount(content);
     U64 ts = CommitTimestamp(content);
-    U32 mlen = CommitMessageLen(content);
     U8 *msg = CommitMessage(content);
 
     U8 hex[129];
@@ -112,6 +126,12 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
     } else {
       has_cur = FALSE;
     }
+  }
+
+  if (truncated) {
+    U8 *m = "(truncated - too much history for one document)$CR$";
+    I64 mi;
+    for (mi=0; m[mi]; mi++) doc[dlen++] = m[mi];
   }
 
   FileWrite(doc_path, doc, dlen);

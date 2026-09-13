@@ -1804,33 +1804,45 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   while (tmpde) {
     I64 fsize;
     U8 *fbuf = FileRead(tmpde->full_name, &fsize);
-    U8 tagged[512];
-    tagged[0] = OBJ_BLOB;
-    I64 i;
-    for (i=0; i<fsize; i++) tagged[1+i] = fbuf[i];
-    U8 file_hash[64];
-    B2Hash512Any(tagged, fsize+1, file_hash);
 
     I64 name_start = 0, j;
     for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
     I64 name_len = j - name_start;
 
-    U8 tree_type;
-    U8 tree_entry_hash[64];
-    U64 tree_entity_id;
-    Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
-                                  tmpde->full_name+name_start, name_len,
-                                  &tree_type, tree_entry_hash, &tree_entity_id);
-    if (!in_tree) {
-      CommPrint(1, "STATUS_NEW ");
+    // Real bug found and fixed (experiments/67-historydoc-buffer-guard/),
+    // same class as probe 56's own Offer.HC finding: `tagged[512]` had
+    // no bound against a matched file's real size - a file over 511
+    // bytes overflows it. Guarded the same way: skip with a clear
+    // message instead of corrupting memory.
+    if (fsize+1 > 512) {
+      CommPrint(1, "STATUS_TOO_LARGE_TO_CHECK ");
+      for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
+      CommPrint(1, "\n");
     } else {
-      Bool same = TRUE;
-      for (i=0; i<64; i++) if (file_hash[i] != tree_entry_hash[i]) same = FALSE;
-      if (same) CommPrint(1, "STATUS_UNCHANGED ");
-      else CommPrint(1, "STATUS_MODIFIED ");
+      U8 tagged[512];
+      tagged[0] = OBJ_BLOB;
+      I64 i;
+      for (i=0; i<fsize; i++) tagged[1+i] = fbuf[i];
+      U8 file_hash[64];
+      B2Hash512Any(tagged, fsize+1, file_hash);
+
+      U8 tree_type;
+      U8 tree_entry_hash[64];
+      U64 tree_entity_id;
+      Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
+                                    tmpde->full_name+name_start, name_len,
+                                    &tree_type, tree_entry_hash, &tree_entity_id);
+      if (!in_tree) {
+        CommPrint(1, "STATUS_NEW ");
+      } else {
+        Bool same = TRUE;
+        for (i=0; i<64; i++) if (file_hash[i] != tree_entry_hash[i]) same = FALSE;
+        if (same) CommPrint(1, "STATUS_UNCHANGED ");
+        else CommPrint(1, "STATUS_MODIFIED ");
+      }
+      for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
+      CommPrint(1, "\n");
     }
-    for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
-    CommPrint(1, "\n");
     tmpde = tmpde->next;
   }
   DirTreeDel(tmpde1);
@@ -2089,6 +2101,7 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
   I64 k;
   for (k=0; k<64; k++) cur_hash[k] = head_hash[k];
   Bool has_cur = TRUE;
+  Bool truncated = FALSE;
 
   while (has_cur) {
     I64 off_rel;
@@ -2101,9 +2114,22 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
     U8 *content = rbuf + off + 9;
     if (obj_type != OBJ_COMMIT) break;
 
+    // Real bug found and fixed (experiments/67-historydoc-buffer-guard/):
+    // `doc[8192]` was unbounded against a repo's real commit count -
+    // reproduced a genuine kernel GPF against a real ~300-commit repo
+    // (RIP inside &StrNew, stack corruption from this buffer's own
+    // overflow manifesting elsewhere, same pattern as probe 60's own
+    // crash). Guarded the same way `HgitReconcileOverview` already is
+    // (probe 59): stop cleanly with a margin before the buffer's own
+    // capacity, instead of overflowing it.
+    U32 mlen = CommitMessageLen(content);
+    if (dlen + mlen > 8192 - 256) {
+      truncated = TRUE;
+      break;
+    }
+
     U8 pcount = CommitParentCount(content);
     U64 ts = CommitTimestamp(content);
-    U32 mlen = CommitMessageLen(content);
     U8 *msg = CommitMessage(content);
 
     U8 hex[129];
@@ -2144,6 +2170,12 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
     } else {
       has_cur = FALSE;
     }
+  }
+
+  if (truncated) {
+    U8 *m = "(truncated - too much history for one document)$CR$";
+    I64 mi;
+    for (mi=0; m[mi]; mi++) doc[dlen++] = m[mi];
   }
 
   FileWrite(doc_path, doc, dlen);

@@ -191,7 +191,14 @@ reported `DISPATCH_OK` for every single call while silently losing 35
 of 150 real operation-log entries and leaving `HEAD` stuck 36 offers
 behind the true latest commit. Fixed the same way (`MAlloc`'d from the
 file's real size); verified with full data-integrity accounting after
-the fix (`experiments/66-meta-dynamic-buffer/`). Getting here also surfaced a real crash — `hgit offer *` against a directory holding
+the fix (`experiments/66-meta-dynamic-buffer/`). **Two more real
+buffer bugs were then found by auditing every remaining fixed-size
+array directly** (`experiments/67-historydoc-buffer-guard/`):
+`HistoryDoc.HC`'s `doc[8192]` (no bound against a repo's real commit
+count — reproduced a real GPF against an actual ~300-commit repo) and
+`Status.HC`'s `tagged[512]` (the same per-file-size bug probe 56 fixed
+in `Offer.HC`, never applied here). Both fixed with the same
+already-proven patterns and verified against real reproductions. Getting here also surfaced a real crash — `hgit offer *` against a directory holding
 dozens of pre-existing files caused a genuine kernel-level GPF (not a
 graceful error) — since **root-caused and fixed**
 (`experiments/56-offer-buffer-guard/`): two unbounded stack buffers in
@@ -217,11 +224,13 @@ five other read-only view commands (`see`/`history`/`status`/
 26-offer/~78-object repo run through all five, no crash; see
 `docs/research/failed-approaches.md`.
 
-**Three real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
+**Four real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
-(M4's reconciliation view underway), and
+(M4's reconciliation view underway),
 [`v0.5.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.5.0)
-(every known fixed-size-buffer overflow found and fixed). Each attaches
+(every known fixed-size-buffer overflow found and fixed), and
+[`v0.6.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.6.0)
+(a critical silent-data-loss fix in `Meta.HC`). Each attaches
 `packaging/HgitAll.HC` — verified downloaded and byte-identical to the
 local build before being announced done. Matches TempleOS's own
 convention (no installer/package manager; a program is `#include`d as
