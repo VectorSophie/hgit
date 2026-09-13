@@ -106,15 +106,33 @@ follow-up work for a future session.
 ## Not yet done
 
 Packfile format & delta-base selection, index format, commit-graph,
-protocol v2/partial clone - lower priority, TempleOS's own stated scale
-and single-machine-first design make these Git-scaling concerns less
-urgent than they were at the top of this list. Several items originally
-listed here are now real, resolved parts of hgit itself, not just
-research: refs/reflog (`Paths.HC`'s named paths + `OpLog.HC`'s own
-operation log), `git fsck`/recovery (`hgit check`'s referential-
-integrity and dangling-object passes), rename inference (ADR 0009,
-exact-hash and Fossil-based fuzzy matching). Merge-base/three-way merge
-is now real, *ongoing* work (see above) rather than untouched. The
-plumbing/porcelain split doesn't apply to hgit's own single-command
-(`Hgit(cmdline)`) CLI shape - a real, deliberate architectural
-difference from Git, not a gap.
+protocol v2/partial clone - deliberately deprioritized, checked against
+real primary source rather than assumed: Git's own docs
+(`git-scm.com/book/en/v2/Git-Internals-Packfiles`) describe packfiles
+as mattering once a repo accumulates thousands of commits and needs
+efficient network push/pull - neither condition holds for hgit today
+(real repos built across this whole project have stayed in the low
+hundreds of objects, per ADR 0013's own note, and `docs/research/03-zealos-and-networking.md`
+already found hgit needs no network transport of its own -
+`export`/`import` use plain local file copies instead). Protocol v2/
+partial clone specifically target large-repo network fetch, a
+scenario hgit has no analogue of at all. Real evidence of either
+condition changing (a repo genuinely reaching thousands of objects, or
+a real network-transport requirement emerging) would justify
+revisiting, not assumed away permanently.
+
+Several items originally listed here are now real, resolved parts of
+hgit itself, not just research: refs/reflog (`Paths.HC`'s named paths
++ `OpLog.HC`'s own operation log), `git fsck`/recovery (`hgit check`'s
+referential-integrity and dangling-object passes), rename inference
+(ADR 0009, exact-hash and Fossil-based fuzzy matching). Merge-base/
+three-way merge, including nested-tree recursion, is now real and
+verified (`docs/adr/0011-merge.md`, probes 97-100) rather than
+untouched or ongoing. The plumbing/porcelain split doesn't apply to
+hgit's own single-command (`Hgit(cmdline)`) CLI shape - a real,
+deliberate architectural difference from Git, not a gap.
+
+All of this doc's own real, load-bearing comparisons (object model,
+refs/reflog, fsck/recovery, rename inference, merge-base/three-way
+merge) are done; only the deliberately-deprioritized, evidence-checked
+items above remain open.

@@ -137,10 +137,17 @@ of its own claims were no longer true):
 - **Author/identity** on commits — still deliberately deferred; no
   real hgit workflow has needed it yet (single-user, single-machine
   usage throughout this project's own real history so far).
-- **A real hash table** — the index is still a linear scan/search
-  internally; still fine at current scale (real repos built this
-  session have grown to 150-200+ objects with no observed slowdown),
-  not yet benchmarked rigorously against a much larger real corpus.
+- ~~A real hash table — the index is still a linear scan/search
+  internally~~ **Built and verified standalone** (`experiments/104-index-hash-table/`):
+  `IndexBuildHashTable`/`IndexLookupHashTable` (open addressing, linear
+  probing) verified against every one of 75 real stored hashes from a
+  real repo, agreeing exactly with the existing linear scan on every
+  lookup including two fabricated absent hashes. **Deliberately not
+  wired into any real call site yet** - every real command still uses
+  the linear scan, same "verify standalone before adopting" stance ADR
+  0008 took for `Fossil.HC`; real repos built so far (150-240+ objects)
+  show no observed slowdown, so adopting it now would be ahead of real
+  evidence of need.
 - ~~Archive size (currently a fixed ~1KB-4KB test buffer) and record
   count are both far below anything real — scaling both up is
   unverified~~ **Resolved** (`docs/adr/0007-dynamic-archive-buffer.md`):

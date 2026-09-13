@@ -1750,6 +1750,84 @@ GitButler, Pijul, Darcs, Breezy, plus Sapling's own separate stacks
 sub-comparison) are now done, doc 04 promoted from 🟡 to ✅ in the
 research index.
 
+**A real hash table for `Index.HC`, built and verified standalone**:
+`experiments/104-index-hash-table/` (PASS) closes doc 06's own
+long-standing "Not yet done" item. `IndexBuildHashTable`/
+`IndexLookupHashTable` (open addressing, linear probing, hashed on the
+first 8 bytes of the already-uniform stored BLAKE2b hash) verified
+against a real repo's real index: 75 real objects from 25 genuinely-
+distinct offers, every one of the 75 real stored hashes resolving to
+the identical byte offset both ways, plus two fabricated
+definitely-absent hashes both correctly reported "not found" by both
+paths. **Deliberately not wired into any real call site** - all six
+existing `IndexLookup` callers still use the linear scan, same
+"verify standalone before adopting" pattern this project already used
+for `Fossil.HC` (ADR 0008): no real evidence yet that hgit's current
+real scale (low hundreds of objects per repo) makes the linear scan a
+practical bottleneck. `Index.HC`'s own header comment corrected to
+describe the current state accurately. Regression re-run clean.
+
+**Doc 05 (Git internals) promoted to fully done.** Its own "Not yet
+done" section had gone stale in the same way doc 06's had (still
+saying nested-tree merging was "ongoing" after probe 100 had already
+resolved it) - corrected. Also checked doc 05's own deprioritization
+of packfiles/commit-graph/protocol v2 against real primary source
+(`git-scm.com/book/en/v2/Git-Internals-Packfiles`) rather than leaving
+it an unverified assumption: Git's own docs describe packfiles as
+mattering once a repo reaches thousands of commits and needs efficient
+network transfer - neither condition holds for hgit today (real repos
+have stayed in the low hundreds of objects; doc 03 already found hgit
+needs no network transport of its own). Doc-only change, promoted from
+🟡 to ✅ in the research index.
+
+**A real, shared object-content ceiling found and fixed:
+`ObjectPut`'s own `tagged[4096]`.** While investigating why `Offer.HC`
+silently caps every file at 511 bytes (`fsize+1 > 512`), found that
+`Object.HC`'s own `ObjectPut` - called by every blob/tree/commit write
+in this codebase - had a SEPARATE, deeper `tagged[4096]` fixed stack
+buffer, a real shared ceiling every caller inherited regardless of its
+own local caps. `experiments/105-objectput-dynamic-tag/` (PASS):
+`MAlloc(dlen+1)` replaces the fixed array, verified with a real
+10,000-byte object round-tripping through `ArchiveVerify` (`total=1
+ok=1`), well past the old 4095-byte ceiling; `HgsPut` itself checked
+directly and confirmed to have no fixed buffer of its own. Regression
+re-run clean.
+
+**Deliberately does NOT yet let real commands offer files over 511
+bytes** - `Offer.HC`'s own two separate `blob_tagged[512]` stack
+buffers (flat `HgitOfferWithRelation` and recursive
+`TreeBuildRecursive`) and its `fsize+1 > 512` skip guard are unchanged,
+a real, separate, deliberately-scoped-out follow-up: raising that cap
+would also require re-deriving `ARCHIVE_HEADROOM` (currently a fixed
+20,000-byte constant computed from the OLD 511-byte/27-entry worst
+case) to avoid silently under-provisioning the `archive` `MAlloc` for
+a genuinely large file - the exact class of memory-corruption bug ADR
+0007/probes 60-61 already fixed once, not one to risk reintroducing by
+rushing a caller-level cap-lift in the same slice as the deeper fix.
+Logged here explicitly so it isn't mistaken for already resolved.
+
+**Flat `hgit offer`'s own 511-byte-per-file cap: lifted, safely.**
+`experiments/106-offer-large-file-support/` (PASS) does the deferred
+follow-up above, for the flat path only. `HgitOfferWithRelation`'s
+`blob_tagged` is now `MAlloc`'d at the file's own real size instead of
+a fixed `[512]` array, and - the real risk flagged above -
+`archive`'s own capacity is now a genuinely computed sum (a first
+`FilesFind` pass over the same `find_mask` sums every matched entry's
+own real `CDirEntry->size`, no `FileRead` needed just to size) instead
+of the old fixed `ARCHIVE_HEADROOM`, so a large file's bytes are
+accounted for exactly rather than assumed to fit a stale worst case.
+Verified: a real 5,000-byte file (well past the old 511-byte ceiling)
+offers cleanly, a second edited offer of the same large file also
+succeeds (entity-ID continuity intact), and a small file offered
+afterward in the same repo still works - `CHECK_OK` (hash-integrity-
+verified) after each step. Both the standing regression and the full
+command-surface suite (`tests/full-regression.hc`) re-run clean.
+**Deliberately still does NOT fix `offertree`'s own recursive path** -
+`TreeBuildRecursive` keeps the old cap and, worse, silently drops an
+oversized file with no message at all (unlike the flat path's old
+`OFFER_SKIP`) - a real, separate, explicitly-flagged follow-up, not
+silently left implicit.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

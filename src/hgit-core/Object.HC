@@ -17,18 +17,29 @@
 
 // Tags `data` with `type` and appends it as one .HGS record. HgsPut
 // underneath hashes via B2Hash512Any, so there's no BLAKE2b block-size
-// cap; this function's own `tagged[4096]` scratch buffer is the only
-// remaining limit (dlen+1 <= 4096), verified up to a 146-byte tree
-// object in experiments/10-tree-object/. Bump further (or switch to
-// MAlloc) if a real object ever needs more - not yet exercised past
-// this size.
+// cap. This function's own scratch buffer used to be a fixed
+// `tagged[4096]` stack array (dlen+1 <= 4096) - a real, shared
+// per-object-content ceiling every caller (Offer.HC's own blob/tree
+// content, Commit.HC's commit encoding) inherited silently. Probe 105
+// (experiments/105-objectput-dynamic-tag/) found it's the actual root
+// cause behind `Offer.HC`'s own separate `fsize+1 > 512` file-size
+// skip (that guard exists BELOW this one and would still trip first
+// today - see that probe's own "what this does not do" - but this is
+// the real, shared, lower-level limit any fix at that layer would
+// still be blocked by). `MAlloc`'d at exactly `dlen+1`, freed after
+// the one `HgsPut` call that needs it - same "no guessed cap" pattern
+// ADR 0007 already established for `Offer.HC`'s own `archive` buffer.
+// Verified up to a real 10,000-byte object round-tripping correctly
+// through `ArchiveVerify` (`experiments/105-objectput-dynamic-tag/`),
+// well past the old 4095-byte ceiling.
 U0 ObjectPut(U8 *archive_buf, I64 *len, U8 type, U8 *data, I64 dlen)
 {
-  U8 tagged[4096];
+  U8 *tagged = MAlloc(dlen+1);
   I64 i;
   tagged[0] = type;
   for (i=0; i<dlen; i++) tagged[1+i] = data[i];
   HgsPut(archive_buf, len, tagged, dlen+1);
+  Free(tagged);
 }
 
 // Reads the type tag of the object record whose length field starts at

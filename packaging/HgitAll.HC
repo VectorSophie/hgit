@@ -578,18 +578,29 @@ U0 HgsPut(U8 *archive_buf, I64 *len, U8 *data, I64 dlen)
 
 // Tags `data` with `type` and appends it as one .HGS record. HgsPut
 // underneath hashes via B2Hash512Any, so there's no BLAKE2b block-size
-// cap; this function's own `tagged[4096]` scratch buffer is the only
-// remaining limit (dlen+1 <= 4096), verified up to a 146-byte tree
-// object in experiments/10-tree-object/. Bump further (or switch to
-// MAlloc) if a real object ever needs more - not yet exercised past
-// this size.
+// cap. This function's own scratch buffer used to be a fixed
+// `tagged[4096]` stack array (dlen+1 <= 4096) - a real, shared
+// per-object-content ceiling every caller (Offer.HC's own blob/tree
+// content, Commit.HC's commit encoding) inherited silently. Probe 105
+// (experiments/105-objectput-dynamic-tag/) found it's the actual root
+// cause behind `Offer.HC`'s own separate `fsize+1 > 512` file-size
+// skip (that guard exists BELOW this one and would still trip first
+// today - see that probe's own "what this does not do" - but this is
+// the real, shared, lower-level limit any fix at that layer would
+// still be blocked by). `MAlloc`'d at exactly `dlen+1`, freed after
+// the one `HgsPut` call that needs it - same "no guessed cap" pattern
+// ADR 0007 already established for `Offer.HC`'s own `archive` buffer.
+// Verified up to a real 10,000-byte object round-tripping correctly
+// through `ArchiveVerify` (`experiments/105-objectput-dynamic-tag/`),
+// well past the old 4095-byte ceiling.
 U0 ObjectPut(U8 *archive_buf, I64 *len, U8 type, U8 *data, I64 dlen)
 {
-  U8 tagged[4096];
+  U8 *tagged = MAlloc(dlen+1);
   I64 i;
   tagged[0] = type;
   for (i=0; i<dlen; i++) tagged[1+i] = data[i];
   HgsPut(archive_buf, len, tagged, dlen+1);
+  Free(tagged);
 }
 
 // Reads the type tag of the object record whose length field starts at
@@ -868,11 +879,14 @@ U64 CommitRelationEntityId(U8 *buf)
 //
 // IndexBuild does one linear scan (same pattern/cost as
 // Archive.HC's ArchiveVerify) and records each record's *stored* hash
-// (not recomputed) plus its start offset. IndexLookup is still a linear
-// scan over the result - no hash table yet, see "Not yet done" in
-// experiments/12-index/README.md. Even without O(1) lookup, this is a
-// real capability gain: nothing could look up "the object with this
-// hash" at all before this file existed.
+// (not recomputed) plus its start offset. IndexLookup is a linear
+// scan over the result - every real command still uses this path.
+// A real O(1)-expected hash table (IndexBuildHashTable/
+// IndexLookupHashTable, probe 104) exists below but isn't wired into
+// any call site yet - no evidence at hgit's current real scale (low
+// hundreds of objects per repo) that the linear scan is a practical
+// bottleneck, same "verify standalone before adopting" stance ADR
+// 0008 took for Fossil.HC.
 //
 // Depends on Canon.HC (GetU64LE).
 
@@ -929,6 +943,62 @@ Bool IndexLookupPos(U8 *index_hashes, I64 count, U8 *target_hash, I64 *pos_out)
     Bool same = TRUE;
     for (j=0; j<64; j++) if (index_hashes[i*64+j] != target_hash[j]) same = FALSE;
     if (same) { *pos_out = i; return TRUE; }
+  }
+  return FALSE;
+}
+
+// A real hash table, per doc 06's own long-standing "Not yet done"
+// item ("a real hash table for the index"). NOT yet wired into any
+// call site (Offer.HC/History.HC/Status.HC/See.HC/ReconcileDoc.HC's
+// own six IndexLookup callers all still use the linear scan above) -
+// same "build and verify standalone before adopting" pattern this
+// project already used for Fossil.HC (ADR 0008): no real evidence yet
+// that hgit's current real scale (low hundreds of objects per repo,
+// per ADR 0013's own note) makes the linear scan a practical
+// bottleneck. Open addressing with linear probing, hashed on the
+// first 8 bytes of the (already near-uniform, BLAKE2b-derived) stored
+// hash - no need for a stronger mix, since collisions just cost one
+// extra probe step either way.
+//
+// Caller picks table_size (IndexHashTableSize below suggests one) and
+// MAllocs `table` itself - this file doesn't own that memory, matching
+// every other dynamic buffer in this codebase since ADR 0007.
+I64 IndexHashTableSize(I64 count)
+{
+  // Odd and comfortably larger than count halves real-world clustering
+  // for open addressing without needing count to be prime.
+  return count*2 + 1;
+}
+
+U0 IndexBuildHashTable(U8 *index_hashes, I64 count, I64 *table, I64 table_size)
+{
+  I64 i, slot;
+  for (i=0; i<table_size; i++) table[i] = -1;
+  for (i=0; i<count; i++) {
+    U64 h = GetU64LE(index_hashes + i*64, 0);
+    slot = h % table_size;
+    while (table[slot] != -1) slot = (slot+1) % table_size;
+    table[slot] = i;
+  }
+}
+
+// Same contract as IndexLookup (byte offset out), but O(1) expected
+// instead of O(count) - reads index_offsets[table[slot]] once a
+// matching stored hash is confirmed, same as the linear version does.
+Bool IndexLookupHashTable(U8 *index_hashes, I64 *index_offsets, I64 *table,
+                           I64 table_size, U8 *target_hash, I64 *offset_out)
+{
+  U64 h = GetU64LE(target_hash, 0);
+  I64 slot = h % table_size;
+  I64 tries = 0, idx, j;
+  Bool same;
+  while (table[slot] != -1 && tries < table_size) {
+    idx = table[slot];
+    same = TRUE;
+    for (j=0; j<64; j++) if (index_hashes[idx*64+j] != target_hash[j]) same = FALSE;
+    if (same) { *offset_out = index_offsets[idx]; return TRUE; }
+    slot = (slot+1) % table_size;
+    tries++;
   }
   return FALSE;
 }
@@ -4807,11 +4877,15 @@ U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
 // full list: no working-copy diffing (every matching file is re-blobbed
 // on every offer, not just changed ones - no deduplication awareness at
 // this layer, though identical content does still hash-dedupe for free
-// since objects are content-addressed), fixed-size local buffers
-// (archive[8192], tree_content[2048], per-file blob_tagged[512] - real
-// limits, not yet hit by anything tested), and `find_mask` has to be
-// passed in rather than "the whole repo directory minus the repo's own
-// files" (no self-exclusion logic yet).
+// since objects are content-addressed). `archive` and (flat `hgit
+// offer` only, probe 106) each matched file's own blob buffer are now
+// `MAlloc`'d at a real computed size, not fixed stack arrays - only
+// `tree_content[2048]` (an entry-COUNT cap, unrelated to file byte
+// size) remains a real, known, not-yet-hit limit; `offertree`'s own
+// recursive path still has the OLD fixed per-file cap too, a real,
+// separate follow-up (probe 106's own README). `find_mask` also still
+// has to be passed in rather than "the whole repo directory minus the
+// repo's own files" (no self-exclusion logic yet).
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
 // Tree.HC, Commit.HC (the whole hgit-core object layer),
@@ -4857,8 +4931,36 @@ U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
 // That worst case totals ~16600 bytes; 20000 leaves real margin and
 // matches the exact size independently confirmed safe via MAlloc in
 // experiments/61-dynamic-archive/.
+//
+// Still used by `HgitOfferTreeWithRelation` (`offertree`), which still
+// has its own separate `blob_tagged[512]` per-file cap, unchanged - a
+// real, deliberately-scoped-out follow-up (see probe 106's own
+// README). `HgitOfferWithRelation` (flat `hgit offer`) no longer uses
+// this fixed constant - see OBJECT_RECORD_OVERHEAD/TREE_COMMIT_HEADROOM
+// below (probe 106).
 #define ARCHIVE_HEADROOM 20000
 #define ARCHIVE_SANITY_MAX 1000000000
+
+// Probe 106 (experiments/106-offer-large-file-support/): now that
+// probe 105 removed `ObjectPut`'s own shared `tagged[4096]` ceiling,
+// the flat `hgit offer` path's own per-file `fsize+1 > 512` skip was
+// no longer inherited from anywhere deeper - lifted here, backed by a
+// real COMPUTED archive capacity instead of a fixed headroom: a first
+// `FilesFind` pass over the same `find_mask` sums every matched
+// entry's own real `size` field (no `FileRead` needed just to size -
+// `CDirEntry`'s own `size` field, confirmed real via
+// `Kernel/BlkDev/FileSysFAT.HC`'s own `tmpde->size=de->size`) before
+// `archive` is `MAlloc`'d, so a large offered file's own real bytes
+// are accounted for exactly rather than assumed to fit inside a fixed
+// per-file cap. `OBJECT_RECORD_OVERHEAD` is `HgsPut`'s own fixed
+// per-record cost (8-byte length + 1-byte type tag + 64-byte hash =
+// 73, `Hgs.HC`'s own record shape). `TREE_COMMIT_HEADROOM` covers the
+// still-in-place `tree_content[2048]` entry-count cap (unrelated to
+// file byte size, not removed here) plus its own record overhead,
+// plus a generous fixed bound for the commit object and its own
+// record overhead.
+#define OBJECT_RECORD_OVERHEAD 73
+#define TREE_COMMIT_HEADROOM 3000
 
 // ADR 0009 addendum (experiments/84-fuzzy-rename-detection/): a
 // currently-offered file's content must score at least
@@ -5097,7 +5199,28 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
     return;
   }
 
-  I64 archive_cap = rsize + ARCHIVE_HEADROOM;
+  // Probe 106: a real, computed capacity (sum of every matched file's
+  // own real size, via CDirEntry->size - no FileRead needed just to
+  // size) rather than a fixed headroom, so a large offered file's own
+  // bytes are always accounted for exactly.
+  I64 new_content_bytes = 0;
+  I64 new_file_count = 0;
+  CDirEntry *size_de = FilesFind(find_mask, 0);
+  CDirEntry *size_de1 = size_de;
+  while (size_de) {
+    new_content_bytes += size_de->size;
+    new_file_count++;
+    size_de = size_de->next;
+  }
+  DirTreeDel(size_de1);
+
+  I64 archive_cap = rsize + new_content_bytes
+                   + new_file_count * OBJECT_RECORD_OVERHEAD
+                   + TREE_COMMIT_HEADROOM;
+  if (archive_cap > ARCHIVE_SANITY_MAX) {
+    CommPrint(1, "OFFER_REFUSED archive_absurdly_large size=%d\n", archive_cap);
+    return;
+  }
   U8 *archive = MAlloc(archive_cap);
   I64 alen = 16; // header goes here at the end, once we know the count
   I64 i;
@@ -5188,16 +5311,19 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
     // - `if (cond) continue;` isn't a keyword there, it parses as an
     // undefined identifier). Nest the rest of the loop body inside an
     // `else` instead of early-`continue`-ing past the guards.
-    if (fsize+1 > 512) {
-      CommPrint(1, "OFFER_SKIP file_too_large %s\n", tmpde->full_name);
-    } else if (tlen + entry_needed > 2048) {
+    if (tlen + entry_needed > 2048) {
       CommPrint(1, "OFFER_SKIP tree_full %s\n", tmpde->full_name);
     } else {
-      U8 blob_tagged[512];
+      // Probe 106: was a fixed blob_tagged[512] stack buffer (the
+      // real reason every file over 511 bytes used to be skipped) -
+      // MAlloc'd at the file's own real size instead, same "no
+      // guessed cap" pattern as ObjectPut's own fix (probe 105).
+      U8 *blob_tagged = MAlloc(fsize+1);
       blob_tagged[0] = OBJ_BLOB;
       for (i=0; i<fsize; i++) blob_tagged[1+i] = fbuf[i];
       U8 blob_hash[64];
       B2Hash512Any(blob_tagged, fsize+1, blob_hash);
+      Free(blob_tagged);
       ObjectPut(archive, &alen, OBJ_BLOB, fbuf, fsize);
 
       // ADR 0009 (experiments/70-rename-detection/): if this name
@@ -6088,7 +6214,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.7.1"
+#define HGIT_VERSION "1.7.2"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
