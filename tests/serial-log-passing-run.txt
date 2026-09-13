@@ -1,0 +1,110 @@
+TFULL_BEGIN
+DISPATCH_OK init C:/Home/TFullRepo.hgs
+DISPATCH_OK offer
+TFULL_STATUS_BEGIN
+STATUS_UNCHANGED TFStays.txt
+STATUS_MODIFIED TFToModify.txt
+STATUS_RENAMED TFOrig.txt -> TFRenamed.txt
+STATUS_NEW TFGenuinelyNew.txt
+STATUS_DELETED TFToDelete.txt
+STATUS_END
+TFULL_STATUS_END_MARKER
+DISPATCH_OK offer
+TFULL_HISTORY_BEGIN
+commit ts=14209210 msg=second_offer
+commit ts=14206280 msg=first_offer
+HISTORY_END shown=2
+TFULL_HISTORY_END_MARKER
+TFULL_SEE_BEGIN
+SEE_COMMIT ts=14209210 parents=1 msg=second_offer
+SEE_TREE entries=4
+  entry type=1 id=3eca38101515cb93 name=TFGenuinelyNew.txt
+  entry type=1 id=195f8aed293e8ce7 name=TFRenamed.txt
+  entry type=1 id=fd282d06a43a43ce name=TFStays.txt
+  entry type=1 id=99635e6dba47c886 name=TFToModify.txt
+SEE_END
+TFULL_SEE_END_MARKER
+TFULL_DIFF_BEGIN
+DIFF_MODIFIED TFToModify.txt
+DIFF_RENAMED TFOrig.txt -> TFRenamed.txt
+DIFF_NEW TFGenuinelyNew.txt
+DIFF_DELETED TFToDelete.txt
+DIFF_END
+TFULL_DIFF_END_MARKER
+TFULL_CHECK_BEGIN
+CHECK_OK objects=12
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_CHECK_END_MARKER
+DISPATCH_OK undo
+TFULL_CHECK_AFTER_UNDO_BEGIN
+CHECK_OK objects=12
+CHECK_REFS_OK
+CHECK_DANGLING blob 362e53f95bf807c3c8e3be67e6a37d36348d95f8ba5da892832201313299f8d1072e89467b489166656a18b406a3147ef125bb3ca2ebfc383ea94c920b36eaf9
+CHECK_DANGLING blob ac4925b6204a332bd6469f2e679a6d796ec640c6a7570a866588de99b2d8da78523c93ef8ef40626f83cc3ce2732f2583426ee9408aad301e8e47e99d83b8099
+CHECK_DANGLING blob a0e4c80c6a818305d8950d67cbc85999f6e2a15007566dbae86f40ca82282fce88422d83ab3aa44fb78b82e0a9303fb2c27ad44d7455bc1719ae6ca7ae099277
+CHECK_DANGLING tree 592c44663a14e77b74804a3a568f336f405f4debde4cdc853cedab5065eb4e715d8acd4ede2c5e53bdc92b0ad3d52e81af38c2e2a2c7a3cf0e43b2945ee578ea
+CHECK_DANGLING commit 02523a0bec1fa5d4e0a56b2ff331978acb9f4d9914f6a28e045626292f92e143bbc2e0ce43dc021160f8109f655ca2fd9efadea2d39236a7b62f6ddf28b04522
+CHECK_DANGLING_COUNT 5
+TFULL_CHECK_AFTER_UNDO_END_MARKER
+DISPATCH_OK redo
+TFULL_OPHISTORY_BEGIN
+OP 0 ts=14206280 prev=00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 new=9f2a60f32d4b807d3901e95c0b6e805f3a58a63a189a7aaafcf6a18846d2e5fcc27709ff5960b63e7e5491dff801c321fcbf44f7e27922436d1d16deb724e04c
+OP 1 ts=14209210 prev=9f2a60f32d4b807d3901e95c0b6e805f3a58a63a189a7aaafcf6a18846d2e5fcc27709ff5960b63e7e5491dff801c321fcbf44f7e27922436d1d16deb724e04c new=02523a0bec1fa5d4e0a56b2ff331978acb9f4d9914f6a28e045626292f92e143bbc2e0ce43dc021160f8109f655ca2fd9efadea2d39236a7b62f6ddf28b04522
+DISPATCH_OK operation_history
+TFULL_OPHISTORY_END_MARKER
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+TFULL_PATHLIST_BEGIN
+PATH main
+PATH feature
+DISPATCH_OK path_list
+TFULL_PATHLIST_END_MARKER
+DISPATCH_OK path_go main
+DISPATCH_OK correct
+TFULL_SEE_CORRECT_BEGIN
+SEE_COMMIT ts=14238688 parents=1 msg=correcting_offer
+SEE_RELATION tag=2 target=02523a0bec1fa5d4e0a56b2ff331978acb9f4d9914f6a28e045626292f92e143bbc2e0ce43dc021160f8109f655ca2fd9efadea2d39236a7b62f6ddf28b04522 entity=0000000000000000
+SEE_TREE entries=1
+  entry type=1 id=99635e6dba47c886 name=TFToModify.txt
+SEE_END
+TFULL_SEE_CORRECT_END_MARKER
+DISPATCH_OK historydoc
+DISPATCH_OK reconciledoc
+DISPATCH_OK reconcileoverview
+DISPATCH_OK graph
+DISPATCH_OK export
+TFULL_CHECK_EXPORTED_BEGIN
+CHECK_OK objects=22
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_CHECK_EXPORTED_END_MARKER
+HGIT_VERSION 1.3.0
+                                      @@@                                      
+                                    @@@@@@@                                    
+                                  @@@@@@@@@@@                                  
+                                @@@@@@@ @@@@@@@                                
+                              @@@@@@@@  @@@@@@@@@                              
+                            @@@@@@@@@  @@%@@@@@@@@@                            
+                          @@@@@@@@@@%  %@% @@@@@@@@@                           
+                         @@@@@@@@@@@@@  %@@%@@@@@@@@@@                         
+                       @@@@@@@@@% %@@@@   @@@@ @@@@@@@@%                       
+                     @@@@@@*@@@@%   %@@  @@@@% @@@@@@@@@@%                     
+                   @@@@@@@@ @@@@@@  %@@ %@@%  @@@@@@@@@@@@@@                   
+                 @@@@@@@@@@ @@@%@@%%@%  @@@  @@@%@@ %@@@@@@@@%                 
+                @@@@@@@@%@@@@@@%@@@@@%  @@@@ @@@ @@% @@@@@@@@@@                
+               %@@@@@@@@@@@@@@%  @@@@@%  %@@@@@@ %@@@%@@@@@@@@@%               
+                @@@@@@@@ %@%@@@%    %@@@  @@@@   @@@@@@%@@@@@@%                
+                  @@@@@@@@@ %@@@@@@%  @@  @%   %@@@@@% @@@@@@                  
+                    @@@@@@@%    %@@@  %%    %@@@@@ @@%@@@@@                    
+                      @@@@@@@@@% %@@@%%%  %@@@*   %@@@@@@                      
+                       %@@@@@%@%   %@@@#  @@   #%@@@@@@%                       
+                         @@@@@@%%%#  %@       %@@@@@@%                         
+                           @@@@@@@@@%     %@@@@@@@@@                           
+                             @@@@@@@@@   %@@@@@@@@                             
+                               @@@@@@@   %@@@@@@                               
+                                 @@@%  %% %@@@                                 
+                                   @@@@@@@@@                                   
+                                    @@@@@@%                                    
+TFULL_END

@@ -1191,3 +1191,96 @@ give a misleading result if just re-run later in the same session
 against the accumulated persistent disk - write a fresh-repo variant
 to actually re-verify it, don't trust a bare re-run's output at face
 value.
+
+## 2026-09-13 — Cleaning up the repo file wasn't enough - the working-directory test files needed it too
+
+**Context:** Building `tests/full-regression.hc`, a single comprehensive
+pass over the whole command surface, iterated on (pushed, fixed, pushed
+again) several times in the same session against the same persistent
+QEMU disk.
+
+**Happened:** After fixing an unrelated ordering bug and re-running the
+test, `hgit status` reported `STATUS_UNCHANGED` for a file
+(`TFRenamed.txt`) that should have been showing up as a fresh rename
+target, and printed lines for a file (`TFFeatureFile.txt`) that hadn't
+even been created yet at that point in the script.
+
+**Why:** The test's own cleanup only `Del()`'d the repo file
+(`TFullRepo.hgs`/`.hgs.m`) at the top, following probe 79's own
+established convention - but not the individual working-directory
+files the test itself creates (`TFOrig.txt`, `TFRenamed.txt`,
+`TFFeatureFile.txt`, etc.). A previous run in the same session had
+already left those files sitting on disk; the test's own `TF*.txt`
+find_mask matched them too on the next run, mixing genuinely-fresh
+output with real leftover files from an earlier, already-completed
+pass.
+
+**Worked instead:** `Del()` every individual file the test creates,
+not just the repo, at the very start. **Standing note, generalizing
+probe 85's own earlier finding**: on this project's persistent QEMU
+disk, "clean" for a re-runnable test means every file path the test's
+own logic can see or match against - not just the repository file
+itself. A `find_mask`-driven command (`offer`/`status`) is
+particularly exposed to this, since it matches whatever's on disk,
+not just what the test just wrote.
+
+## 2026-09-13 — Two real bugs found only once the dev daemon's own free setup was removed
+
+**Context:** Building a real, standalone TempleOS+hgit bundle
+(`packaging/bundle/`, `experiments/87-bundle-install/`) for the
+project owner to test independently on Windows/Linux - a genuinely
+fresh TempleOS install, no dev daemon, no accumulated probe state.
+Every prior probe in this entire project's history tested exclusively
+through the dev daemon (`experiments/01-temple-repl/`'s `D()`/`D2()`),
+whose own bootstrap does two things silently that a bare session
+doesn't get for free.
+
+**Happened (bug 1):** Typing `#include "::/Doc/Comm";` then
+`#include "C:/Home/HgitAll.HC";` (the exact sequence `INSTALL.md`
+previously documented) at a bare `C:/Home>` prompt produced a real
+`Compiler Parse Error at '\n'`, citing a line deep inside the file -
+reproduced identically on two independent fresh boots (ruling out
+session-state fatigue, this project's own previously-documented flaky
+class from `experiments/28-hgit-package/`). Stripping all comments
+from the package (200,370 → 102,979 bytes) still failed via
+`#include`, just at a different, earlier line - ruling out cumulative
+comment volume specifically and pointing at a real size-dependent
+limit in `#include`'s own file-loading path. Both failing lines, in
+both variants, are long-established, previously-verified-correct
+`ReconcileDoc.HC` code, unchanged since probes 55-59 - not a real
+defect in hgit's own source.
+
+**Why:** Not fully isolated. `ExePutS`-based loading of the identical
+bytes (what every prior probe's own daemon injection actually does)
+does **not** fail at any size tested. `#include` and `ExePutS` are two
+different TempleOS compiler entry paths; whatever differs between them
+at this file size wasn't traced further (would need
+`D:/Compiler/CMain.HC.Z`'s own source, per probe 76's finding that it's
+readable - a real, concrete next step, not attempted here).
+
+**Worked instead:** `I64 sz;U8 *b=FileRead("C:/Home/HgitAll.HC",&sz);ExePutS(b);`
+instead of plain `#include`. Confirmed on a fresh boot: the entire
+~200KB file compiles cleanly this way.
+
+**Happened (bug 2):** Once loaded via the above, calling
+`Hgit("version");` produced a **real kernel General Protection fault**
+(`Fault:0x0D`, `RIP` inside `FifoU8Ins`).
+
+**Why:** `comm_ports[1]`'s FIFO was never initialized in this bare
+session. Every hgit command's own output goes through
+`CommPrint(1, ...)`; every prior probe's own daemon bootstrap always
+ran `CommInit8n1(1,115200);` (for COM1, alongside COM2 for its own
+injection channel) before anything else ever ran - masking this real
+prerequisite for the whole project's history, since nothing was ever
+tested without that daemon already having done it.
+
+**Worked instead:** `CommInit8n1(1,115200);` once, before loading
+hgit. Confirmed: with this one line added, `hgit version`/`hgit help`,
+then a full real `init`→`offer`→`history` sequence, all correct on the
+same fresh, bare, no-daemon session.
+
+**Standing fact, now documented**: a truly bare TempleOS session needs
+exactly `#include "::/Doc/Comm"; CommInit8n1(1,115200);` then
+`I64 sz;U8 *b=FileRead("C:/Home/HgitAll.HC",&sz);ExePutS(b);` before
+any real hgit command - not the plain `#include` `INSTALL.md`
+previously documented. Fixed there and in `packaging/bundle/hgit-launch.py`.

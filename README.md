@@ -179,7 +179,11 @@ downloaded and byte-identical to the local build before being
 announced done (matches TempleOS's own convention: no installer, a
 program is `#include`d as one source file). Major versions now mark
 real product milestones rather than every single change getting its
-own tag (`docs/research/09-packaging-and-releases.md`). See the
+own tag (`docs/research/09-packaging-and-releases.md`). The
+[current release](https://github.com/VectorSophie/hgit/releases/latest)
+also attaches a real, ready-to-run TempleOS+hgit bundle
+(`templeos-hgit.qcow2` + `hgit-launch.py`) for trying hgit on
+Windows/Linux/macOS without your own TempleOS install — see
+`packaging/bundle/README.md`. See the
 [Releases page](https://github.com/VectorSophie/hgit/releases) for the
-full, dated history — [`v1.0.0`](https://github.com/VectorSophie/hgit/releases/tag/v1.0.0)
-is current.
+full, dated history.

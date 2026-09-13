@@ -178,9 +178,14 @@ half; author/identity itself is still not invented.
   the lookup itself is still a linear scan, and the index isn't
   persisted (rebuilt from a full scan every time). Real optimization,
   not yet needed at hgit's current scale.
-- **No compression or delta encoding.** Every byte of every object is
-  stored raw. Deliberate for now — no compression should be added
-  without corpus evidence per the brief's own discipline.
+- **No compression or delta encoding in the object store itself.**
+  Every byte of every stored object is still raw. `src/hgit-core/Fossil.HC`
+  (a real, verified-reliable delta format, `docs/adr/0008-fossil-delta-format-prototype.md`)
+  is wired into `hgit offer`/`hgit status` for their own fuzzy rename
+  detection (`FossilSimilarityPercent` - ADR 0009), but that's a
+  similarity measure, not object storage compression. Whether/where
+  the object store itself should adopt delta-compressed storage
+  remains a real, separate, undecided architectural question.
 - **No multi-file / sharding.** One archive is one file, matching RedSea's
   contiguous-file model and Fossil's single-file-database precedent
   (doc 04) — not Git's directory-sharded loose objects.

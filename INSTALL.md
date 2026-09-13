@@ -4,9 +4,24 @@ TempleOS has no package manager, no installer, and no argv-based
 executable convention (confirmed from primary source,
 `Doc/CmdLineOverview.DD` — see `docs/research/01-templeos-holyc.md`
 and `docs/research/09-packaging-and-releases.md`). A "program" is run
-by `#include`-ing its source file at the live TempleOS command line.
+by loading its source file at the live TempleOS command line.
 Installing hgit means getting one file, `HgitAll.HC`, onto your
-TempleOS machine and `#include`-ing it.
+TempleOS machine and loading it — see step 3 for the exact, real,
+verified sequence (it's not a plain `#include` — that fails for a file
+this size; `experiments/87-bundle-install/` has the full story).
+
+## Fastest path: the pre-built bundle
+
+Don't have a TempleOS machine yet? `packaging/bundle/` (built from
+this same repo) is a real, fresh TempleOS install with hgit already
+saved onto it, plus `hgit-launch.py` — a small script that boots it and
+runs the load sequence below automatically, landing you at a ready
+`C:/Home>` prompt. See `packaging/bundle/README.md`. Requires QEMU and
+Python 3 on your host; the disk image itself is TempleOS, so it runs
+identically on Windows, Linux, and macOS.
+
+The rest of this document is for loading hgit onto your *own* existing
+TempleOS install instead.
 
 ## 1. Get the file
 
@@ -18,7 +33,9 @@ Each release attaches `HgitAll.HC` — a single self-contained
 concatenation of every `hgit-core`/`hgit-cli` source file, in
 dependency order (`tools/build-package.sh`; see
 `experiments/28-hgit-package/` for the original verification that this
-loads and runs correctly via one `#include`).
+loads and runs correctly on real TempleOS — via the daemon-injection
+mechanism that project used throughout; a plain `#include` of the
+current, larger build does not work, see step 3 below).
 
 ## 2. Get it onto your TempleOS machine
 
@@ -56,11 +73,23 @@ project would welcome the write-up.
 
 ## 3. Run it
 
-Once `HgitAll.HC` is on your TempleOS disk (say, `C:/Home/HgitAll.HC`):
+Once `HgitAll.HC` is on your TempleOS disk (say, `C:/Home/HgitAll.HC`),
+type exactly this at the command line — **not** a plain `#include`,
+which fails partway through for a file this size (a real, reproduced
+finding, `experiments/87-bundle-install/`; root cause not fully
+isolated, logged in `docs/research/failed-approaches.md`):
 
+```c
+#include "::/Doc/Comm";
+CommInit8n1(1,115200);
+I64 sz;U8 *b=FileRead("C:/Home/HgitAll.HC",&sz);ExePutS(b);
 ```
-#include "C:/Home/HgitAll.HC";
-```
+
+The first two lines are real prerequisites, not optional style: stock
+TempleOS doesn't auto-load `CommPrint`/`comm_ports` (line 1), and every
+hgit command prints through `CommPrint(1, ...)` — without `CommInit8n1`
+initializing COM1 first (line 2), the very first hgit command you run
+triggers a real kernel General Protection fault, not a graceful error.
 
 Then use it like any other native TempleOS command:
 

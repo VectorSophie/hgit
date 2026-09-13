@@ -1137,6 +1137,27 @@ and a genuinely new file all present in one offer reports each
 correctly, silent for the one untouched file; a root commit (no
 parent) correctly reports every entry as new. Regression re-run clean.
 
+**A real, canonical regression suite consolidates ~86 probes' worth of
+scattered testing into one place**: `tests/full-regression.hc` - the
+`tests/` directory sat empty this entire project despite thorough,
+real testing throughout, because that testing lived scattered one
+probe-directory-per-feature across `experiments/`. One pass now
+exercises `init`/`offer`/`status`/`history`/`see`/`diff`/`check`/
+`undo`/`redo`/`operation history`/named paths/`correct`/the DolDoc
+views/`export`/`version`/`logo` on a single fresh repo, verifying real
+output at each step (not just `DISPATCH_OK`) - a real modify, delete,
+fuzzy rename, and new file all correctly classified by both `status`
+and `diff`; `check` correctly reporting dangling objects right after
+`undo` and clean again after `redo`; the exported copy's own `check`
+passing too. **A real test-hygiene bug was found and fixed while
+building it**: cleaning up only the repo file between re-runs in the
+same session wasn't enough - the individual working-directory files
+the test itself creates needed the same treatment, or a later run
+matches leftover files from an earlier one via the same `find_mask`
+and silently corrupts its own result. Logged in
+`docs/research/failed-approaches.md` as a general lesson, not specific
+to this one test.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided
