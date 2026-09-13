@@ -128,9 +128,18 @@ the last storage-layer gap ADR 0001/FORMAT.md flagged as missing.
   corpus.
 - Archive size (currently a fixed ~1KB-4KB test buffer) and record count
   are both far below anything real — scaling both up is unverified.
-- No compression/chunking work at all — LZ4/zstd-as-reference-only per
-  the brief, content-defined chunking corpus, Fossil-style delta corpus.
-  Blocked on doc 04's Fossil delta-format read (not yet done) informing
-  what a "small auditable native format" should even look like here.
+- **Fossil-style delta format prototyped, partially verified**
+  (`docs/adr/0008-fossil-delta-format-prototype.md`,
+  `experiments/68-fossil-delta-format/`, `src/hgit-core/Fossil.HC`):
+  the byte-level mechanics (base-64 integer encode/decode, checksum,
+  three-part delta structure) are confirmed correct in a controlled,
+  minimal test, with two new HolyC quirks found and fixed along the
+  way. **Not adopted** - a real, unresolved reliability issue was
+  found (the identical delta-apply call passes or fails depending on
+  unrelated local variables declared in the caller, bisected precisely
+  but not root-caused) and is reported as open, not glossed over. No
+  real diff/longest-common-substring algorithm exists yet either
+  (the prototype only ever builds a delta with one literal segment).
+  Content-defined chunking corpus still entirely unstarted.
 - No RedSea/contiguous-file-storage constraints verified against actual
   kernel source (only the philosophy doc's mention so far, per doc 01).

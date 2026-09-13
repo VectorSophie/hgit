@@ -144,6 +144,43 @@ already-compiled caller of it, not just the function itself - a clean
 compile of the edited file alone is not sufficient evidence the change
 took effect.
 
+**Confirmed (probe 68, `experiments/68-fossil-delta-format/`)**:
+postfix-casting a raw byte read (e.g. `buf[i]` from a `U8 *`) directly
+to `(I64)` produces garbage - not the zero-extended byte value -
+while casting the exact same read to `(U64)` works correctly, even
+when the result is then used in I64 arithmetic afterward. Isolated
+precisely across every index-expression shape tried (bare literal,
+variable, arithmetic expression, explicitly parenthesized) - all
+`(I64)` forms gave the same class of huge garbage number, all `(U64)`
+forms gave the correct value every time. This is distinct from (though
+easy to confuse with) the U32-return-value quirk `Canon.HC` already
+documents from probe 3 - that one is about a function's *return type*
+not being truncated for the caller; this one is about the *cast target
+type* itself when the source is a raw array byte read. Canon.HC's own
+working code already avoided this by convention (it only ever casts to
+`(U64)`, never `(I64)`, for this purpose) without documenting why -
+probe 68 re-derives and confirms the actual reason. **Standing rule**:
+cast a raw byte/array read to `(U64)`, never `(I64)`, even if the
+result will immediately be used as I64 - a clean `(U64)` value
+composes safely into I64 arithmetic/comparisons afterward.
+
+**Open, unresolved (probe 68)**: a real function call
+(`FossilDeltaApply`) was found to return a different result depending
+on code elsewhere in the *caller*, after the call. Nine separate
+reproductions narrowed this well past "any extra local" (ruled out:
+local-variable count, type, an unused-variable effect, name collision
+with an internal variable, and "any extra function call site") down to
+one specific, reliably reproducible trigger: calling `FossilChecksum`
+again (on the same content) later in the same function, and using its
+result, flips an *already-computed-and-printed* earlier
+`FossilDeltaApply` result from failure to success - even though that
+second call is textually after the point where the affected value was
+already printed, ruling out a runtime execution-order explanation.
+This points at a compile-time code-generation interaction specific to
+this JIT, not yet understood well enough to state as a general rule.
+Flagged here as a real, live, narrowed-but-unsolved question about this
+compiler's behavior, not resolved.
+
 ## Facts confirmed in source (via `experiments/templeos-devkit`, ZealOS fork — close enough to stock HolyC to be informative, flagged where TempleOS-specific)
 
 Reading `NOTES.md`/`Daemon.ZC`/`temple-run.py` (see doc 08 for full

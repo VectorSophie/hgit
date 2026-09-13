@@ -905,3 +905,89 @@ project's five fixed-buffer probes so far (56/60/61/62/66/67) found
 its own bug independently; the fix pattern was known each time, but
 applying it required actually finding every call site, not assuming
 "the same kind of bug" implies "already fixed everywhere."
+
+## 2026-09-13 — Fossil delta format prototype: real quirks found, one real reliability gap left unresolved
+
+**Tried:** Prototyping Fossil's delta format in HolyC
+(`experiments/68-fossil-delta-format/`, `src/hgit-core/Fossil.HC`), per
+doc 04's own recommendation. Built the base-64 integer encoding, the
+checksum, and delta encode/apply, sourced byte-exactly from Fossil's
+own `src/delta.c`.
+
+**Happened, in order:**
+1. An early test driver crashed the VM outright via `CommPrint("%s",
+   delta)` on a non-null-terminated buffer - a test-driver bug, not
+   Fossil.HC's.
+2. A real logic bug: the segment-parsing loop scanned for `;` to
+   decide "more segments?", which is ambiguous with the trailer's own
+   checksum digits (never `;` either) - misread the checksum as a
+   bogus segment length and overran both buffers, causing a real VM
+   reset.
+3. After fixing the loop to terminate via the header's declared target
+   length instead, checksums still didn't match between encode and
+   decode. Isolated via careful bisection (a chain of increasingly
+   minimal reproductions) to a genuine HolyC quirk: casting a raw byte
+   read directly to `(I64)` gives garbage, while `(U64)` on the exact
+   same read works correctly - confirmed across every index-expression
+   shape (literal, variable, arithmetic, parenthesized).
+4. After fixing all raw-byte casts to `(U64)`, a separate bug remained:
+   the trailer-parsing order checked for `;` before reading the
+   checksum digits, backwards from the real format.
+5. After fixing all four of the above, a controlled minimal test
+   (`P68QCheck`) passed reliably, twice in a row, with matching
+   checksums. But the **original** test driver (`P68BTest`, and a
+   freshly-named equivalent, `P68RFinalVerify`) still failed with the
+   same call and arguments.
+
+**Why (partially - not fully understood):** Bisected precisely: taking
+the passing minimal test and adding exactly two unused local variables
+(`Bool match = TRUE; I64 i = 0;`) *after* the `FossilDeltaApply` call,
+with no other change, flips the result from pass to fail, reproduced
+consistently. Ruled out a stale-redefinition artifact (a brand-new
+function name still failed once it had more locals) and simple
+non-determinism (the minimal test passed twice in a row; the larger
+one failed twice in a row). The actual mechanism - a real bug in
+`Fossil.HC` sensitive to stack layout, or a deeper HolyC compiler
+quirk - was not established before time was called on this probe.
+
+**Worked instead:** Nothing - this is reported as a genuinely
+unresolved finding, not a dead end papered over. `Fossil.HC` is kept as
+a standalone prototype (`docs/adr/0008-fossil-delta-format-prototype.md`),
+verified correct only in a minimal, controlled calling context, and
+deliberately **not** wired into `tools/build-package.sh` or any real
+command until this reliability gap is understood. Full writeup:
+`experiments/68-fossil-delta-format/README.md`.
+
+## 2026-09-13 — Narrowing (not solving) the Fossil.HC caller-shape mystery further
+
+**Tried:** Following up on the open caller-shape-sensitivity finding
+logged just above, with more targeted bisection to narrow it past
+"unrelated local variables" to something more specific.
+
+**Happened:** Nine separate, isolated reproductions
+(`experiments/68-fossil-delta-format/test_fails_*.hc`/`test_PASSES_*.hc`/
+`test_ruled_out_*.hc`) systematically ruled out: local-variable count
+(one extra local still fails), type (I64 and U32 both fail alone),
+name collision (renaming to unique names still fails), an
+unused-variable/dead-code effect (using the value still fails), and
+"any extra function call fixes it" (an unrelated `StrLen` call still
+fails; a `FossilChecksum` call whose result is discarded still fails).
+
+**Why (still not fully understood):** The one specific, reliably
+reproducible trigger found: calling `FossilChecksum` again later in
+the same function (on the same content) **and using its result**
+flips an *already-computed-and-printed* earlier `FossilDeltaApply`
+call's result from failure to success - confirmed twice in separate
+pushes. Since the second call is textually after the point where the
+affected value was already printed, this cannot be explained by
+runtime execution order - it points at the compiler generating
+different code for the *earlier* call depending on what appears later
+in the same function body, a genuine code-generation-level effect
+rather than a logic bug.
+
+**Worked instead:** Nothing further attempted - this is real,
+additional narrowing of an already-logged open question, not a new
+dead end and not a fix. Recorded so a future investigation (with
+access to disassembly, which this session doesn't have) has a much
+more specific starting point than "add some locals and see." Full
+writeup: `experiments/68-fossil-delta-format/README.md`.

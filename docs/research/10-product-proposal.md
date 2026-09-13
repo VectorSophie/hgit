@@ -793,6 +793,32 @@ generated document's raw bytes; a real 600-byte file correctly
 reported too-large instead of crashing) plus an unaffected
 normal-case regression.
 
+**Fossil's delta format prototyped, honestly partially verified**:
+`docs/adr/0008-fossil-delta-format-prototype.md` /
+`experiments/68-fossil-delta-format/` (PARTIAL) - per doc 04's own
+recommendation, `src/hgit-core/Fossil.HC` implements the format's real
+byte-level mechanics (base-64 integer encode/decode, checksum,
+three-part delta structure), sourced directly from Fossil's own
+`src/delta.c` after two web summaries of the format disagreed with
+each other. A minimal, controlled test confirms the algorithm itself
+is correct (`APPLY_OK=1`, encode-time and decode-time checksums match
+exactly). Along the way found and fixed a real logic bug (trailer
+digits come before `;`, not after - backwards in an earlier version),
+a real buffer-overrun bug (segment-loop termination scanning for `;`
+is ambiguous with the trailer's own checksum digits - caused a real VM
+reset), and a genuine new HolyC quirk distinct from Canon.HC's own
+documented one (casting a raw byte read directly to `(I64)` gives
+garbage; `(U64)` works correctly even when used as I64 afterward -
+Canon.HC's own code already avoided this by convention without
+documenting why). **Left honestly open, not resolved**: the identical
+delta-apply call was found to pass or fail depending on unrelated
+local variables declared in the caller - bisected precisely (adding
+two unused locals to an otherwise-identical passing test flips the
+result) but not root-caused. `Fossil.HC` is therefore **not** wired
+into `tools/build-package.sh` or any real command - a real, live
+reliability question remains before this format can be trusted inside
+an actual hgit command's own (necessarily larger) function bodies.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

@@ -51,7 +51,11 @@ packages into one file, loadable with a single `#include`.
   objects: blob/tree/commit content), `Index.HC` (hash→offset lookup),
   `Meta.HC` (ADR 0003's combined per-repo metadata file — HEAD, path
   list/current-path, and operation-log storage in one file, immune to
-  the real 33-char path-length ceiling; `Paths.HC` now runs on it).
+  the real 33-char path-length ceiling; `Paths.HC` now runs on it),
+  `Fossil.HC` (ADR 0008 — a prototype of Fossil's delta compression
+  format; byte-level mechanics verified correct in a controlled test,
+  but a real, unresolved reliability gap means it's **not** wired into
+  any real command yet — see that ADR).
 - `src/hgit-cli/` — the command surface: `Init.HC`, `Check.HC`
   (`hgit check` — repo integrity verification, a thin wrapper over
   M0's own `Archive.HC` `ArchiveVerify`), `WorkDir.HC`,
@@ -198,7 +202,18 @@ array directly** (`experiments/67-historydoc-buffer-guard/`):
 count — reproduced a real GPF against an actual ~300-commit repo) and
 `Status.HC`'s `tagged[512]` (the same per-file-size bug probe 56 fixed
 in `Offer.HC`, never applied here). Both fixed with the same
-already-proven patterns and verified against real reproductions. Getting here also surfaced a real crash — `hgit offer *` against a directory holding
+already-proven patterns and verified against real reproductions.
+
+**A Fossil delta-format prototype was then built and honestly
+partially verified** (`docs/adr/0008-fossil-delta-format-prototype.md`,
+`experiments/68-fossil-delta-format/`) — the byte-level algorithm
+(base-64 integers, checksum, delta structure) is confirmed correct in
+a minimal test, with a genuine new HolyC quirk found along the way
+(casting a raw byte read directly to `(I64)` gives garbage; `(U64)`
+works correctly). **Left open, not resolved**: the same call passes or
+fails depending on unrelated local variables declared in the caller —
+bisected precisely but not root-caused, so `Fossil.HC` stays a
+standalone, not-yet-adopted prototype. Getting here also surfaced a real crash — `hgit offer *` against a directory holding
 dozens of pre-existing files caused a genuine kernel-level GPF (not a
 graceful error) — since **root-caused and fixed**
 (`experiments/56-offer-buffer-guard/`): two unbounded stack buffers in
