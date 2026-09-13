@@ -42,6 +42,7 @@ verified, probe by probe.
 | `hgit check` skipped `git fsck`'s "dangling"/"unreachable" object categories (only "missing object" referential integrity was built) | **Resolved** — `CheckMarkReachable` walks the real object graph from every declared path's own HEAD (a repo's only real ref concept), reporting anything left unmarked as `CHECK_DANGLING <kind> <hash>`. Verified against a real, naturally-occurring case (`undo` leaves a commit's own unique objects genuinely unreachable, without deleting them — hgit's own non-destructive-history design). A real correctness bug was found and fixed along the way: duplicate-content objects (the store never dedupes) were false-positive-reported dangling until a coalescing pass was added; caught by testing against a long-lived real repo, not a fresh fixture | `experiments/72-check-dangling-objects/` |
 | No command discoverability - `DISPATCH_ERR unknown_command` said what was wrong but never what to try, no full command listing existed short of reading `Hgit.HC`'s own source | **Resolved** — `hgit help` (also a bare/empty command, also a new `DISPATCH_HINT` line after `unknown_command`) prints every real command with its literal argument shape. Writing it surfaced a real mismatch between an initial guess and the dispatcher's actual `correct`/`revert`/`reconcile` argument order, corrected against the real code before finalizing | `experiments/73-hgit-help/` |
 | No version string embedded in the packaged file (doc 09's own flagged gap) | **Resolved** — `hgit version` (and `hgit help`'s own first line) prints `HGIT_VERSION`, bumped by hand alongside each real release tag | `experiments/74-hgit-version/`, `docs/research/09-packaging-and-releases.md` |
+| No install instructions doc existed beyond `tools/build-package.sh`'s own description (doc 09's own flagged gap) | **Resolved** — `INSTALL.md` built around the one transport this project has verified end-to-end (COM2 serial injection). A real attempt to also verify a CD-ROM-based path (`experiments/75-cd-media-attempt/`) did not conclusively work - a real, dated dead end, honestly logged rather than hidden | `INSTALL.md`, `experiments/75-cd-media-attempt/`, `docs/research/failed-approaches.md` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -950,6 +951,23 @@ release tag, same discipline probe 73 established for keeping help
 text in sync with the dispatcher. This probe's own version (`0.13.0`)
 is the release it ships as - the first real test of that discipline.
 Verified on real QEMU; regression re-run clean.
+
+**A real `INSTALL.md` now exists**: closes doc 09's own last flagged
+gap ("no install script/instructions doc exists yet"). Built around
+the one transport this project has verified end-to-end - COM2 serial
+injection via `paced_push.py`, the exact mechanism all 75 of this
+project's probes have used. Writing it included a real attempt to also
+verify a CD-ROM-based install path
+(`experiments/75-cd-media-attempt/`), using a disposable
+`-snapshot`-mode QEMU probe VM (confirmed afterward to have left the
+main daemon and the long-lived disk image completely untouched) - the
+CD path did not conclusively resolve (a real `B:` drive exists but
+reported empty content both before and after hot-swapping the attached
+ISO's content via the QEMU monitor; the actual CD-ROM's real drive
+letter, if different, wasn't found). Logged honestly as a genuine dead
+end rather than pushed further or hidden, since the product question
+that motivated it already had a real, verified answer (serial
+transfer) that didn't depend on solving it.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

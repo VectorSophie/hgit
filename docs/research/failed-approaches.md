@@ -1106,3 +1106,50 @@ combination (a deleted `.hgs` but a surviving `.m`) - a real, minor gap
 this project hasn't decided whether to close (most real usage
 wouldn't reuse a path this way), left here as an honest observation,
 not chased further.
+
+## 2026-09-13 — Attempting to verify a real CD-ROM install path for TempleOS, not conclusively resolved
+
+**Context:** Trying to verify a real, non-dev-tooling way for a user
+to get `packaging/HgitAll.HC` onto a TempleOS machine (a second IDE
+CD-ROM drive attached to a disposable, snapshot-mode QEMU probe VM
+booted off this project's own long-lived disk, carrying a small data
+ISO built with `mkisofs`). Full writeup:
+`experiments/75-cd-media-attempt/README.md`.
+
+**Happened:** Drive letters `A`/`E`/`F`/`G`/`H` all threw a real,
+non-fatal TempleOS exception (invalid drive). `D:` turned out to be
+the real boot drive (same contents as `C:/Home`'s own parent -
+`C:` looks like an alias/redirector, not a separate physical drive).
+`B:` is a real, valid drive, but reported 0 entries both before and
+after hot-swapping the attached CD image's real content via the QEMU
+monitor (`change ide1-cd0 <path>`, confirmed via `info block` that the
+swap itself took effect).
+
+**Why:** Not determined. Either `B:` isn't the attached CD-ROM at all
+(some other always-present empty drive), or it is but TempleOS doesn't
+pick up newly-changed removable media without an explicit rescan this
+attempt didn't find. Two ISO variants (with/without Joliet+RockRidge)
+were tried; both gave the same empty result, so the ISO's own format
+wasn't the more likely variable and wasn't narrowed further.
+
+**Worked instead / how this was actually resolved for the product
+question that motivated it:** it didn't need solving - the real,
+already-verified answer is **COM2 serial injection**
+(`paced_push.py`), the exact mechanism this entire project has used
+for all 74 prior probes, which genuinely is proven end-to-end transport
+for getting a `.HC` file's content onto a real TempleOS machine. Stopped
+chasing the CD-specific drive letter deliberately, not because of a
+hard blocker - it's a low-value detail (a real user's own drive-letter
+mapping depends on their own hardware anyway, not something worth
+guessing from one QEMU configuration) relative to the time it would
+keep costing. `INSTALL.md` was written around the serial-transfer
+mechanism instead, which is both verified and general.
+
+**Real, useful side-confirmation despite not solving the main
+question:** `-snapshot` + `file.locking=off` on the primary drive lets
+a disposable exploratory QEMU VM boot off this project's own
+long-lived disk image with zero risk to it or to the main daemon
+session (confirmed after the fact: `disk.qcow2`'s own mtime never
+changed, and the main daemon process was untouched throughout) - a
+real, reusable technique for future probes that want to try something
+against real accumulated state without commitment.

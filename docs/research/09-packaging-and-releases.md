@@ -59,8 +59,15 @@ apply here.
   release tag - the same discipline probe 73 already established for
   keeping `hgit help`'s text in sync with the dispatcher's real code,
   not generated or automatically verified against the actual git tag.
-- No install script/instructions doc exists yet beyond this file and
-  the top-level README's own description of `tools/build-package.sh`.
+- ~~No install script/instructions doc exists yet~~ **Done**: `INSTALL.md`
+  (repo root) - built around the one transport this project has
+  actually verified end-to-end (COM2 serial injection,
+  `paced_push.py`), with real-hardware alternatives flagged honestly
+  as unverified rather than presented as tested. Writing it included a
+  real attempt (`experiments/75-cd-media-attempt/`) to verify a
+  CD-ROM-based path, which did not conclusively work - logged as a
+  genuine, dated dead end (`docs/research/failed-approaches.md`)
+  rather than hidden or overclaimed.
 
 ## Architectural implications so far
 

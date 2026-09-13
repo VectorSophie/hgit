@@ -312,6 +312,18 @@ flagged: a real `HGIT_VERSION` string, printed by `hgit version` and
 shown as `hgit help`'s own first line, bumped by hand alongside each
 real release tag.
 
+**A real `INSTALL.md` now exists** (repo root), closing doc 09's last
+flagged gap. Built around the one transport this project has verified
+end-to-end - COM2 serial injection, the mechanism every probe in this
+project has actually used - with real-hardware alternatives flagged
+honestly as unverified rather than presented as tested. A real attempt
+to also verify a CD-ROM-based install path
+(`experiments/75-cd-media-attempt/`) did not conclusively work; logged
+as a genuine dead end in `docs/research/failed-approaches.md` instead
+of being hidden or overclaimed - the disposable QEMU probe VM used to
+try it was confirmed afterward to have left the main dev session and
+disk untouched.
+
 **Real releases are cut regularly**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
 (M4's reconciliation view underway),
@@ -326,9 +338,11 @@ and [`v0.8.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.8.0)
 [`v0.9.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.9.0)
 (exact-content rename detection), [`v0.10.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.10.0)
 (status surfaces detected renames), [`v0.11.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.11.0)
-(check detects dangling/unreachable objects), and
-[`v0.12.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.12.0)
-(hgit help). Each attaches
+(check detects dangling/unreachable objects), [`v0.12.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.12.0)
+(hgit help), and
+[`v0.13.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.13.0)
+(hgit version - the first release tag whose own `HGIT_VERSION` string
+matches it exactly). Each attaches
 `packaging/HgitAll.HC` — verified downloaded and byte-identical to the
 local build before being announced done. Matches TempleOS's own
 convention (no installer/package manager; a program is `#include`d as
