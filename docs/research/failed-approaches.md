@@ -1348,13 +1348,25 @@ Skipping the header to save a few bytes in a throwaway test buffer is
 a real, reproducible way to feed garbage into offset math that assumes
 it's there.
 
-## 2026-09-14 — `DirTreeDel` itself hangs, even on a trivial 2-file directory - a real TempleOS-level dead end, not an hgit bug
+## 2026-09-14 — Passed a string path to `DirTreeDel` (a `CDirEntry*`-list free, not a directory delete), hanging the shared daemon
+
+**Corrected the same day**: this entry originally concluded
+`DirTreeDel` itself was a broken/hanging TempleOS built-in. That
+conclusion was wrong - found and fixed within the same session, before
+anything beyond this file relied on it, once `Status.HC`'s own already-
+working `DirTreeDel(tmpde1)` calls were looked at directly. Real root
+cause below; keeping the full story (including the wrong first
+conclusion) rather than quietly rewriting it, matching this project's
+own standing discipline of showing dead ends honestly, including ones
+this session itself created and then caught.
 
 **Tried:** A probe 94 test for `hgit diff`'s new nested-tree recursion
 (ADR 0010) needed a real "whole subdirectory deleted from disk" case:
-delete every file inside a nested subdirectory, call `DirTreeDel` on
-the subdirectory itself, then re-offer and diff. Ran it against a real
-QEMU daemon exactly like every other probe.
+delete every file inside a nested subdirectory, then call
+`DirTreeDel("C:/Home/P94Root/SubA")` - a bare directory-path STRING -
+to remove the now-empty subdirectory entry itself, then re-offer and
+diff. Ran it against a real QEMU daemon exactly like every other
+probe.
 
 **Happened:** A real hang, same shape as the probe 90 incident (VM
 `system_reset` still reported the guest as `running`, but zero further
@@ -1362,14 +1374,25 @@ serial output ever appeared - not a crash, a real non-terminating
 loop). First reaction was to suspect `HgitOfferTree`/`TreeBuildRecursive`
 or the new `Diff.HC` recursion, all touched by this same probe.
 
-**Why (isolated, not assumed):** rather than guess which of several
-new pieces was at fault, wrote a second, minimal test with **zero
-hgit code involved at all** - just `DirMk`/`FileWrite` to build a
-trivial 2-file/1-subdirectory tree, then one bare `DirTreeDel` call.
-That alone hung identically, immediately after printing a `BEFORE`
-marker and before any `AFTER` marker - conclusively isolating this to
-`DirTreeDel` itself (a real TempleOS built-in this project had never
-exercised before), not to any of this session's own new code.
+**Real root cause, found by reading this project's own existing code,
+not by further guessing:** `DirTreeDel` is called correctly THREE
+times already in this codebase (`WorkDir.HC:39`, `Offer.HC:271`/`447`,
+`Status.HC:111`/`182`) - every single time on a `CDirEntry*` (`tmpde1`,
+the head of a list `FilesFind` returned), immediately after finishing
+a walk over that list, to free it. It is TempleOS's real API for
+"free this `CDirEntry` linked list" - a "directory tree" in the sense
+of an in-memory result structure, not a filesystem directory. This
+probe's own test instead passed a bare `U8*` string path where HolyC's
+weak typing let it compile without complaint; `DirTreeDel` then walked
+whatever bytes happened to sit at the `next`-pointer's byte offset
+within that STRING's own ASCII content as if it were a real
+`CDirEntry`, chasing a garbage pointer - a real, reproducible way to
+hang (or corrupt memory) that has nothing to do with `DirTreeDel`'s
+own real, correct, already-proven behavior. A second, "isolated"
+zero-hgit-code test (below) made the exact same mistake, so it did NOT
+actually prove anything about `DirTreeDel` itself - it just reproduced
+the identical misuse in a smaller repro, which looked like isolation
+but wasn't.
 
 **A second, self-inflicted incident during recovery**: the first
 re-bootstrap attempt used the ORIGINAL `BOOTSTRAP_CMDS` default
@@ -1385,14 +1408,17 @@ a THIRD full reset. Recovered correctly the second time by re-declaring
 `Db`/FIFO sizing has to match too, a mismatch between the two isn't
 caught by anything short of actually overflowing it.
 
-**Worked instead:** don't use `DirTreeDel` in test drivers (or,
-provisionally, anywhere else in this project) until its own real
-behavior is separately, properly investigated - delete every real
-file individually instead (`Del(path, FALSE, FALSE, FALSE)` per file),
-leaving now-empty directories in place. `TreeBuildRecursive` handles
-this correctly and was never the problem: an emptied-but-still-present
-subdirectory offers as a real (now-empty) `OBJ_TREE`, and probe 94's
-own real `hgit diff` output correctly showed both files as
+**Worked instead:** kept the test's fix as-is (delete every real file
+individually instead of the whole directory entry -
+`Del(path, FALSE, FALSE, FALSE)` per file, leaving now-empty
+directories in place) - not because `DirTreeDel` needed avoiding, but
+because this project still has no proven, tested primitive for "delete
+a real directory entry (not just its contents) from disk" at all; a
+correct `DirTreeDel` call wouldn't have done that job anyway (it frees
+a `CDirEntry*` list, it doesn't touch the filesystem). `TreeBuildRecursive`
+handles an emptied-but-still-present subdirectory correctly and was
+never the problem: it offers as a real (now-empty) `OBJ_TREE`, and
+probe 94's own real `hgit diff` output correctly showed both files as
 `DIFF_DELETED` with their full nested paths - genuine coverage of the
 recursive-deletion-reporting code path, just via files disappearing
 rather than the whole directory entry vanishing from disk.
@@ -1407,11 +1433,17 @@ daemon was messaged proactively before and after each recovery attempt
 and held off touching the shared daemon throughout - real, coordinated
 avoidance of a second collision on top of an already-live incident.
 
-**Standing lesson, twofold**: (1) `DirTreeDel` is now a known, real
-dead end for this project until separately investigated - don't reach
-for it, even for "surely trivial" cleanup, without a `timeout`-guarded
-isolated test first. (2) Any daemon re-bootstrap must size stage-1's
-own `Db`/RX-FIFO to match whatever's about to be pushed through it
-(512KB, matching `daemon_v2.hc`'s own bound) - copying `daemon_v2.hc`
-correctly is not enough if the STAGE-1 bootstrap that gets it running
-still uses the smaller original default.
+**Standing lesson, threefold**: (1) `DirTreeDel` takes a `CDirEntry*`
+(a `FilesFind` result list to free), never a path string - this
+project has no proven "delete a real directory entry from disk"
+primitive at all; that remains a real, separate, unexplored gap if a
+future probe genuinely needs one, not something to reach for by
+name-guessing. (2) When a hang's cause seems isolated by a "minimal"
+follow-up test, check that the minimal test doesn't repeat the exact
+same mistake in smaller form before trusting the isolation - a smaller
+repro of the same bug looks identical to proof the underlying function
+is broken. (3) Any daemon re-bootstrap must size stage-1's own
+`Db`/RX-FIFO to match whatever's about to be pushed through it (512KB,
+matching `daemon_v2.hc`'s own bound) - copying `daemon_v2.hc` correctly
+is not enough if the STAGE-1 bootstrap that gets it running still uses
+the smaller original default.

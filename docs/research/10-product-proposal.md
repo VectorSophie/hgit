@@ -1282,8 +1282,8 @@ trees across commits) - real, separate follow-up work, one command at
 a time.
 
 **`hgit diff` also now recurses into nested trees, and a real
-DirTreeDel dead end found along the way**: `experiments/94-diff-
-nested-trees/` (PASS). `DiffPrintTreeChanges` refactors `Diff.HC`'s
+DirTreeDel API-misuse dead end found (then corrected) along the way**:
+`experiments/94-diff-nested-trees/` (PASS). `DiffPrintTreeChanges` refactors `Diff.HC`'s
 existing NEW/MODIFIED/DELETED/RENAMED logic into a recursive helper,
 same generic-per-object-type pattern as `See.HC`/`Check.HC`: a
 modified subdirectory recurses (real changes reported with their full
@@ -1298,28 +1298,71 @@ for a later one. Also found and fixed a real "duplicate member"
 sibling-block-same-local-name collision (probe 5's own documented
 HolyC quirk, recurring) on first push.
 
-A real, separate dead end surfaced while building this: the test's
-original design used `DirTreeDel` to remove a whole subdirectory from
-disk, which **hung the shared daemon** - isolated (via a second,
-minimal, zero-hgit-code test) to `DirTreeDel` itself, not this
-project's own code. A second, self-inflicted incident happened during
-the first recovery attempt (an under-sized 128KB bootstrap buffer
-receiving a 222KB package push caused a real GPF) - recovered
-correctly the second time with the bootstrap's own `Db`/RX-FIFO sized
-to match `daemon_v2.hc`'s real 512KB bound. Both incidents fully
-logged in `docs/research/failed-approaches.md`'s 2026-09-14 entry,
-with the persistent disk's own repo history confirmed intact after
-each (`CHECK_OK objects=138 → 144 → 150`). Fixed the test itself by
-deleting files individually instead of the whole directory - real,
-if slightly different, coverage of the same DELETED-reporting logic.
+A real dead end surfaced while building this, then self-corrected:
+the test's original design called `DirTreeDel("...path...")` (a bare
+string) to remove a whole subdirectory from disk, which **hung the
+shared daemon**. First concluded (wrongly) that `DirTreeDel` itself
+was broken - a "minimal, zero-hgit-code" follow-up test seemed to
+confirm it, but had silently repeated the exact same mistake in
+smaller form. The real root cause, found by re-reading this project's
+own existing code: `DirTreeDel` takes a `CDirEntry*` (the list
+`FilesFind` returns) and frees it - it has nothing to do with deleting
+anything from disk, and every prior real usage in this codebase
+(`WorkDir.HC`/`Offer.HC`/`Status.HC`) already calls it correctly.
+Passing a string path let HolyC's weak typing compile it anyway, then
+walked garbage bytes as a fake linked list - a real, reproducible way
+to hang, unrelated to any actual defect in `DirTreeDel`. A second,
+self-inflicted incident happened during the first recovery attempt (an
+under-sized 128KB bootstrap buffer receiving a 222KB package push
+caused a real GPF) - recovered correctly the second time with the
+bootstrap's own `Db`/RX-FIFO sized to match `daemon_v2.hc`'s real
+512KB bound. Both incidents, and the self-correction, fully logged in
+`docs/research/failed-approaches.md`'s 2026-09-14 entry, with the
+persistent disk's own repo history confirmed intact after each
+(`CHECK_OK objects=138 → 144 → 150`). The test itself still deletes
+files individually rather than the whole directory - not because
+`DirTreeDel` needed avoiding, but because this project still has no
+proven "delete a real directory entry from disk" primitive at all.
 
 Also corrected an assumption in ADR 0010's own "not yet done" list
 while writing this up: `HistoryDoc.HC`/`ReconcileDoc.HC`/`Graph.HC`
 don't touch tree/file content at all (they render commit chains,
 relations, and branch structure, never a file listing) - "still flat"
 didn't actually apply to them, and this item doesn't either. Only
-`Status.HC` (comparing a live directory against nested trees) remains
-genuinely open on that list now.
+`Status.HC` (comparing a live directory against nested trees) remained
+genuinely open on that list at the time.
+
+**`hgit statustree` closes that last item**: `experiments/95-
+statustree/` (PASS). A new, separate command (`hgit statustree <repo>
+<dir_path>`, not a change to `hgit status`'s own `find_mask`/
+`dir_prefix` semantics - the same CLI-semantics decision `offertree`
+and `Diff.HC`'s own recursion already made). `StatusTreeWalk`
+(`Status.HC`) recurses the same generic-per-object-type way as
+`Check.HC`/`See.HC`/`Diff.HC`: a real subdirectory with a matching
+committed subtree recurses into it; a wholly new real subdirectory
+recurses against an empty tree so every real nested file gets its own
+`STATUS_NEW <path>` line; a tree-only entry no longer present on disk
+in any form recurses against an empty real directory listing, so
+every entry it used to contain gets its own `STATUS_DELETED <path>`
+line - existence checked via a real `FilesFind`-based directory probe,
+not the flat command's own `FileRead`-succeeds check (which only ever
+meant something for plain files before ADR 0010). Verified: a real
+2-level-deep repo with an edited nested file, a brand-new file two
+levels deep, and a deleted top-level file, all correctly and
+separately reported (`STATUS_NEW SubA/SubB/deep.txt`,
+`STATUS_MODIFIED SubA/inner.txt`, `STATUS_DELETED top.txt`); after
+actually offering that state, a second `statustree` call reports a
+clean tree. The full command-surface regression
+(`experiments/65-head-deletion/`) re-run clean, `hgit status`'s own
+flat output unaffected. No HolyC compile-time gotchas this time -
+probe 94's sibling-block-local-name lesson was applied proactively.
+
+ADR 0010's own "rendering-command awareness of nested trees" item is
+now **fully closed** across every command that shows file-level
+content (`See.HC`/`Diff.HC`/`Status.HC`). Real, separate scope
+remaining, unchanged from ADR 0010's own original decision:
+cross-directory rename/move detection, and `offertree`'s own
+relation-tag support.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

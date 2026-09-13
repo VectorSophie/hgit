@@ -33,16 +33,16 @@ U0 P94DiffNestedTest()
   Hgit(cmd);
   CommPrint(1, "P94_DIFF1_END\n");
 
-  // Third commit: delete the entire SubA subdirectory - a real
-  // wholly-deleted-subtree case, recursively. Deliberately NOT using
-  // DirTreeDel: isolated separately (experiments/94-diff-nested-
-  // trees/) and found to hang even on a trivial 2-file directory,
-  // independent of hgit entirely - a real TempleOS-level dead end,
-  // logged in docs/research/failed-approaches.md. Delete each real
-  // file individually instead; TreeBuildRecursive only ever walks
-  // what's actually still on disk, so an emptied-then-still-present
-  // directory offers identically to a genuinely absent one from
-  // hgit's own point of view.
+  // Third commit: delete each real file inside SubA (not the
+  // directory entry itself - this project has no proven "delete a
+  // directory from disk" primitive; DirTreeDel is NOT it, see
+  // docs/research/failed-approaches.md's 2026-09-14 entry - it frees
+  // a CDirEntry* list, not a filesystem path, a real dead end this
+  // test's first draft hit by passing it a string instead). An
+  // emptied-but-still-present directory offers identically to a
+  // genuinely absent one from TreeBuildRecursive's own point of view
+  // (a real, empty OBJ_TREE either way), so this still exercises the
+  // real DELETED-recursion path.
   Del("C:/Home/P94Root/SubA/inner.txt", FALSE, FALSE, FALSE);
   Del("C:/Home/P94Root/SubA/SubB/deep.txt", FALSE, FALSE, FALSE);
   Hgit("offertree C:/Home/P94Repo.hgs C:/Home/P94Root/ third_offer_delete_subtree");

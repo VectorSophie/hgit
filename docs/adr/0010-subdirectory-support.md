@@ -11,7 +11,10 @@ supporting evidence exists, and this is that evidence. Probe 90 then
 built the standalone primitive, and probe 91 made the real
 CLI-semantics decision (Decision point 2, below) and wired it in: a
 **new, separate command, `hgit offertree`**, not a change to plain
-`hgit offer`.
+`hgit offer`. Every rendering/inspection command that shows file-level
+content (`See.HC`/probe 93, `Diff.HC`/probe 94, `Status.HC`/probe 95)
+is now fully nested-tree-aware too - see "What this slice does not
+do" below for what's still real, deliberately deferred scope.
 
 ## Context
 
@@ -138,20 +141,24 @@ considered"):**
 - Modifying `hgit offer`'s own live dispatch - `offertree` is a
   separate command instead (see Decision point 2).
 - Cross-directory rename/move detection (see Decision point 1).
-- `Status.HC`/`Diff.HC`/rendering-command awareness of nested trees -
-  `See.HC` closed (probe 93, `experiments/93-see-nested-trees/`:
-  `SeePrintTreeEntries` recurses into any `OBJ_TREE` entry, indenting
-  one level deeper, verified on a real 2-level-deep repo). `Diff.HC`
-  now also closed (probe 94, `experiments/94-diff-nested-trees/`:
+- ~~`Status.HC`/`Diff.HC`/rendering-command awareness of nested
+  trees~~ **Fully closed.** `See.HC` closed (probe 93,
+  `experiments/93-see-nested-trees/`: `SeePrintTreeEntries` recurses
+  into any `OBJ_TREE` entry, indenting one level deeper). `Diff.HC`
+  closed (probe 94, `experiments/94-diff-nested-trees/`:
   `DiffPrintTreeChanges` recurses into a modified/new/deleted
   subdirectory, path-prefixing every real change - `SubA/inner.txt`,
   not just `SubA`; a same-name kind change reported as a real, honest
-  `DIFF_TYPE_CHANGED` rather than guessed at). `HistoryDoc.HC`/
-  `ReconcileDoc.HC`/`Graph.HC` don't touch tree/file content at all (a
-  re-read while writing this up found they render commit chains/
-  relations/branches only, never a file listing - "flat" doesn't
-  apply, and neither does this item) - only `Status.HC` (comparing a
-  live directory against nested trees) remains genuinely open here.
+  `DIFF_TYPE_CHANGED` rather than guessed at). `Status.HC` closed
+  (probe 95, `experiments/95-statustree/`: a new `hgit statustree
+  <repo> <dir_path>` command, `StatusTreeWalk` recursing the same way,
+  comparing a real live directory against a committed tree at every
+  level, existence of a tree-typed entry checked via a real
+  `FilesFind`-based directory probe rather than the flat command's own
+  `FileRead`-succeeds check). `HistoryDoc.HC`/`ReconcileDoc.HC`/
+  `Graph.HC` don't touch tree/file content at all (they render commit
+  chains/relations/branches only, never a file listing) - this item
+  never actually applied to them.
 - `offertree` relation-tag support (`correct`/`revert`/`reconcile`
   equivalents) - a plain offering only, matching `HgitOffer`'s own
   original scope before ADR 0005 added relations.

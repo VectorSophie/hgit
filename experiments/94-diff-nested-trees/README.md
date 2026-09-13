@@ -1,10 +1,11 @@
 # Probe 94 — `hgit diff` recurses into nested trees
 
-Status: **PASS** (with one real, honestly-logged dead end found along
-the way - `DirTreeDel`, see `docs/research/failed-approaches.md`'s
-2026-09-14 entry). Closes the `Diff.HC` half of ADR 0010's own
-remaining "rendering-command awareness of nested trees" item (probe
-93 already closed the `See.HC` half).
+Status: **PASS** (with one real dead end found, then self-corrected,
+along the way - a `DirTreeDel` API misuse, see
+`docs/research/failed-approaches.md`'s 2026-09-14 entry). Closes the
+`Diff.HC` half of ADR 0010's own remaining "rendering-command
+awareness of nested trees" item (probe 93 already closed the `See.HC`
+half).
 
 ## What was built
 
@@ -80,32 +81,48 @@ clean after the whole incident and recovery, confirming the persistent
 disk's full repo history survived intact (`CHECK_OK objects=150` -
 correctly grown from before the incident).
 
-## A real dead end found along the way
+## A real dead end found - then self-corrected
 
-The original test design called `DirTreeDel` to remove `SubA` entirely
-from disk (a genuine "whole directory vanished" case, exercising the
-not-found-by-name DELETED-recursion branch directly). This **hung the
-shared daemon** - confirmed, via a separate, minimal, zero-hgit-code
-isolation test, to be `DirTreeDel` itself, not this probe's own new
-code. Recovered twice (a second incident happened during the first
-recovery attempt, a self-inflicted undersized-bootstrap-buffer GPF -
-both fully described in `docs/research/failed-approaches.md`). Fixed
-the test by deleting each real file individually instead of the whole
-directory - `TreeBuildRecursive` handles an emptied-but-present
-directory correctly (a real, empty `OBJ_TREE`), giving real, if
-slightly different, coverage of the same DELETED-reporting logic.
+The original test design called `DirTreeDel("...path...")` (a bare
+string) to remove `SubA` entirely from disk (a genuine "whole
+directory vanished" case, exercising the not-found-by-name
+DELETED-recursion branch directly). This **hung the shared daemon**.
+First concluded (wrongly) that `DirTreeDel` itself was a broken/
+hanging built-in - a "minimal, zero-hgit-code" follow-up test seemed
+to confirm it, but had silently repeated the identical mistake in
+smaller form, so it proved nothing. The real root cause, found by
+re-reading this project's own existing code: `DirTreeDel` takes a
+`CDirEntry*` (the list `FilesFind` returns) and frees it - every prior
+real usage in this codebase (`WorkDir.HC`/`Offer.HC`/`Status.HC`)
+already calls it exactly this way, correctly. Passing a string path
+instead let HolyC's weak typing compile it anyway, then walked
+whatever bytes sat at the fake struct's `next`-pointer offset within
+that string's own ASCII content - a real, reproducible hang, entirely
+unrelated to any actual defect in `DirTreeDel`. Full corrected account
+in `docs/research/failed-approaches.md`'s 2026-09-14 entry, including
+a second, self-inflicted incident during the first recovery attempt
+(an undersized bootstrap buffer causing a real GPF).
+
+Fixed the test by deleting each real file individually instead of
+calling `DirTreeDel` on the directory at all - not because
+`DirTreeDel` needed avoiding, but because this project still has no
+proven primitive for "delete a real directory entry (not just its
+contents) from disk". `TreeBuildRecursive` handles an emptied-but-
+present directory correctly (a real, empty `OBJ_TREE`), giving real,
+if slightly different, coverage of the same DELETED-reporting logic.
 
 ## Not yet done
 
 - The not-found-by-name "wholly vanished directory" branches (both
   NEW and DELETED sides) are exercised for NEW (a brand-new `SubA`
   itself, not just its contents, in the very first `offertree` of this
-  same test) but not directly for DELETED, since `DirTreeDel` isn't
-  usable yet. The code is structurally symmetric between the two
-  sides, giving real, if indirect, confidence - not the same as a
-  direct test.
-- `DirTreeDel`'s own real behavior is unexplored - a real, separate
-  follow-up if this project ever needs a recursive on-disk delete.
+  same test) but not directly for DELETED, since this project has no
+  proven "delete a directory entry from disk" primitive yet. The code
+  is structurally symmetric between the two sides, giving real, if
+  indirect, confidence - not the same as a direct test.
+- A real, tested "delete a directory entry from disk" primitive
+  (`DirTreeDel` is not it - see above) - a real, separate follow-up if
+  this project ever genuinely needs one.
 - `Status.HC` (comparing a live directory against nested trees) is
   still the one remaining item on ADR 0010's own "rendering-command
   awareness of nested trees" list.

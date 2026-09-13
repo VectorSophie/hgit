@@ -2477,6 +2477,335 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   Free(del_hashes);
   Free(del_matched);
 }
+
+// ADR 0010 addendum (experiments/95-statustree/): `hgit statustree
+// <repo> <dir_path>` - a real, separate command, not a change to
+// `hgit status`'s own `find_mask`/`dir_prefix` semantics (same
+// CLI-semantics decision `offertree` already made for `offer`, and
+// `Diff.HC`'s own recursion already made for `diff`). Closes the last
+// item on ADR 0010's own "rendering-command awareness of nested
+// trees" list.
+//
+// `StatusTreeWalk` recurses one real directory level at a time -
+// same generic-per-object-type pattern this project already
+// established (`Check.HC`'s `CheckMarkReachable`, `See.HC`'s
+// `SeePrintTreeEntries`, `Diff.HC`'s `DiffPrintTreeChanges`): a real
+// subdirectory on disk with a matching, same-typed tree entry is
+// recursed into; a real subdirectory with no tree match (or a
+// type-changed match) is recursed against an empty tree/reported
+// `STATUS_TYPE_CHANGED`; a tree-only entry (a subdirectory that
+// existed before but is no longer on disk at all) is recursed against
+// an empty real directory listing, so every real entry it used to
+// contain gets its own `STATUS_DELETED <path>` line. Rename detection
+// (exact-hash, then fuzzy) stays scoped to one directory level at a
+// time and blob-only, exactly like `Diff.HC`'s own - cross-directory
+// rename detection remains ADR 0010's own deliberately deferred item.
+U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
+                  U8 *dir_path, U8 *tree_content, I64 tree_content_len,
+                  U8 *prefix)
+{
+  U8 mask[256];
+  StrPrint(mask, "%s*", dir_path);
+
+  I64 disk_count = 0;
+  CDirEntry *count_de = FilesFind(mask, 0);
+  CDirEntry *count_de1 = count_de;
+  while (count_de) { disk_count++; count_de = count_de->next; }
+  DirTreeDel(count_de1);
+
+  U8 *new_names = MAlloc(disk_count*256 + 256);
+  U8 *new_hashes = MAlloc(disk_count*64 + 64);
+  Bool *new_matched = MAlloc(disk_count + 1);
+  U8 *new_contents = MAlloc(disk_count*512 + 512);
+  I64 *new_content_lens = MAlloc(disk_count*8 + 8);
+  I64 new_count = 0;
+
+  U32 tcount = 0;
+  if (tree_content != NULL) tcount = GetU32LE(tree_content, 0);
+  U8 *del_names = MAlloc(tcount*256 + 256);
+  U8 *del_hashes = MAlloc(tcount*64 + 64);
+  Bool *del_matched = MAlloc(tcount + 1);
+  I64 del_count = 0;
+
+  I64 i;
+  CDirEntry *tmpde = FilesFind(mask, 0);
+  CDirEntry *tmpde1 = tmpde;
+  while (tmpde) {
+    I64 name_start = 0, j;
+    for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
+    I64 name_len = j - name_start;
+    Bool is_dot = StrCmp(tmpde->full_name+name_start, ".") == 0;
+    Bool is_dotdot = StrCmp(tmpde->full_name+name_start, "..") == 0;
+
+    if (!is_dot && !is_dotdot) {
+      U8 full_name[256];
+      I64 fi = 0, fj;
+      for (fj=0; prefix[fj]; fj++) full_name[fi++] = prefix[fj];
+      I64 cap0 = name_len; if (fi+cap0 > 254) cap0 = 254-fi;
+      for (fj=0; fj<cap0; fj++) full_name[fi++] = tmpde->full_name[name_start+fj];
+      full_name[fi] = 0;
+
+      if (tmpde->attr & 16) {
+        U8 old_type;
+        U8 old_hash[64];
+        U64 old_entity_id;
+        Bool found = FALSE;
+        if (tree_content != NULL) {
+          found = TreeFindEntry(tree_content, tree_content_len,
+                                tmpde->full_name+name_start, name_len,
+                                &old_type, old_hash, &old_entity_id);
+        }
+        U8 subdir_path[256];
+        I64 spi = 0, spj;
+        for (spj=0; tmpde->full_name[spj]; spj++) subdir_path[spi++] = tmpde->full_name[spj];
+        subdir_path[spi++] = '/'; subdir_path[spi] = 0;
+
+        if (found && old_type == OBJ_TREE) {
+          U8 *sub_tree_content_a = NULL; I64 sub_tree_len_a = 0;
+          I64 sub_off_rel_a;
+          if (IndexLookup(idx_hashes, idx_offsets, idx_count, old_hash, &sub_off_rel_a)) {
+            I64 sub_off_a = 16 + sub_off_rel_a;
+            U64 sub_rec_len_a = GetU64LE(rbuf, sub_off_a);
+            sub_tree_content_a = rbuf + sub_off_a + 9;
+            sub_tree_len_a = sub_rec_len_a - 1;
+          }
+          U8 sub_prefix_a[256];
+          I64 pia = 0, pja;
+          for (pja=0; full_name[pja]; pja++) sub_prefix_a[pia++] = full_name[pja];
+          sub_prefix_a[pia++] = '/'; sub_prefix_a[pia] = 0;
+          StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
+                        subdir_path, sub_tree_content_a, sub_tree_len_a, sub_prefix_a);
+        } else if (found) {
+          CommPrint(1, "STATUS_TYPE_CHANGED %s\n", full_name);
+        } else {
+          U8 sub_prefix_b[256];
+          I64 pib = 0, pjb;
+          for (pjb=0; full_name[pjb]; pjb++) sub_prefix_b[pib++] = full_name[pjb];
+          sub_prefix_b[pib++] = '/'; sub_prefix_b[pib] = 0;
+          StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
+                        subdir_path, NULL, 0, sub_prefix_b);
+        }
+      } else {
+        I64 fsize;
+        U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+        if (fsize+1 > 512) {
+          CommPrint(1, "STATUS_TOO_LARGE_TO_CHECK %s\n", full_name);
+        } else {
+          U8 tagged[512];
+          tagged[0] = OBJ_BLOB;
+          for (i=0; i<fsize; i++) tagged[1+i] = fbuf[i];
+          U8 file_hash[64];
+          B2Hash512Any(tagged, fsize+1, file_hash);
+
+          U8 tree_type;
+          U8 tree_entry_hash[64];
+          U64 tree_entity_id;
+          Bool in_tree = FALSE;
+          if (tree_content != NULL) {
+            in_tree = TreeFindEntry(tree_content, tree_content_len,
+                                    tmpde->full_name+name_start, name_len,
+                                    &tree_type, tree_entry_hash, &tree_entity_id);
+          }
+          if (in_tree && tree_type == OBJ_BLOB) {
+            Bool same_c = TRUE;
+            for (i=0; i<64; i++) if (file_hash[i] != tree_entry_hash[i]) same_c = FALSE;
+            if (!same_c) CommPrint(1, "STATUS_MODIFIED %s\n", full_name);
+          } else if (in_tree) {
+            CommPrint(1, "STATUS_TYPE_CHANGED %s\n", full_name);
+          } else {
+            I64 cap = fi; if (cap > 254) cap = 254;
+            for (i=0; i<cap; i++) new_names[new_count*256+i] = full_name[i];
+            new_names[new_count*256+cap] = 0;
+            for (i=0; i<64; i++) new_hashes[new_count*64+i] = file_hash[i];
+            for (i=0; i<fsize; i++) new_contents[new_count*512+i] = fbuf[i];
+            new_content_lens[new_count] = fsize;
+            new_matched[new_count] = FALSE;
+            new_count++;
+          }
+        }
+      }
+    }
+    tmpde = tmpde->next;
+  }
+  DirTreeDel(tmpde1);
+
+  // Deletion pass: a tree-only entry (no longer on disk at all, or on
+  // disk with a different kind) at THIS level. Existence is checked
+  // by real kind, not just FileRead success, since a tree entry can
+  // now legitimately be a directory too (ADR 0010) - reusing the
+  // already-real check_path convention every prior version of this
+  // function used, extended with a FilesFind-based directory check.
+  if (tree_content != NULL) {
+    I64 tpos = 4;
+    U32 te;
+    for (te=0; te<tcount; te++) {
+      U8 tname_len = tree_content[tpos]; tpos += 1;
+      U8 *tname = tree_content + tpos; tpos += tname_len;
+      U8 ttype = tree_content[tpos]; tpos += 1;
+      U8 *thash = tree_content + tpos; tpos += 64;
+      tpos += 8; // entity_id
+
+      U8 check_path[256];
+      I64 k = 0;
+      while (dir_path[k]) { check_path[k] = dir_path[k]; k++; }
+      I64 m;
+      for (m=0; m<tname_len; m++) check_path[k+m] = tname[m];
+      check_path[k+tname_len] = 0;
+
+      U8 full_tname[256];
+      I64 fti = 0, ftj;
+      for (ftj=0; prefix[ftj]; ftj++) full_tname[fti++] = prefix[ftj];
+      I64 tcap = tname_len; if (fti+tcap > 254) tcap = 254-fti;
+      for (ftj=0; ftj<tcap; ftj++) full_tname[fti++] = tname[ftj];
+      full_tname[fti] = 0;
+
+      if (ttype == OBJ_TREE) {
+        U8 dmask[256];
+        StrPrint(dmask, "%s*", check_path);
+        CDirEntry *dde = FilesFind(dmask, 0);
+        Bool still_dir = (dde != NULL);
+        if (dde != NULL) DirTreeDel(dde);
+        if (!still_dir) {
+          U8 *sub_content_c = NULL; I64 sub_len_c = 0;
+          I64 sub_off_rel_c;
+          if (IndexLookup(idx_hashes, idx_offsets, idx_count, thash, &sub_off_rel_c)) {
+            I64 sub_off_c = 16 + sub_off_rel_c;
+            U64 sub_rec_len_c = GetU64LE(rbuf, sub_off_c);
+            sub_content_c = rbuf + sub_off_c + 9;
+            sub_len_c = sub_rec_len_c - 1;
+          }
+          U8 sub_prefix_c[256];
+          I64 pic = 0, pjc;
+          for (pjc=0; full_tname[pjc]; pjc++) sub_prefix_c[pic++] = full_tname[pjc];
+          sub_prefix_c[pic++] = '/'; sub_prefix_c[pic] = 0;
+          StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
+                        check_path, sub_content_c, sub_len_c, sub_prefix_c);
+        }
+        // still_dir==TRUE: already handled by the new-tree pass above
+        // (found && old_type==OBJ_TREE branch), skip to avoid a
+        // duplicate report.
+      } else {
+        I64 check_size;
+        U8 *check_buf = FileRead(check_path, &check_size);
+        if (check_buf == NULL) {
+          I64 dcap = fti; if (dcap > 254) dcap = 254;
+          for (m=0; m<dcap; m++) del_names[del_count*256+m] = full_tname[m];
+          del_names[del_count*256+dcap] = 0;
+          for (m=0; m<64; m++) del_hashes[del_count*64+m] = thash[m];
+          del_matched[del_count] = FALSE;
+          del_count++;
+        }
+      }
+    }
+  }
+
+  // Rename match, exact-hash then fuzzy - blob-only, one directory
+  // level at a time, same as Diff.HC's own recursive version.
+  I64 di, ni;
+  for (di=0; di<del_count; di++) {
+    for (ni=0; ni<new_count; ni++) {
+      Bool hmatch = !new_matched[ni];
+      I64 hi;
+      if (hmatch) for (hi=0; hi<64; hi++) if (del_hashes[di*64+hi] != new_hashes[ni*64+hi]) hmatch = FALSE;
+      if (hmatch) {
+        CommPrint(1, "STATUS_RENAMED %s -> %s\n", del_names+di*256, new_names+ni*256);
+        new_matched[ni] = TRUE;
+        del_matched[di] = TRUE;
+        ni = new_count;
+      }
+    }
+  }
+  for (di=0; di<del_count; di++) {
+    if (!del_matched[di]) {
+      I64 del_off_rel;
+      if (IndexLookup(idx_hashes, idx_offsets, idx_count, del_hashes+di*64, &del_off_rel)) {
+        I64 del_off = 16 + del_off_rel;
+        U64 del_rec_len = GetU64LE(rbuf, del_off);
+        U8 *del_content = rbuf + del_off + 9;
+        I64 del_content_len = del_rec_len - 1;
+
+        I64 best_ni = -1, best_sim = -1;
+        for (ni=0; ni<new_count; ni++) {
+          if (!new_matched[ni]) {
+            I64 sim = FossilSimilarityPercent(del_content, del_content_len,
+                                              new_contents+ni*512, new_content_lens[ni]);
+            if (sim > best_sim) { best_sim = sim; best_ni = ni; }
+          }
+        }
+        if (best_ni >= 0 && best_sim >= FOSSIL_RENAME_SIMILARITY_THRESHOLD) {
+          CommPrint(1, "STATUS_RENAMED %s -> %s\n", del_names+di*256, new_names+best_ni*256);
+          new_matched[best_ni] = TRUE;
+          del_matched[di] = TRUE;
+        }
+      }
+    }
+  }
+
+  for (ni=0; ni<new_count; ni++) {
+    if (!new_matched[ni]) CommPrint(1, "STATUS_NEW %s\n", new_names+ni*256);
+  }
+  for (di=0; di<del_count; di++) {
+    if (!del_matched[di]) CommPrint(1, "STATUS_DELETED %s\n", del_names+di*256);
+  }
+
+  Free(new_names);
+  Free(new_hashes);
+  Free(new_contents);
+  Free(new_content_lens);
+  Free(new_matched);
+  Free(del_names);
+  Free(del_hashes);
+  Free(del_matched);
+}
+
+U0 HgitStatusTree(U8 *repo_path, U8 *dir_path)
+{
+  I64 rsize;
+  U8 *rbuf = FileRead(repo_path, &rsize);
+  if (rbuf == NULL) { CommPrint(1, "STATUS_ERR not_a_repository %s\n", repo_path); return; }
+  U16 rver;
+  U64 rcount;
+  Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
+  if (!hok) { CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path); return; }
+
+  if (rcount == 0) {
+    CommPrint(1, "STATUS_NO_OFFERINGS_YET\n");
+    WorkDirList();
+    return;
+  }
+
+  U8 head_hash[64];
+  if (!CurrentHeadRead(repo_path, head_hash)) {
+    CommPrint(1, "STATUS_ERR no_head_but_objects_exist\n");
+    return;
+  }
+
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
+  I64 idx_count;
+  IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
+
+  I64 commit_off_rel;
+  IndexLookup(idx_hashes, idx_offsets, idx_count, head_hash, &commit_off_rel);
+  I64 commit_off = 16 + commit_off_rel;
+  U8 *commit_content = rbuf + commit_off + 9;
+  U8 *tree_hash = CommitTreeHash(commit_content);
+
+  I64 tree_off_rel;
+  IndexLookup(idx_hashes, idx_offsets, idx_count, tree_hash, &tree_off_rel);
+  I64 tree_off = 16 + tree_off_rel;
+  U64 tree_record_len = GetU64LE(rbuf, tree_off);
+  U8 *tree_content = rbuf + tree_off + 9;
+  I64 tree_content_len = tree_record_len - 1;
+
+  U8 root_prefix[1]; root_prefix[0] = 0;
+  StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
+                dir_path, tree_content, tree_content_len, root_prefix);
+
+  CommPrint(1, "STATUS_END\n");
+  Free(idx_hashes);
+  Free(idx_offsets);
+}
 // History.HC — `hgit history`: walk the parent chain from HEAD,
 // printing each commit's timestamp and message.
 //
@@ -5107,7 +5436,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.4.0"
+#define HGIT_VERSION "1.5.0"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -5198,6 +5527,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD status <repo_path> <find_mask> <dir_prefix>\n");
   CommPrint(1, "HELP_CMD offer <repo_path> <find_mask> <message>\n");
   CommPrint(1, "HELP_CMD offertree <repo_path> <dir_path> <message> (recursive, ADR 0010)\n");
+  CommPrint(1, "HELP_CMD statustree <repo_path> <dir_path> (recursive status, ADR 0010)\n");
   CommPrint(1, "HELP_CMD history <repo_path>\n");
   CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");
   CommPrint(1, "HELP_CMD diff <repo_path> <commit_hex>\n");
@@ -5306,6 +5636,16 @@ U0 Hgit(U8 *cmdline)
     U64 ot_ts = cnts.jiffies;
     HgitOfferTree(ot_repo_path, ot_dir_path, ot_message, ot_mlen, ot_ts);
     CommPrint(1, "DISPATCH_OK offertree\n");
+  } else if (StrCmp(cmd, "statustree") == 0) {
+    // ADR 0010's own last remaining item: a separate command, not a
+    // change to plain `status`'s find_mask/dir_prefix semantics - see
+    // Status.HC's own HgitStatusTree comment for why.
+    U8 st_repo_path[256], st_dir_path[256];
+    I64 st_p = 0;
+    st_p = ExtractToken(rest, st_p, st_repo_path, 256);
+    st_p = ExtractToken(rest, st_p, st_dir_path, 256);
+    HgitStatusTree(st_repo_path, st_dir_path);
+    CommPrint(1, "DISPATCH_OK statustree\n");
   } else if (StrCmp(cmd, "correct") == 0) {
     HgitOfferRelatedCmd(rest, REL_CORRECTS, "correct");
   } else if (StrCmp(cmd, "revert") == 0) {
