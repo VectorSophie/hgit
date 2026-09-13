@@ -226,9 +226,15 @@ Bool FossilDeltaApply(U8 *source, I64 source_len, U8 *delta, I64 delta_len,
   if (tlen != declared_target_len) return FALSE;
   // real_checksum is a function's own U32 return value - cast to
   // (U64) then masked, matching FossilDeltaMakeTrivial's own encode
-  // side, not cast directly to (I64).
+  // side, not cast directly to (I64). Compared as U32-vs-U32
+  // (declared_checksum32), not I64-vs-(U64-masked) - a mixed-
+  // signedness comparison here was a real, tested suspect for ADR
+  // 0008's caller-shape-sensitivity bug (experiments/79-fossil-checksum-isolation/):
+  // ruled out, the known-failing reproduction still fails identically
+  // with this cleaner comparison. Kept anyway as strictly clearer.
+  U32 declared_checksum32 = declared_checksum & 0xFFFFFFFF;
   U32 real_checksum = FossilChecksum(target_out, tlen);
-  if ((real_checksum(U64) & 0xFFFFFFFF) != declared_checksum) return FALSE;
+  if (real_checksum != declared_checksum32) return FALSE;
 
   *target_len_out = tlen;
   return TRUE;

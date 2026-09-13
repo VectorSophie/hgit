@@ -1,0 +1,43 @@
+P76_FINDDIS_DONE
+COMPILE_OK
+D_DONE
+FOUND D:/Compiler/.
+FOUND D:/Compiler/..
+FOUND D:/Compiler/Compiler.BIN.Z
+FOUND D:/Compiler/OpCodes.DD.Z
+FOUND D:/Compiler/Asm.HC.Z
+FOUND D:/Compiler/AsmInit.HC.Z
+FOUND D:/Compiler/AsmLib.HC.Z
+FOUND D:/Compiler/AsmResolve.HC.Z
+FOUND D:/Compiler/BackA.HC.Z
+FOUND D:/Compiler/BackB.HC.Z
+FOUND D:/Compiler/BackC.HC.Z
+FOUND D:/Compiler/BackFA.HC.Z
+FOUND D:/Compiler/BackFB.HC.Z
+FOUND D:/Compiler/BackLib.HC.Z
+FOUND D:/Compiler/CExcept.HC.Z
+FOUND D:/Compiler/CExts.HC.Z
+FOUND D:/Compiler/CHash.HC.Z
+FOUND D:/Compiler/CInit.HC.Z
+FOUND D:/Compiler/CMain.HC.Z
+FOUND D:/Compiler/CMisc.HC.Z
+FOUND D:/Compiler/Lex.HC.Z
+FOUND D:/Compiler/LexLib.HC.Z
+FOUND D:/Compiler/OptLib.HC.Z
+FOUND D:/Compiler/OptPass012.HC.Z
+FOUND D:/Compiler/OptPass3.HC.Z
+FOUND D:/Compiler/OptPass4.HC.Z
+FOUND D:/Compiler/OptPass5.HC.Z
+FOUND D:/Compiler/OptPass6.HC.Z
+FOUND D:/Compiler/OptPass789A.HC.Z
+FOUND D:/Compiler/PrsExp.HC.Z
+FOUND D:/Compiler/PrsLib.HC.Z
+FOUND D:/Compiler/PrsStmt.HC.Z
+FOUND D:/Compiler/PrsVar.HC.Z
+FOUND D:/Compiler/Templates.HC.Z
+FOUND D:/Compiler/UAsm.HC.Z
+FOUND D:/Compiler/CompilerA.HH.Z
+FOUND D:/Compiler/CompilerB.HH.Z
+FOUND D:/Compiler/Compiler.MAP.Z
+FOUND D:/Compiler/Compiler.PRJ.Z
+P76_FINDDIS2_DONE count=39

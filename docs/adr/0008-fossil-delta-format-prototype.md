@@ -96,6 +96,27 @@ question about how it behaves inside a real caller."
 - Root-causing the caller-stack-shape sensitivity found above - without
   that, this format cannot be trusted inside a real command's own
   (necessarily larger, more local-variable-heavy) functions.
+  **Update (probe 76, `experiments/76-compiler-source-access/`)**:
+  this is no longer a fully black-box question - TempleOS ships its
+  own compiler source, readable via `FileRead` (`.Z` files transparently
+  decompressed), at `D:/Compiler/`. `OptPass012.HC`'s own documented
+  Pass#1&2 ("constant expressions are simplified, eliminated opcodes
+  are set to NOP") is a real, named optimizer stage whose known
+  failure mode matches this bug's exact trigger (a later use of a
+  value changing whether an earlier computation of it gets folded
+  away). Not traced to a full root cause yet - a concrete next step
+  with real source to read, not an unexplained black box anymore.
+  **Update (probe 77, `experiments/79-fossil-checksum-isolation/`)**:
+  three more real hypotheses tested and ruled out (mixed-signedness
+  comparison; stack-buffer overlap via heap allocation; an
+  intermediate return-value local). A real new fact found: the bug is
+  in the *encoder*, not the decoder - `FossilDeltaMakeTrivial`'s own
+  call to `FossilChecksum` already returns the wrong value, confirmed
+  by instrumenting both functions and comparing their printed
+  checksums directly. Also: it does **not** reproduce calling
+  `FossilChecksum` directly from the shape-sensitive caller - only
+  through the `FossilDeltaMakeTrivial` nesting layer specifically.
+  Real, additional narrowing, still not a fix.
 - A real diff/longest-common-substring algorithm, once the above is
   resolved - `FossilDeltaMakeTrivial`'s one-literal-segment approach
   has no compression value by itself; the actual benefit only comes

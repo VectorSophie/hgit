@@ -45,6 +45,7 @@ cat \
   src/hgit-cli/OpLog.HC \
   src/hgit-cli/Portable.HC \
   src/hgit-cli/Offer.HC \
+  src/hgit-cli/Logo.HC \
   src/hgit-cli/Hgit.HC \
   > "$OUT"
 

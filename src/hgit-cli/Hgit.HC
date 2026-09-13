@@ -60,7 +60,7 @@
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
 // Tree.HC, Commit.HC, Index.HC, Init.HC, WorkDir.HC,
-// Status.HC, History.HC, See.HC, Hex.HC, Offer.HC.
+// Status.HC, History.HC, See.HC, Hex.HC, Offer.HC, Logo.HC.
 //
 // HGIT_VERSION (experiments/74-hgit-version/, docs/research/09-packaging-and-releases.md's
 // own "not built yet" gap): a real version string, printed by `hgit
@@ -183,6 +183,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD import <src_repo_path> <dest_repo_path>\n");
   CommPrint(1, "HELP_CMD help\n");
   CommPrint(1, "HELP_CMD version\n");
+  CommPrint(1, "HELP_CMD logo\n");
   CommPrint(1, "HELP_END\n");
 }
 
@@ -202,6 +203,8 @@ U0 Hgit(U8 *cmdline)
     HgitHelp();
   } else if (StrCmp(cmd, "version") == 0) {
     CommPrint(1, "HGIT_VERSION %s\n", HGIT_VERSION);
+  } else if (StrCmp(cmd, "logo") == 0) {
+    HgitLogo();
   } else if (StrCmp(cmd, "init") == 0) {
     U8 init_path[256];
     ExtractToken(rest, 0, init_path, 256);

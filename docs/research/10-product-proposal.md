@@ -43,6 +43,7 @@ verified, probe by probe.
 | No command discoverability - `DISPATCH_ERR unknown_command` said what was wrong but never what to try, no full command listing existed short of reading `Hgit.HC`'s own source | **Resolved** — `hgit help` (also a bare/empty command, also a new `DISPATCH_HINT` line after `unknown_command`) prints every real command with its literal argument shape. Writing it surfaced a real mismatch between an initial guess and the dispatcher's actual `correct`/`revert`/`reconcile` argument order, corrected against the real code before finalizing | `experiments/73-hgit-help/` |
 | No version string embedded in the packaged file (doc 09's own flagged gap) | **Resolved** — `hgit version` (and `hgit help`'s own first line) prints `HGIT_VERSION`, bumped by hand alongside each real release tag | `experiments/74-hgit-version/`, `docs/research/09-packaging-and-releases.md` |
 | No install instructions doc existed beyond `tools/build-package.sh`'s own description (doc 09's own flagged gap) | **Resolved** — `INSTALL.md` built around the one transport this project has verified end-to-end (COM2 serial injection). A real attempt to also verify a CD-ROM-based path (`experiments/75-cd-media-attempt/`) did not conclusively work - a real, dated dead end, honestly logged rather than hidden | `INSTALL.md`, `experiments/75-cd-media-attempt/`, `docs/research/failed-approaches.md` |
+| ADR 0008's Fossil.HC caller-shape-sensitivity bug had no further investigation lead (no disassembly access) | **Narrowed further, not solved** — TempleOS's own compiler source is readable at runtime (`D:/Compiler/*.HC.Z`, `FileRead` transparently decompresses); a real, named optimizer stage (`OptPass012`'s documented constant-folding/NOP-elimination pass) matches the bug's exact trigger. A genuinely new debugging capability for future HolyC-quirk work generally, not just this one bug | `experiments/76-compiler-source-access/`, `docs/adr/0008-fossil-delta-format-prototype.md` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -968,6 +969,42 @@ letter, if different, wasn't found). Logged honestly as a genuine dead
 end rather than pushed further or hidden, since the product question
 that motivated it already had a real, verified answer (serial
 transfer) that didn't depend on solving it.
+
+**A genuinely new debugging capability found for ADR 0008's own open
+question**: `experiments/76-compiler-source-access/` - TempleOS ships
+its own compiler source (`D:/Compiler/*.HC.Z`), readable via `FileRead`
+(which transparently decompresses `.Z` files - confirmed reading a real
+36KB optimizer-pass source file as plain text). `OptPass012.HC`'s own
+documented "Pass#1&2: constant expressions are simplified, eliminated
+opcodes are set to NOP" is a real, named optimizer stage whose known
+failure mode matches Fossil.HC's exact bug trigger (a later use of a
+value flipping whether an earlier computation of it gets folded away).
+Not traced to a full root cause - a substantial reverse-engineering
+task across 11 optimizer-pass files and 3 codegen backends, honestly
+not attempted in full this session - but no longer an unexplained
+black box, a real, concrete lead for a future session.
+
+**`hgit logo` and real project branding**: `experiments/78-hgit-logo/`
+(PASS) - the project owner provided two PNG logos and two ASCII-art
+renderings (a flame/tree diamond mark); moved into `docs/brand/`,
+the PNG shown at the top of `README.md`, and the narrower ASCII
+version wired into the CLI as a real `hgit logo` command
+(`src/hgit-cli/Logo.HC`). Verified each of the art's many literal `%`
+glyphs survives intact - passed through `CommPrint`'s `"%s"` argument,
+never as its format string, which would otherwise misparse them as
+format specifiers. Regression re-run clean.
+
+**ADR 0008's Fossil.HC bug narrowed further**: `experiments/79-fossil-checksum-isolation/`
+(three real hypotheses tested and ruled out - mixed-signedness
+comparison, stack-buffer overlap, an intermediate return-value local).
+A real new fact found: the wrong checksum is already wrong at the
+moment `FossilChecksum` returns *inside the encoder*
+(`FossilDeltaMakeTrivial`), not in `FossilDeltaApply`'s own decode
+logic as previously assumed - confirmed by instrumenting both
+functions. It does **not** reproduce calling `FossilChecksum` directly
+from the shape-sensitive caller, only through the
+`FossilDeltaMakeTrivial` nesting layer. Real, additional narrowing,
+still not a fix - see `docs/adr/0008-fossil-delta-format-prototype.md`.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

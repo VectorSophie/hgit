@@ -378,6 +378,21 @@ FALSE, FALSE)` — first used correctly (with a note flagging the same
 promoted to this standing-facts doc until probe 71 hit the same
 guessing dead end independently.
 
+## Confirmed capability: TempleOS ships its own compiler source, readable at runtime
+
+`D:/Compiler/` (the real system drive - `C:` is an alias/redirector,
+not a separate physical drive, confirmed in probe 75) holds the
+compiler's own source as ordinary `.HC.Z` files: `CMain`/`Lex`/
+`PrsExp`/`PrsStmt`, 11 optimizer passes (`OptPass012` through
+`OptPass789A`), codegen backends (`BackA`/`BackB`/`BackC`), and
+assembler files (`Asm*`, `UAsm`), plus `OpCodes.DD.Z`. `FileRead`
+transparently decompresses `.Z` files - no separate step needed;
+confirmed by reading `OptPass012.HC.Z` (36,330 bytes) as plain text,
+complete with its own DolDoc-style comments (`experiments/76-compiler-source-access/`).
+A genuinely new capability for this project: any future HolyC-quirk
+investigation can read the actual compiler source that produces the
+behavior, instead of pure black-box test bisection.
+
 ## Architectural implications so far
 
 - Treat `hgit` as being invoked two ways that may need different code

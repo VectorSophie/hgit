@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/brand/hgitlogowithtext.png" alt="hgit" width="220">
+</p>
+
 # hgit
 
 A lightweight, modular, self-contained version-control system, written in
@@ -323,6 +327,16 @@ as a genuine dead end in `docs/research/failed-approaches.md` instead
 of being hidden or overclaimed - the disposable QEMU probe VM used to
 try it was confirmed afterward to have left the main dev session and
 disk untouched.
+
+**A genuinely new debugging capability was found for ADR 0008's own
+open Fossil.HC question** (`experiments/76-compiler-source-access/`):
+TempleOS ships its own compiler source, readable at runtime
+(`D:/Compiler/*.HC.Z`, transparently decompressed by `FileRead`). A
+real, named optimizer stage documented in that source
+(`OptPass012`'s constant-folding/NOP-elimination pass) matches the
+bug's exact known trigger - not a full root cause yet, but no longer
+an unexplained black box, and a genuinely new tool for future HolyC
+quirk investigations generally.
 
 **Real releases are cut regularly**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
