@@ -90,9 +90,11 @@ repeated entry_count times:
   U64 entity_id (LE)
 ```
 
-A tree entry's `child_hash` can point at another tree (nesting/recursion
-is supported by the format), but this has not been tested yet — only a
-flat, single-level, two-entry tree has been verified so far.
+A tree entry's `child_hash` can point at another tree - real, nested
+directories, built and consumed by `hgit offertree` and recursed into
+by `statustree`/`diff`/`see`/`check`/`merge` (`docs/adr/0010-subdirectory-support.md`,
+probes 88-100), not just a flat, single-level format capability
+anymore.
 
 `entity_id` (added per `docs/adr/0004-stable-entity-identity.md`,
 `experiments/49-entity-id/`) is a stable identifier for "this tracked
@@ -167,18 +169,20 @@ half; author/identity itself is still not invented.
 
 ## What this format deliberately does NOT have yet
 
-- **No merge commits tested** — the format's `parent_count` supports
-  more than 1, but only 0 and 1 have been exercised.
-- ~~No recursive-tree test~~ **The object model itself is now verified**
-  (`experiments/89-nested-tree-object-model/`): a real tree entry with
-  `child_type = OBJ_TREE`, pointing at another real, separately-stored
-  tree object, round-trips correctly through the exact same
-  `TreeEncodeEntry`/`ObjectPut`/`IndexLookup`/`TreeFindEntry` functions
-  every real command already uses — no code changes were needed. No
-  real hgit command builds or consumes one yet, though
-  (`hgit offer`'s own `FilesFind` usage is still flat/single-level —
-  see `experiments/88-recursive-directory-walk/` for the separate,
-  real primitive that would be needed for that).
+- ~~No merge commits tested~~ **Resolved** (`docs/adr/0011-merge.md`,
+  probes 97-100): `parent_count > 1` is real, exercised, committed
+  code now, not just a format capability — `hgit merge` builds a real
+  2-parent commit whenever a real, non-conflicting (or fast-forward)
+  merge succeeds, verified round-tripping through `Check.HC`'s own
+  referential-integrity and reachability passes (both already looped
+  over every real parent generically, needing zero changes either).
+- ~~No recursive-tree test~~ **Resolved** (`docs/adr/0010-subdirectory-support.md`,
+  probes 88-96): a real tree entry with `child_type = OBJ_TREE`,
+  pointing at another real, separately-stored tree object, is now
+  built and consumed by real commands — `hgit offertree` builds one
+  from a genuine on-disk directory tree, and `statustree`/`diff`/
+  `see`/`check`/`merge` all correctly recurse into it. Not just the
+  object model round-tripping in isolation anymore.
 - **Index is linear-search, not a hash table yet.** `src/hgit-core/Index.HC`
   (`IndexBuild`/`IndexLookup`, `experiments/12-index/`) now answers
   "where is the object with this hash" — verified by fully dereferencing

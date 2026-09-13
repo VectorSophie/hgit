@@ -18,10 +18,12 @@ flowchart TB
         Index["Index.HC<br/>hash → offset lookup"]
         Meta["Meta.HC<br/>combined per-repo metadata<br/>(HEAD, paths, oplog)"]
         Fossil["Fossil.HC<br/>delta format + similarity<br/>(wired into Offer.HC's fuzzy rename detection)"]
+        MergeBase["MergeBase.HC<br/>lowest-common-ancestor search"]
     end
     subgraph cli["src/hgit-cli — command surface"]
         Hgit["Hgit.HC<br/>the one dispatcher, Hgit(cmdline)"]
-        Offer["Offer.HC / Status.HC / History.HC / See.HC"]
+        Offer["Offer.HC / Status.HC / History.HC / See.HC / Diff.HC<br/>(each recurses into nested trees, ADR 0010)"]
+        Merge["Merge.HC<br/>real three-way merge (ADR 0011)"]
         Check["Check.HC<br/>integrity + dangling-object detection"]
         Paths["Paths.HC<br/>named paths"]
         OpLog["OpLog.HC<br/>undo/redo stack"]
@@ -30,12 +32,14 @@ flowchart TB
     end
     cli --> core
     Hgit --> Offer
+    Hgit --> Merge
     Hgit --> Check
     Hgit --> Paths
     Hgit --> OpLog
     Hgit --> Docs
     Hgit --> Portable
     Offer --> Object
+    Merge --> MergeBase
     Object --> Index
     Meta --> Object
 ```
@@ -55,18 +59,30 @@ deliberately kept vs. left out):
 flowchart LR
     Commit["commit<br/>tree hash, parent(s), timestamp,<br/>message, optional relation tag"]
     Tree["tree<br/>name → (type, hash, entity id)<br/>per entry"]
+    SubTree["nested tree<br/>(ADR 0010 - a real subdirectory)"]
     Blob["blob<br/>raw file bytes"]
+    MergeCommit["merge commit<br/>(ADR 0011 - parent_count = 2)"]
     Commit -->|tree hash| Tree
-    Tree -->|child hash| Blob
+    Tree -->|child hash, type=blob| Blob
+    Tree -->|child hash, type=tree| SubTree
+    SubTree -->|child hash| Blob
     Commit -->|parent hash| Commit
+    MergeCommit -->|parent hash| Commit
 ```
 
-The one addition beyond Git's own model: every tree entry carries a
+Two additions beyond Git's own base model: every tree entry carries a
 stable **entity ID** (ADR 0004), independent of the entry's current
 name or content — this is what lets `correct`/`revert`/`reconcile`
 (ADR 0005/0006) and exact-content rename detection (ADR 0009) refer to
 "this specific tracked thing" rather than "whatever's at this path
-right now."
+right now." And a tree entry can point at another tree instead of a
+blob (ADR 0010, real subdirectories) - the format reserved this from
+the start (`Tree.HC`'s own `child_type` byte), but it took until
+probes 88-96 for a real command to actually build and consume one. A
+commit's own `parent_count` is similarly generic - real multi-parent
+(merge) commits work with zero code changes to this base model (probe
+97), `hgit merge` (ADR 0011) is simply the first real command to
+create one.
 
 ## Paths: hgit's branch-shaped thing
 
@@ -78,10 +94,15 @@ flowchart LR
 ```
 
 `path new <name>` copies the current path's HEAD into a new named
-pointer sharing the same object store — there's no full merge/DAG
-model yet (no multi-parent commits exist), so a "branch" here is
-exactly this: a second HEAD pointer with a real, findable fork point.
-`hgit graph` renders exactly this structure.
+pointer sharing the same object store, giving a "branch" here as a
+second HEAD pointer with a real, findable fork point. `hgit graph`
+renders exactly this structure. `hgit merge` (ADR 0011) can now bring
+two diverged paths back together into a real multi-parent commit -
+the object model already supported `parent_count > 1` from the start
+(verified with zero code changes needed, probe 97); `MergeBase.HC`
+finds the real fork point to merge from, and a real three-way tree
+merge (recursing into nested trees too) does the rest, aborting
+cleanly on any genuine conflict rather than attempting resolution.
 
 ## Repo layout
 
@@ -99,13 +120,16 @@ exactly this: a second HEAD pointer with a real, findable fork point.
   `Tree.HC`/`Commit.HC`, `Index.HC`, `Meta.HC`, `Fossil.HC` (delta
   format + similarity measure, reliable, wired into `Offer.HC`'s fuzzy
   rename detection — object-store delta compression itself remains a
-  separate, real decision; see `docs/adr/0008-fossil-delta-format-prototype.md`).
+  separate, real decision; see `docs/adr/0008-fossil-delta-format-prototype.md`),
+  `MergeBase.HC` (lowest-common-ancestor search, ADR 0011).
 - `src/hgit-cli/` — the command surface: `Init.HC`, `Check.HC`,
-  `WorkDir.HC`, `Paths.HC`, `Offer.HC`, `Status.HC`, `History.HC`,
-  `See.HC`, `Hex.HC`, `HistoryDoc.HC`, `ReconcileDoc.HC`, `Graph.HC`,
-  `OpLog.HC`, `Portable.HC`, `Logo.HC`, and `Hgit.HC` — the real entry
-  point (`Hgit(cmdline)`) composing all of the above behind one
-  dispatcher.
+  `WorkDir.HC`, `Paths.HC`, `Offer.HC` (+ its own `HgitOfferTree` for
+  real subdirectory support, ADR 0010), `Status.HC` (+ `StatusTreeWalk`
+  for the same), `History.HC`, `See.HC`, `Diff.HC`, `Merge.HC` (ADR
+  0011's own real three-way merge), `Hex.HC`, `HistoryDoc.HC`,
+  `ReconcileDoc.HC`, `Graph.HC`, `OpLog.HC`, `Portable.HC`, `Logo.HC`,
+  and `Hgit.HC` — the real entry point (`Hgit(cmdline)`) composing all
+  of the above behind one dispatcher.
 - `tools/build-package.sh` — concatenates every `src/hgit-core/` and
   `src/hgit-cli/` file, in dependency order, into
   `packaging/HgitAll.HC` — the actual distributable.

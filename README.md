@@ -30,7 +30,9 @@
 M0 through M4 of the milestone plan are complete and independently
 verified on real TempleOS under QEMU — object storage, the full
 command surface, stable entity identity across renames, and executable
-DolDoc reconciliation views. See `docs/research/10-product-proposal.md`
+DolDoc reconciliation views. Real subdirectory support (`offertree`/
+`statustree`, ADR 0010) and a real three-way `merge` command (ADR
+0011) have since shipped too. See `docs/research/10-product-proposal.md`
 for the live, dated, self-correcting record of what's actually built
 — nothing here is claimed without a real, re-runnable test behind it.
 
@@ -82,15 +84,17 @@ loaded) for the same list straight from the live dispatcher.
 |---|---|
 | `init` | Create a new, empty repository |
 | `offer` | Snapshot matching files as a new commit (hgit's own name for git's "commit") |
+| `offertree` / `statustree` | Real subdirectory support (ADR 0010) — `offer`/`status`, recursing into nested directories, as separate commands rather than changing `offer`/`status`'s own flat semantics |
 | `status` | Compare the working directory against HEAD — new/modified/deleted, **and renamed** (exact-content match, ADR 0009) |
+| `merge` | A real three-way merge between two named paths (ADR 0011) — a genuine conflict aborts the whole merge, zero side effects; no resolution mechanism yet |
 | `history` | Walk the current path's commit chain |
 | `graph` | Render the entire commit history across every path as a real, collapsible DolDoc tree — see below |
-| `see` | Show one commit's tree, message, and relation |
-| `check` | Repo integrity: hash verification, referential integrity (`git fsck`-style missing-object check), **and dangling/unreachable-object detection** |
+| `see` / `diff` | Show one commit's tree/message/relation, or what changed relative to its parent — both recurse into nested trees |
+| `check` | Repo integrity: hash verification, referential integrity (`git fsck`-style missing-object check), **and dangling/unreachable-object detection** — all correctly recurse into nested trees too |
 | `undo` / `redo` | Step through the operation log — reversible, not destructive |
 | `operation history` / `operation restore` | Full operation-log vocabulary — jump to any past point |
 | `path list` / `new` / `go` / `close` | Named, branch-like alternate histories sharing one object store |
-| `correct` / `revert` / `reconcile` | Typed relations between commits (ADR 0005/0006) — a commit can *point at* another with real semantics, optionally scoped to one tracked entity |
+| `correct` / `revert` / `reconcile` (+ `...tree` variants) | Typed relations between commits (ADR 0005/0006) — a commit can *point at* another with real semantics, optionally scoped to one tracked entity; the `...tree` forms carry the same relation on a recursive, `offertree`-style offer |
 | `historydoc` / `reconciledoc` / `reconcileoverview` | Executable DolDoc views — real rendered documents (colored, with live `$LK$` links and collapsible `$TR$` trees), not plain text logs |
 | `export` / `import` | Whole-repo portability, own paths and history intact |
 | `help` / `version` / `logo` | Discoverability and a bit of fun |

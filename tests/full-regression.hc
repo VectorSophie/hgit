@@ -25,6 +25,16 @@ U0 HgitFullRegressionTest()
   Del("C:/Home/TFullReconcile.DD", FALSE, FALSE, FALSE);
   Del("C:/Home/TFullOverview.DD", FALSE, FALSE, FALSE);
   Del("C:/Home/TFullGraph.DD", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFullImported.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFullImported.hgs.m", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFullTreeRepo.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFullTreeRepo.hgs.m", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFTreeRoot/top.txt", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFTreeRoot/SubA/inner.txt", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFullMergeRepo.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFullMergeRepo.hgs.m", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFMergeFileA.txt", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFMergeFileB.txt", FALSE, FALSE, FALSE);
   CommPrint(1, "TFULL_BEGIN\n");
 
   // --- init ---
@@ -140,9 +150,85 @@ U0 HgitFullRegressionTest()
   Hgit("check C:/Home/TFullExported.hgs");
   CommPrint(1, "TFULL_CHECK_EXPORTED_END_MARKER\n");
 
+  // import is the same real HgitCopyRepo underneath export (just the
+  // opposite naming direction) - still a real, separate, user-facing
+  // command this suite hadn't exercised under its own name before.
+  Hgit("import C:/Home/TFullExported.hgs C:/Home/TFullImported.hgs");
+  CommPrint(1, "TFULL_CHECK_IMPORTED_BEGIN\n");
+  Hgit("check C:/Home/TFullImported.hgs");
+  CommPrint(1, "TFULL_CHECK_IMPORTED_END_MARKER\n");
+
+  // --- offertree / statustree / correcttree (ADR 0010's subdirectory
+  // support, exercised together on a real nested directory) ---
+  Hgit("init C:/Home/TFullTreeRepo.hgs");
+  DirMk("C:/Home/TFTreeRoot");
+  DirMk("C:/Home/TFTreeRoot/SubA");
+  FileWrite("C:/Home/TFTreeRoot/top.txt", "tree top v1", 11);
+  FileWrite("C:/Home/TFTreeRoot/SubA/inner.txt", "tree inner v1", 13);
+  Hgit("offertree C:/Home/TFullTreeRepo.hgs C:/Home/TFTreeRoot/ tree_first_offer");
+
+  CommPrint(1, "TFULL_STATUSTREE_BEGIN\n");
+  FileWrite("C:/Home/TFTreeRoot/SubA/inner.txt", "tree inner v2 CHANGED", 21);
+  Hgit("statustree C:/Home/TFullTreeRepo.hgs C:/Home/TFTreeRoot/");
+  CommPrint(1, "TFULL_STATUSTREE_END_MARKER\n");
+
+  Hgit("offertree C:/Home/TFullTreeRepo.hgs C:/Home/TFTreeRoot/ tree_second_offer");
+  U8 tree_head2[64];
+  CurrentHeadRead("C:/Home/TFullTreeRepo.hgs", tree_head2);
+  U8 tree_head2_hex[129];
+  HashToHex(tree_head2, tree_head2_hex);
+
+  U8 tree_rel_cmd[512];
+  // Relate this offer back to the second tree commit (the real,
+  // just-made HEAD) - the same real shape probe 96 already verified.
+  StrPrint(tree_rel_cmd, "correcttree C:/Home/TFullTreeRepo.hgs %s 0000000000000000 C:/Home/TFTreeRoot/ tree_correcting_offer", tree_head2_hex);
+  Hgit(tree_rel_cmd);
+  CommPrint(1, "TFULL_CHECK_TREE_BEGIN\n");
+  Hgit("check C:/Home/TFullTreeRepo.hgs");
+  CommPrint(1, "TFULL_CHECK_TREE_END_MARKER\n");
+
+  // --- merge (ADR 0011: a real non-conflicting merge, then a real
+  // fast-forward) ---
+  Hgit("init C:/Home/TFullMergeRepo.hgs");
+  FileWrite("C:/Home/TFMergeFileA.txt", "merge fileA root", 17);
+  FileWrite("C:/Home/TFMergeFileB.txt", "merge fileB root", 17);
+  Hgit("offer C:/Home/TFullMergeRepo.hgs TFMergeFile*.txt merge_root_offer");
+
+  Hgit("path new C:/Home/TFullMergeRepo.hgs merge_feature");
+  Hgit("path go C:/Home/TFullMergeRepo.hgs merge_feature");
+  FileWrite("C:/Home/TFMergeFileB.txt", "merge fileB EDITED by feature", 30);
+  Hgit("offer C:/Home/TFullMergeRepo.hgs TFMergeFile*.txt merge_feature_edit_b");
+
+  // No working-copy checkout step exists (probe 99's own documented
+  // lesson) - restore fileB back to root before main's own offer, so
+  // main's own commit genuinely represents "left fileB alone".
+  Hgit("path go C:/Home/TFullMergeRepo.hgs main");
+  FileWrite("C:/Home/TFMergeFileB.txt", "merge fileB root", 17);
+  FileWrite("C:/Home/TFMergeFileA.txt", "merge fileA EDITED by main", 27);
+  Hgit("offer C:/Home/TFullMergeRepo.hgs TFMergeFile*.txt merge_main_edit_a");
+
+  CommPrint(1, "TFULL_MERGE_BEGIN\n");
+  Hgit("merge C:/Home/TFullMergeRepo.hgs merge_feature");
+  CommPrint(1, "TFULL_MERGE_END_MARKER\n");
+  CommPrint(1, "TFULL_CHECK_MERGED_BEGIN\n");
+  Hgit("check C:/Home/TFullMergeRepo.hgs");
+  CommPrint(1, "TFULL_CHECK_MERGED_END_MARKER\n");
+
+  // A real fast-forward: a fresh path with no divergence from main.
+  Hgit("path new C:/Home/TFullMergeRepo.hgs merge_ff_target");
+  FileWrite("C:/Home/TFMergeFileA.txt", "merge fileA further advanced", 29);
+  Hgit("offer C:/Home/TFullMergeRepo.hgs TFMergeFile*.txt merge_advance_main_only");
+  Hgit("path go C:/Home/TFullMergeRepo.hgs merge_ff_target");
+  CommPrint(1, "TFULL_MERGE_FF_BEGIN\n");
+  Hgit("merge C:/Home/TFullMergeRepo.hgs main");
+  CommPrint(1, "TFULL_MERGE_FF_END_MARKER\n");
+
   // --- discoverability ---
   Hgit("version");
   Hgit("logo");
+  CommPrint(1, "TFULL_HELP_BEGIN\n");
+  Hgit("help");
+  CommPrint(1, "TFULL_HELP_END_MARKER\n");
 
   CommPrint(1, "TFULL_END\n");
 }

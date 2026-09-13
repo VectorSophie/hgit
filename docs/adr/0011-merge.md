@@ -147,7 +147,12 @@ established incremental-ADR pattern (ADR 0010's own precedent):**
 
 - Real usage where a genuine conflict is common enough that a total
   abort is a real practical burden - the strongest, most likely
-  trigger for designing a real conflict-resolution mechanism.
+  trigger for designing a real conflict-resolution mechanism. If that
+  happens, `docs/research/04-vcs-comparison.md`'s own Pijul section
+  names a real, concrete alternative shape worth considering then -
+  representing an unresolved conflict as real, recoverable, inspectable
+  repository state (Pijul's own approach) rather than only Git's
+  file-level conflict-marker model - not designed further here.
 - Real usage of criss-cross path histories (a path forking from a
   path that itself forked from `main`, then merging in an order that
   produces genuine ambiguity) - not yet observed in any real workflow

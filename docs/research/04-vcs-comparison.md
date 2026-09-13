@@ -1,8 +1,8 @@
 # VCS comparison
 
-Started (jj + Fossil + Sapling + Mercurial + GitButler, the closest
-analogues to hgit's stated goals per the product thesis itself);
-Pijul/Darcs/Breezy still unstarted.
+Started (jj + Fossil + Sapling + Mercurial + GitButler + Pijul, the
+closest analogues to hgit's stated goals per the product thesis
+itself); Darcs/Breezy still unstarted.
 
 ## Verified documentation — Jujutsu's operation log
 
@@ -172,6 +172,51 @@ now" context) - flagged as a real, well-scoped candidate for M5-or-
 later feature work if the brief's own future scope calls for it, not
 designed now.
 
+## Verified documentation — Pijul's patch theory (comparison only, per the brief's own caution)
+
+Source: `pijul.org/manual/theory.html`. Pijul represents a repository
+not as a sequence of snapshots but as a directed graph of TEXT LINES:
+each vertex is a line of content, each edge (labelled with the
+change/patch that created it) is either "alive" or "deleted" - a
+delete is a real edge relabeling, never a destructive removal. A patch
+is the graph operation that adds vertices/edges or relabels existing
+ones; two patches that touch independent parts of the graph provably
+commute (applying either order gives the same result), because every
+vertex's own identity (the hash of the change that introduced it, plus
+a position within that change) never depends on when or in what order
+a patch was applied.
+
+**The one detail most relevant to this project's own just-finished
+merge work (ADR 0011)**: Pijul's own conflicts are not a special state
+requiring immediate resolution - they're real, well-defined GRAPH
+conditions the theory itself already models (two alive vertices with
+no path between them either way; alive vertices with paths in both
+directions, a cycle; or "zombie" vertices) and the repository can
+represent and carry them forward as real, valid, non-destructive
+state, without forcing an immediate all-or-nothing resolution.
+
+**Comparison to hgit's own model**: a real, instructive contrast, not
+a design hgit adopts outright (the brief itself warns against adopting
+patch theory without real evidence, and hgit's own object model -
+content-addressed blob/tree/commit - is nothing like Pijul's line-level
+graph; adopting the theory itself would be a from-scratch rewrite, not
+a feature). What IS worth naming honestly: ADR 0011's own real decision
+sits at the opposite extreme from Pijul's - a real conflict in `hgit
+merge` aborts the WHOLE operation with zero side effects, forcing an
+immediate, all-or-nothing resolution outside hgit, rather than
+representing the conflict itself as real, recoverable, inspectable
+state the way Pijul's model does. This is a real, legitimate design
+point for "what would justify revisiting" ADR 0011's own current
+stance (already flagged there: "real usage where a genuine conflict is
+common enough that a total abort is a real practical burden") - if
+that ever happens, Pijul's own idea (represent an unresolved conflict
+as a real, first-class, inspectable object rather than only either a
+full commit or nothing) is a real, concrete alternative shape to
+consider, distinct from Git's own file-level conflict-marker approach
+already noted in `docs/research/05-git-internals-and-product-practice.md`.
+Not designed further here - flagged, matching this project's own
+"don't design ahead of evidenced need" stance.
+
 ## Architectural implications so far
 
 - Adopt jj's operation-log/commit-history separation as designed in the
@@ -209,11 +254,20 @@ designed now.
   evidence any real workflow needs simultaneous multi-path assignment;
   flagged as a real, well-scoped M5-or-later candidate, same treatment
   as `absorb`'s auto-target-selection above.
+- Pijul's own patch theory isn't adopted (a from-scratch object-model
+  rewrite, not a feature - the brief's own caution against adopting
+  patch theory without evidence applies directly), but its
+  conflicts-as-real-recoverable-state idea is now a real, named
+  alternative for ADR 0011's own "what would justify revisiting this"
+  list - not designed, just flagged as a concrete shape distinct from
+  Git's own conflict-marker approach, should real usage ever make
+  ADR 0011's current total-abort stance a practical burden.
 
 ## Not yet done
 
-Pijul/Darcs (patch theory — comparison only, brief explicitly warns
-against adopting without evidence), Breezy, and Sapling's own "stacks"
-feature (still unread). Lower priority now that the five most
-load-bearing comparisons (operation log, delta format, undo/absorb,
-obsolescence markers, virtual branches) are done.
+Darcs (patch theory, same family as Pijul — comparison only, brief
+explicitly warns against adopting without evidence), Breezy, and
+Sapling's own "stacks" feature (still unread). Lower priority now that
+the six most load-bearing comparisons (operation log, delta format,
+undo/absorb, obsolescence markers, virtual branches, patch theory) are
+done.

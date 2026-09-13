@@ -1565,6 +1565,25 @@ Real, separate work still needed: real criss-cross histories with
 ambiguous multiple merge bases, and any real conflict resolution
 mechanism (a conflict at any depth still fully aborts the merge).
 
+**Research: Pijul's patch theory** (`docs/research/04-vcs-comparison.md`,
+real primary source - `pijul.org/manual/theory.html`). Comparison
+only, per the brief's own explicit caution against adopting patch
+theory without evidence - Pijul's line-level directed-graph object
+model is nothing like hgit's own content-addressed blob/tree/commit,
+adopting it would be a from-scratch rewrite, not a feature. The one
+detail worth naming honestly, directly relevant to ADR 0011's own
+just-finished merge work: Pijul's conflicts aren't a special state
+needing immediate resolution - they're real, well-defined graph
+conditions (two alive vertices with no path between them; a cycle;
+"zombie" vertices) the repository can represent and carry forward as
+real, valid, non-destructive state. ADR 0011's own real decision sits
+at the opposite extreme - any real conflict aborts the WHOLE merge
+with zero side effects, forcing immediate all-or-nothing resolution
+outside hgit. Not adopted or designed further - added as a real,
+concrete alternative shape to ADR 0011's own "what would justify
+revisiting this" list, should a total abort ever become a real
+practical burden.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

@@ -119,27 +119,58 @@ the last storage-layer gap ADR 0001/FORMAT.md flagged as missing.
 
 ## Not yet done
 
-- **Merge commits** (`parent_count` > 1) — format supports it, untested.
-- **Recursive trees** (a tree entry pointing at another tree) — the
-  format supports it, untested.
-- **Author/identity** on commits — deliberately deferred to M3.
+Most of what this section originally flagged is now real, resolved
+work rather than an open question - corrected below rather than left
+stale (this section hadn't been revisited since early M0, and several
+of its own claims were no longer true):
+
+- ~~Merge commits (`parent_count` > 1) — format supports it,
+  untested~~ **Resolved.** Probe 97 confirmed the object model already
+  supports a real multi-parent commit with zero code changes; probes
+  98-100 (`docs/adr/0011-merge.md`) built and verified a real
+  `hgit merge` command, including nested-tree three-way merging.
+- ~~Recursive trees (a tree entry pointing at another tree) — the
+  format supports it, untested~~ **Resolved** (`docs/adr/0010-subdirectory-support.md`,
+  probes 88-96): a real recursive tree-building primitive, wired into
+  `offertree`/`statustree`/`diff`/`see`/`check`, all verified against
+  real on-disk nested directories, not just synthetic objects.
+- **Author/identity** on commits — still deliberately deferred; no
+  real hgit workflow has needed it yet (single-user, single-machine
+  usage throughout this project's own real history so far).
 - **A real hash table** — the index is still a linear scan/search
-  internally; fine at current scale, not yet benchmarked against a real
-  corpus.
-- Archive size (currently a fixed ~1KB-4KB test buffer) and record count
-  are both far below anything real — scaling both up is unverified.
-- **Fossil-style delta format prototyped, partially verified**
-  (`docs/adr/0008-fossil-delta-format-prototype.md`,
-  `experiments/68-fossil-delta-format/`, `src/hgit-core/Fossil.HC`):
-  the byte-level mechanics (base-64 integer encode/decode, checksum,
-  three-part delta structure) are confirmed correct in a controlled,
-  minimal test, with two new HolyC quirks found and fixed along the
-  way. **Not adopted** - a real, unresolved reliability issue was
-  found (the identical delta-apply call passes or fails depending on
-  unrelated local variables declared in the caller, bisected precisely
-  but not root-caused) and is reported as open, not glossed over. No
-  real diff/longest-common-substring algorithm exists yet either
-  (the prototype only ever builds a delta with one literal segment).
-  Content-defined chunking corpus still entirely unstarted.
+  internally; still fine at current scale (real repos built this
+  session have grown to 150-200+ objects with no observed slowdown),
+  not yet benchmarked rigorously against a much larger real corpus.
+- ~~Archive size (currently a fixed ~1KB-4KB test buffer) and record
+  count are both far below anything real — scaling both up is
+  unverified~~ **Resolved** (`docs/adr/0007-dynamic-archive-buffer.md`):
+  every real command's own archive buffer is `MAlloc`'d from the
+  repo's actual size, not a fixed cap; verified against real repos
+  that have since grown past 30KB/150+ objects with no failure traced
+  to buffer sizing.
+- **Fossil-style delta format - the real reliability issue IS now
+  root-caused and fixed, and a real diff algorithm exists** (was
+  reported open here; corrected - `docs/adr/0008-fossil-delta-format-prototype.md`,
+  probes 79-83): the "caller-shape-sensitivity" bug was a raw byte cast
+  to `(U64)` not reliably zero-extending once composed with other
+  `(U64)`-cast byte reads in one shifted-OR expression - fixed with
+  explicit `& 0xFF` masking, verified against independently-computed
+  ground truth across every previously-failing reproduction. A real
+  diff algorithm (`FossilDeltaMakeReal`, longest-match copy segments)
+  followed, ~61% compression verified on a real test case, and
+  `Fossil.HC`'s own similarity measure is wired into `hgit offer`/
+  `status`/`diff`/`statustree` for real fuzzy rename detection (ADR
+  0009). **Still not adopted for object-store compression itself** -
+  a real, deliberate architectural decision (no real hgit command
+  currently stores or needs delta-compressed objects), not a technical
+  gap or an open reliability question anymore. Content-defined
+  chunking corpus still entirely unstarted - no evidence yet that
+  hgit's own real repo sizes (low hundreds of objects, well under a
+  megabyte) need it.
 - No RedSea/contiguous-file-storage constraints verified against actual
-  kernel source (only the philosophy doc's mention so far, per doc 01).
+  kernel source (only the philosophy doc's mention so far, per doc 01)
+  - though the risk register's own real, repeated evidence (`FileWrite`
+  transparently handling both growth and shrinkage across every real
+  command, `experiments/14-file-growth/`, `30-oplog-undo/`, and every
+  probe since) has made this a low-priority gap in practice, even
+  without reading the kernel source directly.

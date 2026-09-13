@@ -25,16 +25,25 @@ objects go dangling, without being destroyed) → `redo` →
 `correct` (ADR 0005/0006 typed relations) → `historydoc`/
 `reconciledoc`/`reconcileoverview`/`graph` (DolDoc views - dispatch
 success only, not their own rendered output) → `export` (+`check` on
-the exported copy) → `version`/`logo`.
+the exported copy) → `import` (+`check` on the imported copy) →
+`offertree`/`statustree`/`correcttree` (ADR 0010's own subdirectory
+support - a real nested edit, then a real relation carried on a
+nested offer) → `merge` (ADR 0011: a real non-conflicting merge
+between two diverged paths, then a real fast-forward against a
+never-diverged one) → `help`/`version`/`logo`.
 
-Deliberately not exhaustive: `revert`/`reconcile` share `correct`'s own
-underlying code path (`HgitOfferRelatedCmd`, differing only in which
-`REL_*` tag is passed) and aren't separately re-tested here; `import`
-mirrors `export`'s own already-proven `HgitCopyRepo` machinery
-one-directionally, similarly not duplicated. `path close` and
-`operation restore` aren't exercised (the latter's own effect on
-HEAD would need care to keep the rest of this sequence deterministic -
-a real scoping choice, not an oversight).
+Deliberately not exhaustive: `revert`/`reconcile` and
+`reverttree`/`reconciletree` share `correct`/`correcttree`'s own
+underlying code path (`HgitOfferRelatedCmd`/`HgitOfferTreeRelatedCmd`,
+differing only in which `REL_*` tag is passed) and aren't separately
+re-tested here. A real merge CONFLICT isn't exercised in this suite
+(only the two non-conflicting/trivial outcomes) - a real, separate
+scoping choice to keep this one already-long sequence's own repo
+state simple and deterministic; probes 99/100 already cover the
+conflict-abort path directly and thoroughly. `path close` and
+`operation restore` aren't exercised (the latter's own effect on HEAD
+would need care to keep the rest of this sequence deterministic - a
+real scoping choice, not an oversight).
 
 ## Verified
 
@@ -45,8 +54,13 @@ through `TFULL_END`) - every stage's own real output, not just
 files in one status check; the matching `DIFF_*` set correct against
 the parent commit; `CHECK_DANGLING_NONE` before `undo`,
 `CHECK_DANGLING_COUNT` correctly non-zero (naming the undone commit's
-own real objects) right after it; the exported repo's own `check`
-passing too.
+own real objects) right after it; the exported AND imported repo's own
+`check` both passing; a real nested `STATUS_MODIFIED SubA/inner.txt`
+from `statustree`; `MERGE_OK` for a real non-conflicting merge and
+`MERGE_FASTFORWARD` for a real fast-forward, each followed by its own
+`check` passing. Also re-run a second time in the same session,
+confirming this suite really is re-runnable, not just runnable once
+from a pristine state - the property its own name claims.
 
 **A real test-hygiene bug was found and fixed while building this**:
 the first version only deleted the repo itself between manual re-runs
