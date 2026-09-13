@@ -54,8 +54,13 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     return;
   }
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead. Only one exit path here
+  // after this point, freed right before it.
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -142,4 +147,6 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     }
   }
   CommPrint(1, "STATUS_END\n");
+  Free(idx_hashes);
+  Free(idx_offsets);
 }

@@ -1,0 +1,42 @@
+BEFORE_CORRECT i=4 repo_size=2812
+DISPATCH_OK correct
+AFTER_CORRECT i=4
+BEFORE_CORRECT i=5 repo_size=3411
+DISPATCH_OK correct
+AFTER_CORRECT i=5
+BEFORE_CORRECT i=6 repo_size=4010
+DISPATCH_OK correct
+AFTER_CORRECT i=6
+BEFORE_CORRECT i=7 repo_size=4609
+DISPATCH_OK correct
+AFTER_CORRECT i=7
+BEFORE_CORRECT i=8 repo_size=5208
+DISPATCH_OK correct
+AFTER_CORRECT i=8
+BEFORE_CORRECT i=9 repo_size=5807
+DISPATCH_OK correct
+AFTER_CORRECT i=9
+BEFORE_CORRECT i=10 repo_size=6406
+DISPATCH_OK correct
+AFTER_CORRECT i=10
+BEFORE_CORRECT i=11 repo_size=7006
+DISPATCH_OK correct
+AFTER_CORRECT i=11
+BEFORE_CORRECT i=12 repo_size=7606
+OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7606
+DISPATCH_OK correct
+AFTER_CORRECT i=12
+BEFORE_CORRECT i=13 repo_size=7606
+OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7606
+DISPATCH_OK correct
+AFTER_CORRECT i=13
+BEFORE_CORRECT i=14 repo_size=7606
+OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7606
+DISPATCH_OK correct
+AFTER_CORRECT i=14
+BEFORE_CORRECT i=15 repo_size=7606
+OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7606
+DISPATCH_OK correct
+AFTER_CORRECT i=15
+PASS p60c_fresh_bisection_done
+COMPILE_OK

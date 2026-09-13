@@ -1758,8 +1758,13 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     return;
   }
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead. Only one exit path here
+  // after this point, freed right before it.
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -1846,6 +1851,8 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     }
   }
   CommPrint(1, "STATUS_END\n");
+  Free(idx_hashes);
+  Free(idx_offsets);
 }
 // History.HC — `hgit history`: walk the parent chain from HEAD,
 // printing each commit's timestamp and message.
@@ -1879,8 +1886,12 @@ U0 HgitHistory(U8 *repo_path)
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed on every return path.
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -1893,7 +1904,7 @@ U0 HgitHistory(U8 *repo_path)
   while (has_cur) {
     I64 off_rel;
     Bool found = IndexLookup(idx_hashes, idx_offsets, idx_count, cur_hash, &off_rel);
-    if (!found) { CommPrint(1, "HISTORY_ERR broken_chain\n"); return; }
+    if (!found) { CommPrint(1, "HISTORY_ERR broken_chain\n"); Free(idx_hashes); Free(idx_offsets); return; }
     // IndexBuild's offsets are relative to the object section
     // (rbuf+16 was passed as its archive_buf), NOT the whole file -
     // must add the 16-byte header back to index into rbuf directly.
@@ -1904,7 +1915,7 @@ U0 HgitHistory(U8 *repo_path)
     I64 off = 16 + off_rel;
     U8 obj_type = rbuf[off+8];
     U8 *content = rbuf + off + 9;
-    if (obj_type != OBJ_COMMIT) { CommPrint(1, "HISTORY_ERR not_a_commit type=%d\n", obj_type); return; }
+    if (obj_type != OBJ_COMMIT) { CommPrint(1, "HISTORY_ERR not_a_commit type=%d\n", obj_type); Free(idx_hashes); Free(idx_offsets); return; }
 
     U8 pcount = CommitParentCount(content);
     U64 ts = CommitTimestamp(content);
@@ -1925,6 +1936,8 @@ U0 HgitHistory(U8 *repo_path)
     }
   }
   CommPrint(1, "HISTORY_END shown=%d\n", shown);
+  Free(idx_hashes);
+  Free(idx_offsets);
 }
 // Hex.HC — hex string <-> raw hash bytes conversion.
 //
@@ -2048,8 +2061,13 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed before this function
+  // returns (only one exit path here, after the loop's own `break`s).
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -2115,6 +2133,8 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
   }
 
   FileWrite(doc_path, doc, dlen);
+  Free(idx_hashes);
+  Free(idx_offsets);
 }
 // ReconcileDoc.HC — `hgit reconciledoc`/`hgit reconcileoverview`: the
 // real DolDoc reconciliation views (M4).
@@ -2278,8 +2298,12 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
     return;
   }
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed on every return path.
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -2288,6 +2312,8 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
     U8 *m3 = "(commit not found)$CR$";
     for (fi=0; m3[fi]; fi++) doc[dlen++] = m3[fi];
     FileWrite(doc_path, doc, dlen);
+    Free(idx_hashes);
+    Free(idx_offsets);
     return;
   }
   I64 off = 16 + off_rel;
@@ -2296,6 +2322,8 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
     U8 *m4 = "(not a commit)$CR$";
     for (fi=0; m4[fi]; fi++) doc[dlen++] = m4[fi];
     FileWrite(doc_path, doc, dlen);
+    Free(idx_hashes);
+    Free(idx_offsets);
     return;
   }
   U8 *content = rbuf + off + 9;
@@ -2308,6 +2336,8 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
   }
 
   FileWrite(doc_path, doc, dlen);
+  Free(idx_hashes);
+  Free(idx_offsets);
 }
 
 // `hgit reconcileoverview <repo> <dest.DD>` - walks the whole real
@@ -2338,8 +2368,13 @@ U0 HgitReconcileOverview(U8 *repo_path, U8 *doc_path)
   U16 rver; U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed before this function's
+  // one exit path (after the loop's own `break`s).
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -2406,6 +2441,8 @@ U0 HgitReconcileOverview(U8 *repo_path, U8 *doc_path)
   }
 
   FileWrite(doc_path, doc, dlen);
+  Free(idx_hashes);
+  Free(idx_offsets);
 }
 // See.HC — `hgit see <offering>`: show one commit's full detail -
 // message, timestamp, parent count, and its tree's entries.
@@ -2444,19 +2481,23 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
   if (!hok) { CommPrint(1, "SEE_ERR bad_header\n"); return; }
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed on every return path.
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
   I64 off_rel;
   Bool found = IndexLookup(idx_hashes, idx_offsets, idx_count, target_hash, &off_rel);
-  if (!found) { CommPrint(1, "SEE_ERR not_found\n"); return; }
+  if (!found) { CommPrint(1, "SEE_ERR not_found\n"); Free(idx_hashes); Free(idx_offsets); return; }
   I64 off = 16 + off_rel; // Index offsets are relative to the object
                            // section (rbuf+16) - see probe 12/19/20's
                            // recurring lesson.
   U8 obj_type = rbuf[off+8];
-  if (obj_type != OBJ_COMMIT) { CommPrint(1, "SEE_ERR not_a_commit type=%d\n", obj_type); return; }
+  if (obj_type != OBJ_COMMIT) { CommPrint(1, "SEE_ERR not_a_commit type=%d\n", obj_type); Free(idx_hashes); Free(idx_offsets); return; }
   U8 *content = rbuf + off + 9;
 
   U8 pcount = CommitParentCount(content);
@@ -2484,7 +2525,7 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 
   I64 tree_off_rel;
   Bool tree_found = IndexLookup(idx_hashes, idx_offsets, idx_count, tree_hash, &tree_off_rel);
-  if (!tree_found) { CommPrint(1, "SEE_ERR tree_not_found\n"); return; }
+  if (!tree_found) { CommPrint(1, "SEE_ERR tree_not_found\n"); Free(idx_hashes); Free(idx_offsets); return; }
   I64 tree_off = 16 + tree_off_rel;
   U64 tree_len = GetU64LE(rbuf, tree_off);
   U8 *tree_content = rbuf + tree_off + 9;
@@ -2511,6 +2552,8 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
     CommPrint(1, "\n");
   }
   CommPrint(1, "SEE_END\n");
+  Free(idx_hashes);
+  Free(idx_offsets);
 }
 // OpLog.HC — the tool-operation log, separate from project history
 // (commits), per the product thesis: "Project history and tool-
@@ -2715,6 +2758,23 @@ U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
 // underlying logic with a real relation attached, rather than
 // duplicating the whole offer process.
 
+// ADR 0007 (experiments/61-dynamic-archive/): headroom reserved above
+// the existing repo's own size for this call's new objects, and a
+// purely pathological-input sanity ceiling.
+//
+// ARCHIVE_HEADROOM is a real computed worst case, not a guess, given
+// probe 56's own still-in-place guards: tree_content[2048] caps at
+// ~27 entries (2048 / a 75-byte minimal single-char-name entry), each
+// of which can carry up to a 511-byte blob (blob_tagged[512]'s own
+// cap) - 27*511 ~ 13800 bytes of blob content, plus the tree object's
+// own up-to-2048 bytes, plus a commit up to 512, plus ~9 bytes of HGS
+// record overhead per object (~29 objects worst case ~ 260 bytes).
+// That worst case totals ~16600 bytes; 20000 leaves real margin and
+// matches the exact size independently confirmed safe via MAlloc in
+// experiments/61-dynamic-archive/.
+#define ARCHIVE_HEADROOM 20000
+#define ARCHIVE_SANITY_MAX 1000000000
+
 U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
                           U64 timestamp, U8 relation_tag, U8 *relation_target,
                           U64 relation_entity_id)
@@ -2726,7 +2786,29 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 
-  U8 archive[8192];
+  // ADR 0007 (experiments/61-dynamic-archive/): `archive` used to be a
+  // fixed `U8[8192]` stack buffer - probe 60 found and bisected a real
+  // kernel GPF once a repo's own growth alone (no wildcards, no large
+  // files - each offer/correct grows a real repo by ~600 bytes) crossed
+  // that ceiling, and probe 60's own fix was a clean refusal rather
+  // than lifting the ceiling. This does that: `archive` is now
+  // `MAlloc`'d at exactly the size this call needs (the existing repo
+  // plus a generous, still-bounded headroom for this call's own new
+  // objects - probe 56's own per-file/tree caps already bound that
+  // upper end), freed on every exit path. `ARCHIVE_SANITY_MAX` is a
+  // much higher, purely pathological-input ceiling (guards against a
+  // corrupted/absurd `rsize`, not real growth) - confirmed via
+  // `experiments/61-dynamic-archive/` that a 20,000-byte `MAlloc`
+  // writes/reads back correctly with no corruption; `MAlloc`/`Free` are
+  // real TempleOS kernel primitives, already relied on implicitly by
+  // this project's own daemon bootstrap.
+  if (rsize > ARCHIVE_SANITY_MAX) {
+    CommPrint(1, "OFFER_REFUSED archive_absurdly_large size=%d\n", rsize);
+    return;
+  }
+
+  I64 archive_cap = rsize + ARCHIVE_HEADROOM;
+  U8 *archive = MAlloc(archive_cap);
   I64 alen = 16; // header goes here at the end, once we know the count
   I64 i;
   for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
@@ -2737,8 +2819,19 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   U8 parent_hash[64];
   Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
 
-  U8 old_idx_hashes[64*64];
-  I64 old_idx_offsets[64];
+  // Same class of fixed-buffer bug ADR 0007 fixed for `archive` -
+  // `idx_hashes`/`idx_offsets` used to be `[64*64]`/`[64]` stack arrays,
+  // a hardcoded cap of 64 *objects total in the whole repo* (not 64
+  // matched files). Confirmed hit in practice while re-verifying ADR
+  // 0007's own fix (experiments/61-dynamic-archive/): once
+  // `archive`'s ceiling was lifted, real growth continued until this
+  // *next* fixed buffer overflowed instead, at ~22 offers (66+ objects
+  // - 3 objects/offer). Same fix, same pattern: MAlloc'd from `rcount`
+  // (already known exactly from the .HGS header - no headroom guess
+  // needed, this one is an exact count by construction), freed right
+  // after this block's last use of it.
+  U8 *old_idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *old_idx_offsets = MAlloc((rcount+1)*8);
   I64 old_idx_count = 0;
   U8 *old_tree_content = NULL;
   I64 old_tree_content_len = 0;
@@ -2762,6 +2855,8 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
       }
     }
   }
+  Free(old_idx_hashes);
+  Free(old_idx_offsets);
 
   // Build blobs + tree from every file matching find_mask.
   //
@@ -2871,6 +2966,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   OpLogAppend(repo_path, log_prev_head, commit_hash, timestamp);
 
   CurrentHeadWrite(repo_path, commit_hash);
+  Free(archive);
 }
 
 U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,

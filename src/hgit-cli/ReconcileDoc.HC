@@ -160,8 +160,12 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
     return;
   }
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed on every return path.
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -170,6 +174,8 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
     U8 *m3 = "(commit not found)$CR$";
     for (fi=0; m3[fi]; fi++) doc[dlen++] = m3[fi];
     FileWrite(doc_path, doc, dlen);
+    Free(idx_hashes);
+    Free(idx_offsets);
     return;
   }
   I64 off = 16 + off_rel;
@@ -178,6 +184,8 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
     U8 *m4 = "(not a commit)$CR$";
     for (fi=0; m4[fi]; fi++) doc[dlen++] = m4[fi];
     FileWrite(doc_path, doc, dlen);
+    Free(idx_hashes);
+    Free(idx_offsets);
     return;
   }
   U8 *content = rbuf + off + 9;
@@ -190,6 +198,8 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
   }
 
   FileWrite(doc_path, doc, dlen);
+  Free(idx_hashes);
+  Free(idx_offsets);
 }
 
 // `hgit reconcileoverview <repo> <dest.DD>` - walks the whole real
@@ -220,8 +230,13 @@ U0 HgitReconcileOverview(U8 *repo_path, U8 *doc_path)
   U16 rver; U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed before this function's
+  // one exit path (after the loop's own `break`s).
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -288,4 +303,6 @@ U0 HgitReconcileOverview(U8 *repo_path, U8 *doc_path)
   }
 
   FileWrite(doc_path, doc, dlen);
+  Free(idx_hashes);
+  Free(idx_offsets);
 }

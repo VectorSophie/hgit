@@ -1,0 +1,12 @@
+155:OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7606
+158:BEFORE_CORRECT i=13 repo_size=7606
+159:OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7606
+162:BEFORE_CORRECT i=14 repo_size=7606
+163:OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7606
+166:BEFORE_CORRECT i=15 repo_size=7606
+167:OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7606
+170:PASS p60c_fresh_bisection_done
+179:OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7756
+181:OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7756
+183:OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7756
+185:OFFER_REFUSED archive_too_large_for_in_memory_buffer size=7756

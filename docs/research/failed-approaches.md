@@ -741,3 +741,79 @@ any function in a long-running daemon session, re-push every
 already-compiled caller of it too, not just the function itself - a
 clean compile of the edited file alone is not sufficient evidence the
 change is live. Full writeup: `experiments/58-reconciledoc-tree/README.md`.
+
+## 2026-09-13 — A second, different GPF: `archive[8192]` overflows after ~13 ordinary offers alone
+
+**Tried:** Testing probe 59's own truncation-guard follow-up
+(`experiments/60-archive-buffer-guard/`): running many `hgit correct`
+calls in a row on a small, fresh repo, no wildcards, no large files -
+just ordinary repeated corrections, to see `ReconcileDoc.HC`'s bounds
+check actually trigger.
+
+**Happened:** A real kernel GPF hit first, before that check could
+even be exercised - around the 13th correction in a row, `RIP:...
+&CommitEncode+0x0126`. A genuinely different crash from probe 56's own
+(different trigger, different function in the fault trace).
+
+**Why:** Logged the repo's real file size (`FileRead`'s own `size`
+param) before every call in a loop to bisect precisely rather than
+guess: growth is steady and exact, ~599-600 bytes per `offer`/
+`correct`. `Offer.HC`'s `HgitOfferWithRelation` copies the *entire
+existing repo* into a fixed `U8 archive[8192]` stack buffer before
+adding anything new - once the repo alone (before this call even
+starts copying it) exceeds 8192 bytes, that copy loop overflows the
+buffer. Confirmed exactly: the crash hit with the repo already at 8206
+bytes. This is the exact gap probe 56's own README flagged as "not
+yet done" (`archive[8192]` unaddressed) - now confirmed hit in
+practice with real numbers, not hypothetical.
+
+**Worked instead:** A guard at the top of `HgitOfferWithRelation`:
+refuse cleanly (`OFFER_REFUSED archive_too_large_for_in_memory_buffer`)
+once the existing repo is within 1024 bytes of the buffer's capacity,
+instead of copying it and corrupting memory. Verified against a fresh
+from-zero bisection (confirms the exact crossover: normal growth for
+11 real corrections, then clean refusals from iteration 12 onward,
+repo size frozen, no crash) and a harsher test (25 calls against a
+repo already past the threshold, all cleanly refused, daemon confirmed
+still alive afterward). The underlying 8192-byte ceiling itself isn't
+lifted - a real repo that legitimately needs to grow past it currently
+just stops accepting new offers cleanly rather than working; real
+follow-up architecture work, not solved here. Full writeup:
+`experiments/60-archive-buffer-guard/README.md`.
+
+## 2026-09-13 — Fixing one fixed-buffer ceiling revealed the next one behind it
+
+**Tried:** Implementing ADR 0007 (`experiments/61-dynamic-archive/`):
+replacing `Offer.HC`'s fixed `U8 archive[8192]` with an `MAlloc`'d
+buffer sized from the repo's real size, to lift the ceiling probe 60
+had only guarded (not removed). Re-ran the same 30-correction
+reproduction that motivated the ADR to confirm it now runs past the
+old crash point.
+
+**Happened:** Growth continued cleanly past the old ~13-offer/8192-byte
+crash point, exactly as intended - and then crashed anyway, at a
+larger scale (~22 offers), with a different fault
+(`RIP:...&PutU64LE+0x0043`, distinct from the `CommitEncode` fault
+probe 60 diagnosed).
+
+**Why:** `Offer.HC`'s `old_idx_hashes[64*64]`/`old_idx_offsets[64]`
+(built via `IndexBuild` for ADR 0004's parent-tree lookup) is a
+*separate* hardcoded cap - 64 objects in the whole repo, not 64
+matched files - unrelated to `archive`. At ~3 objects per offer (one
+blob, one tree, one commit), that overflows at ~21 offers. The first
+fix had been masking this the whole time, because the outer `archive`
+ceiling was always hit first, at a smaller scale.
+
+**Worked instead:** Fixed the same way as `archive` itself:
+`old_idx_hashes`/`old_idx_offsets` are now `MAlloc`'d sized from
+`rcount` (the repo's own exact object count, already read from the
+`.HGS` header - no headroom guess needed, unlike `archive`'s own
+heuristic margin, since this count is exact by construction), freed
+right after their last use. Re-verified: all 30 corrections now
+complete cleanly, repo grown to 30,808 bytes, no crash. **Real,
+still-open risk, deliberately not chased further in the same
+session**: the identical `idx_hashes[64*64]`/`idx_offsets[64]` pattern
+exists, unfixed, in five other call sites (`History.HC`,
+`HistoryDoc.HC`, `Status.HC`, `See.HC`, `ReconcileDoc.HC` twice) -
+confirmed by code inspection, not yet independently hit by a crash in
+any of them. Full writeup: `experiments/61-dynamic-archive/README.md`.

@@ -35,19 +35,23 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
   if (!hok) { CommPrint(1, "SEE_ERR bad_header\n"); return; }
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed on every return path.
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
   I64 off_rel;
   Bool found = IndexLookup(idx_hashes, idx_offsets, idx_count, target_hash, &off_rel);
-  if (!found) { CommPrint(1, "SEE_ERR not_found\n"); return; }
+  if (!found) { CommPrint(1, "SEE_ERR not_found\n"); Free(idx_hashes); Free(idx_offsets); return; }
   I64 off = 16 + off_rel; // Index offsets are relative to the object
                            // section (rbuf+16) - see probe 12/19/20's
                            // recurring lesson.
   U8 obj_type = rbuf[off+8];
-  if (obj_type != OBJ_COMMIT) { CommPrint(1, "SEE_ERR not_a_commit type=%d\n", obj_type); return; }
+  if (obj_type != OBJ_COMMIT) { CommPrint(1, "SEE_ERR not_a_commit type=%d\n", obj_type); Free(idx_hashes); Free(idx_offsets); return; }
   U8 *content = rbuf + off + 9;
 
   U8 pcount = CommitParentCount(content);
@@ -75,7 +79,7 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 
   I64 tree_off_rel;
   Bool tree_found = IndexLookup(idx_hashes, idx_offsets, idx_count, tree_hash, &tree_off_rel);
-  if (!tree_found) { CommPrint(1, "SEE_ERR tree_not_found\n"); return; }
+  if (!tree_found) { CommPrint(1, "SEE_ERR tree_not_found\n"); Free(idx_hashes); Free(idx_offsets); return; }
   I64 tree_off = 16 + tree_off_rel;
   U64 tree_len = GetU64LE(rbuf, tree_off);
   U8 *tree_content = rbuf + tree_off + 9;
@@ -102,4 +106,6 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
     CommPrint(1, "\n");
   }
   CommPrint(1, "SEE_END\n");
+  Free(idx_hashes);
+  Free(idx_offsets);
 }

@@ -46,6 +46,23 @@
 // underlying logic with a real relation attached, rather than
 // duplicating the whole offer process.
 
+// ADR 0007 (experiments/61-dynamic-archive/): headroom reserved above
+// the existing repo's own size for this call's new objects, and a
+// purely pathological-input sanity ceiling.
+//
+// ARCHIVE_HEADROOM is a real computed worst case, not a guess, given
+// probe 56's own still-in-place guards: tree_content[2048] caps at
+// ~27 entries (2048 / a 75-byte minimal single-char-name entry), each
+// of which can carry up to a 511-byte blob (blob_tagged[512]'s own
+// cap) - 27*511 ~ 13800 bytes of blob content, plus the tree object's
+// own up-to-2048 bytes, plus a commit up to 512, plus ~9 bytes of HGS
+// record overhead per object (~29 objects worst case ~ 260 bytes).
+// That worst case totals ~16600 bytes; 20000 leaves real margin and
+// matches the exact size independently confirmed safe via MAlloc in
+// experiments/61-dynamic-archive/.
+#define ARCHIVE_HEADROOM 20000
+#define ARCHIVE_SANITY_MAX 1000000000
+
 U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
                           U64 timestamp, U8 relation_tag, U8 *relation_target,
                           U64 relation_entity_id)
@@ -57,7 +74,29 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 
-  U8 archive[8192];
+  // ADR 0007 (experiments/61-dynamic-archive/): `archive` used to be a
+  // fixed `U8[8192]` stack buffer - probe 60 found and bisected a real
+  // kernel GPF once a repo's own growth alone (no wildcards, no large
+  // files - each offer/correct grows a real repo by ~600 bytes) crossed
+  // that ceiling, and probe 60's own fix was a clean refusal rather
+  // than lifting the ceiling. This does that: `archive` is now
+  // `MAlloc`'d at exactly the size this call needs (the existing repo
+  // plus a generous, still-bounded headroom for this call's own new
+  // objects - probe 56's own per-file/tree caps already bound that
+  // upper end), freed on every exit path. `ARCHIVE_SANITY_MAX` is a
+  // much higher, purely pathological-input ceiling (guards against a
+  // corrupted/absurd `rsize`, not real growth) - confirmed via
+  // `experiments/61-dynamic-archive/` that a 20,000-byte `MAlloc`
+  // writes/reads back correctly with no corruption; `MAlloc`/`Free` are
+  // real TempleOS kernel primitives, already relied on implicitly by
+  // this project's own daemon bootstrap.
+  if (rsize > ARCHIVE_SANITY_MAX) {
+    CommPrint(1, "OFFER_REFUSED archive_absurdly_large size=%d\n", rsize);
+    return;
+  }
+
+  I64 archive_cap = rsize + ARCHIVE_HEADROOM;
+  U8 *archive = MAlloc(archive_cap);
   I64 alen = 16; // header goes here at the end, once we know the count
   I64 i;
   for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
@@ -68,8 +107,19 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   U8 parent_hash[64];
   Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
 
-  U8 old_idx_hashes[64*64];
-  I64 old_idx_offsets[64];
+  // Same class of fixed-buffer bug ADR 0007 fixed for `archive` -
+  // `idx_hashes`/`idx_offsets` used to be `[64*64]`/`[64]` stack arrays,
+  // a hardcoded cap of 64 *objects total in the whole repo* (not 64
+  // matched files). Confirmed hit in practice while re-verifying ADR
+  // 0007's own fix (experiments/61-dynamic-archive/): once
+  // `archive`'s ceiling was lifted, real growth continued until this
+  // *next* fixed buffer overflowed instead, at ~22 offers (66+ objects
+  // - 3 objects/offer). Same fix, same pattern: MAlloc'd from `rcount`
+  // (already known exactly from the .HGS header - no headroom guess
+  // needed, this one is an exact count by construction), freed right
+  // after this block's last use of it.
+  U8 *old_idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *old_idx_offsets = MAlloc((rcount+1)*8);
   I64 old_idx_count = 0;
   U8 *old_tree_content = NULL;
   I64 old_tree_content_len = 0;
@@ -93,6 +143,8 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
       }
     }
   }
+  Free(old_idx_hashes);
+  Free(old_idx_offsets);
 
   // Build blobs + tree from every file matching find_mask.
   //
@@ -202,6 +254,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   OpLogAppend(repo_path, log_prev_head, commit_hash, timestamp);
 
   CurrentHeadWrite(repo_path, commit_hash);
+  Free(archive);
 }
 
 U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,

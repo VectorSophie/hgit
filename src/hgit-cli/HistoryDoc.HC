@@ -43,8 +43,13 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed before this function
+  // returns (only one exit path here, after the loop's own `break`s).
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -110,4 +115,6 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
   }
 
   FileWrite(doc_path, doc, dlen);
+  Free(idx_hashes);
+  Free(idx_offsets);
 }

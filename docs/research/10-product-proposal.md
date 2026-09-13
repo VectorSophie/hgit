@@ -32,6 +32,9 @@ verified, probe by probe.
 | A real, previously-undocumented 33-character path-length ceiling (`FileWrite`/`FileRead` silently no-op past it) | **Resolved architecturally** — `Meta.HC` consolidates every per-repo tool-state concern into one combined file, immune to the ceiling scaling with path names; every real command now runs on it | `docs/adr/0003-path-length-ceiling.md`, `experiments/36` through `44` |
 | Large unpaced pushes over the injection channel can silently drop bytes under host memory pressure | **Resolved** — `experiments/01-temple-repl/paced_push.py` sends in small paced chunks; standard practice for any push over ~10KB | `experiments/34-hgit-paths/` |
 | `hgit offer *` against a directory holding many dozens of pre-existing files causes a real kernel-level GPF, not a graceful error | **Resolved** — root-caused to two unbounded fixed-size stack buffers in `Offer.HC` (`tree_content[2048]`, `blob_tagged[512]`); a file that doesn't fit is now cleanly skipped (`OFFER_SKIP ...`) instead of corrupting memory. Confirmed by reproducing both of the bug's failure modes (a GPF and, separately, a silent infinite loop) before fixing, then re-verifying the fix against both plus a full regression of probe 55's own scenario | `experiments/56-offer-buffer-guard/`, `docs/research/failed-approaches.md`'s 2026-09-13 entries |
+| A repo that simply accumulates ~13+ ordinary offers/corrections (no wildcards, no large files) eventually crosses `Offer.HC`'s `archive[8192]` in-memory copy buffer and causes a real kernel-level GPF | **Fully resolved** — probe 60 first guarded it (clean refusal instead of a crash); ADR 0007/probe 61 then lifted the ceiling entirely (`archive` is now `MAlloc`'d from the repo's real size, freed after use) — verified with 30 corrections growing a repo to 30,808 bytes, no crash, no refusal | `docs/adr/0007-dynamic-archive-buffer.md`, `experiments/60-archive-buffer-guard/`, `experiments/61-dynamic-archive/` |
+| `Offer.HC`'s own `old_idx_hashes[64*64]`/`old_idx_offsets[64]` (ADR 0004's parent-tree lookup) is a hardcoded 64-*object*-in-the-whole-repo cap, unrelated to `archive` | **Resolved** — found only once ADR 0007's own fix lifted the `archive` ceiling and let real growth reach this next fixed buffer (~21 offers, ~3 objects/offer); fixed the same way, `MAlloc`'d from the repo's own exact object count (`rcount`, already known from the `.HGS` header) | `experiments/61-dynamic-archive/` |
+| The same `idx_hashes[64*64]`/`idx_offsets[64]` pattern also existed in `History.HC`, `HistoryDoc.HC`, `Status.HC`, `See.HC`, and `ReconcileDoc.HC` (twice) | **Resolved** — all six call sites now `MAlloc` from the repo's real object count, same as `Offer.HC`; verified with a real 26-offer/~78-object repo against all five affected commands (`see`/`history`/`status`/`historydoc`/`reconcileoverview`), all correct, no crash | `experiments/62-index-buffer-sweep/` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -641,6 +644,53 @@ constructed to exercise that path directly. Hit the same `pi`
 reserved-identifier collision documented since probe 41 a second time
 while writing this, independently - a reminder that documenting a
 mistake doesn't reliably prevent repeating it.
+
+**A second, different crash found and fixed while testing the above**:
+`experiments/60-archive-buffer-guard/` (PASS) - probe 59's own
+truncation-guard testing surfaced a real kernel GPF at ~13 ordinary
+`correct` calls in a row on a small, fresh repo (no wildcards, no large
+files - a different trigger from probe 56's own bug). Bisected
+precisely by logging the repo's real file size before every call:
+growth is a steady ~600 bytes/offer, and the crash hits exactly once
+the existing repo alone exceeds `Offer.HC`'s `archive[8192]` in-memory
+copy buffer - flagged as unaddressed in probe 56's own "Not yet done"
+section, now confirmed hit in practice. Fixed with a clean refusal
+(`OFFER_REFUSED archive_too_large_for_in_memory_buffer`) instead of a
+crash; verified against both a fresh from-zero bisection (confirms the
+exact crossover point) and a harsher repeated-refusal test, plus a
+regression check that normal small offers are unaffected. The
+underlying ceiling itself isn't lifted - real follow-up architecture
+work, not solved here.
+
+**That ceiling is now actually lifted**: `docs/adr/0007-dynamic-archive-buffer.md`
+/ `experiments/61-dynamic-archive/` (PASS) - `archive` is `MAlloc`'d
+from the repo's own real size instead of a fixed `U8[8192]`, freed
+after use; `MAlloc`/`Free` confirmed working correctly for a
+20,000-byte buffer first, standalone, before wiring in. Re-running the
+exact 30-correction reproduction that motivated this: growth continued
+cleanly past the old crash point - and then hit a **second**, different
+fixed-buffer bug at a larger scale (`old_idx_hashes[64*64]`/
+`old_idx_offsets[64]`, a hardcoded 64-object-in-the-whole-repo cap
+unrelated to `archive`, only reachable once the first ceiling was
+lifted). Fixed the same way (`MAlloc`'d from the repo's own exact
+object count). Final verification: all 30 corrections complete
+cleanly, repo grown to 30,808 bytes, no crash, no refusal, daemon
+confirmed still responsive, normal small-repo case unaffected. The
+same fixed-array pattern also existed in five other call sites
+(`History.HC`, `HistoryDoc.HC`, `Status.HC`, `See.HC`,
+`ReconcileDoc.HC` twice), flagged then as a real, not-yet-crashed risk.
+
+**That risk is now closed too**: `experiments/62-index-buffer-sweep/`
+(PASS) applies the identical `MAlloc`-from-`rcount` fix to all five
+remaining call sites, each pushed standalone to confirm a clean
+compile first, then `Hgit.HC` re-pushed too (probe 58's JIT gotcha).
+Verified against a real 26-offer/~78-object repo (past the old
+64-object cap) run through all five affected commands in one session -
+`hgit see`/`history`/`status`/`historydoc`/`reconcileoverview` all
+completed correctly (`SEE_COMMIT`/`SEE_RELATION`/`SEE_TREE`,
+`HISTORY_END shown=26`, `STATUS_UNCHANGED`, both `DISPATCH_OK`), no
+crash, no truncation - closing every call site of this bug class this
+project has found so far.
 
 **Root-caused and fixed**: `experiments/56-offer-buffer-guard/` (PASS)
 confirms it - `Offer.HC`'s `tree_content[2048]`/`blob_tagged[512]`

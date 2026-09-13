@@ -30,8 +30,12 @@ U0 HgitHistory(U8 *repo_path)
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 
-  U8 idx_hashes[64*64];
-  I64 idx_offsets[64];
+  // ADR 0007's same fix, applied here (experiments/62-index-buffer-sweep/):
+  // idx_hashes/idx_offsets used to be fixed [64*64]/[64] stack arrays, a
+  // hardcoded 64-object-in-the-whole-repo cap - MAlloc'd from `rcount`
+  // (exact, from the .HGS header) instead, freed on every return path.
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
   I64 idx_count;
   IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
 
@@ -44,7 +48,7 @@ U0 HgitHistory(U8 *repo_path)
   while (has_cur) {
     I64 off_rel;
     Bool found = IndexLookup(idx_hashes, idx_offsets, idx_count, cur_hash, &off_rel);
-    if (!found) { CommPrint(1, "HISTORY_ERR broken_chain\n"); return; }
+    if (!found) { CommPrint(1, "HISTORY_ERR broken_chain\n"); Free(idx_hashes); Free(idx_offsets); return; }
     // IndexBuild's offsets are relative to the object section
     // (rbuf+16 was passed as its archive_buf), NOT the whole file -
     // must add the 16-byte header back to index into rbuf directly.
@@ -55,7 +59,7 @@ U0 HgitHistory(U8 *repo_path)
     I64 off = 16 + off_rel;
     U8 obj_type = rbuf[off+8];
     U8 *content = rbuf + off + 9;
-    if (obj_type != OBJ_COMMIT) { CommPrint(1, "HISTORY_ERR not_a_commit type=%d\n", obj_type); return; }
+    if (obj_type != OBJ_COMMIT) { CommPrint(1, "HISTORY_ERR not_a_commit type=%d\n", obj_type); Free(idx_hashes); Free(idx_offsets); return; }
 
     U8 pcount = CommitParentCount(content);
     U64 ts = CommitTimestamp(content);
@@ -76,4 +80,6 @@ U0 HgitHistory(U8 *repo_path)
     }
   }
   CommPrint(1, "HISTORY_END shown=%d\n", shown);
+  Free(idx_hashes);
+  Free(idx_offsets);
 }

@@ -173,7 +173,26 @@ dozens of pre-existing files caused a genuine kernel-level GPF (not a
 graceful error) — since **root-caused and fixed**
 (`experiments/56-offer-buffer-guard/`): two unbounded stack buffers in
 `Offer.HC` now cleanly skip a file that doesn't fit (`OFFER_SKIP ...`)
-instead of corrupting memory; see `docs/research/failed-approaches.md`.
+instead of corrupting memory. A **second, different crash** was then
+found and fixed the same way: a repo that simply accumulates ~13+
+ordinary offers alone (no wildcards, no large files) eventually
+overflows `Offer.HC`'s `archive[8192]` in-memory copy buffer — bisected
+precisely (repo grows ~600 bytes/offer, crash confirmed at exactly the
+point the repo alone exceeds 8192 bytes) and fixed with a clean
+`OFFER_REFUSED` refusal instead of a crash
+(`experiments/60-archive-buffer-guard/`). **That ceiling is now fully
+lifted** (`docs/adr/0007-dynamic-archive-buffer.md`,
+`experiments/61-dynamic-archive/`): `archive` is `MAlloc`'d from the
+repo's real size instead of a fixed array. Fixing it surfaced a
+*second*, different fixed-buffer bug at a larger scale
+(`old_idx_hashes[64*64]`, a hardcoded 64-object-in-the-whole-repo cap)
+— fixed the same way. Verified with 30 corrections growing a repo to
+30,808 bytes, no crash. The same fixed-array pattern also existed in
+five other read-only view commands (`see`/`history`/`status`/
+`historydoc`/`reconcileoverview`) — **now fixed too**
+(`experiments/62-index-buffer-sweep/`), verified against a real
+26-offer/~78-object repo run through all five, no crash; see
+`docs/research/failed-approaches.md`.
 
 **Two real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete) and [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
