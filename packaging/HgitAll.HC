@@ -690,14 +690,16 @@ Bool TreeFindEntry(U8 *tree_buf, I64 tree_len, U8 *name, I64 name_len,
   return FALSE;
 }
 // Commit.HC — commit object content: a tree reference, zero or more
-// parent references, a timestamp, a message, and (per ADR 0005) an
-// optional typed relation to an earlier commit. This is what goes in
-// the `data`/`dlen` passed to ObjectPut with type=OBJ_COMMIT - the
-// content design ADR 0001/FORMAT.md deferred alongside tree content.
-// Verified end-to-end (root commit with 0 parents, child commit with 1
-// parent referencing the root, both referencing the same tree) in
+// parent references, a timestamp, a message, and (per ADR 0005/0006)
+// an optional typed relation to an earlier commit, optionally scoped
+// to a specific tracked entity. This is what goes in the `data`/`dlen`
+// passed to ObjectPut with type=OBJ_COMMIT - the content design ADR
+// 0001/FORMAT.md deferred alongside tree content. Verified end-to-end
+// (root commit with 0 parents, child commit with 1 parent referencing
+// the root, both referencing the same tree) in
 // experiments/11-commit-object/; the relation fields verified in
-// experiments/50-relation-vocabulary/.
+// experiments/50-relation-vocabulary/; entity-scoping in
+// experiments/53-entity-scoped-relations/.
 //
 // Content format:
 //   64 bytes  tree_hash
@@ -709,21 +711,24 @@ Bool TreeFindEntry(U8 *tree_buf, I64 tree_len, U8 *name, I64 name_len,
 //   message_len bytes of message (no encoding assumed - opaque bytes)
 //   U8        relation_tag (0=none/plain continuation, 1=CONTINUES
 //             explicit, 2=CORRECTS, 3=REVERTS, 4=RECONCILES)
-//   if relation_tag != 0: 64 bytes relation_target_hash (the prior
-//             commit this relation names - not necessarily the parent;
-//             a correction can name a commit further back)
+//   if relation_tag != 0:
+//     64 bytes relation_target_hash (the prior commit this relation
+//               names - not necessarily the parent; a correction can
+//               name a commit further back)
+//     U64      relation_entity_id (0 = not entity-scoped, the relation
+//               applies to the whole commit - ADR 0005's original
+//               behavior; any other value names a specific entity ID
+//               from ADR 0004's tree entries. 0 as "unscoped" is a
+//               practical sentinel, not formally collision-proof - a
+//               real GenerateEntityId() landing on exactly 0 is
+//               vanishingly unlikely, same honest caveat OpLog.HC's
+//               own all-zero prev_head sentinel already carries.)
 //
 // The relation fields are placed AFTER the message deliberately: every
 // accessor that reads UP TO the message (CommitTimestamp/
 // CommitMessageLen/CommitMessage) keeps its existing offset math
 // unchanged. Anything reading the relation fields recomputes from
 // CommitMessageLen instead of assuming a fixed offset.
-//
-// Stable entity identity (ADR 0004, Tree.HC's per-entry entity_id) is
-// a separate concern from this file - this ADR (0005) does NOT yet
-// scope a relation to a specific entity within a commit, only to
-// another commit as a whole. See ADR 0005's own "what this slice does
-// not do."
 //
 // Depends on Canon.HC (PutU64LE/GetU64LE/PutU32LE/GetU32LE).
 
@@ -735,10 +740,11 @@ Bool TreeFindEntry(U8 *tree_buf, I64 tree_len, U8 *name, I64 name_len,
 
 // `relation_tag`/`relation_target` may be REL_NONE/NULL for an
 // ordinary commit with no explicit relation (the common case - costs
-// exactly one byte).
+// exactly one byte). `relation_entity_id` is ignored when
+// relation_tag is REL_NONE; pass 0 for "not entity-scoped" otherwise.
 U0 CommitEncode(U8 *buf, I64 *len, U8 *tree_hash, U8 *parent_hashes,
                 U8 parent_count, U64 timestamp, U8 *message, I64 message_len,
-                U8 relation_tag, U8 *relation_target)
+                U8 relation_tag, U8 *relation_target, U64 relation_entity_id)
 {
   I64 i, j;
   for (i=0; i<64; i++) buf[*len+i] = tree_hash[i];
@@ -757,6 +763,7 @@ U0 CommitEncode(U8 *buf, I64 *len, U8 *tree_hash, U8 *parent_hashes,
   if (relation_tag != REL_NONE) {
     for (i=0; i<64; i++) buf[*len+i] = relation_target[i];
     *len += 64;
+    PutU64LE(buf, *len, relation_entity_id); *len += 8;
   }
 }
 
@@ -805,6 +812,15 @@ U8 CommitRelationTag(U8 *buf)
 U8 *CommitRelationTarget(U8 *buf)
 {
   return buf + CommitRelationOffset(buf) + 1;
+}
+
+// Only valid to call if CommitRelationTag(buf) != REL_NONE - returns
+// the entity ID this relation is scoped to (0 = not entity-scoped,
+// applies to the whole commit - see this file's own header comment on
+// why 0 is a safe sentinel).
+U64 CommitRelationEntityId(U8 *buf)
+{
+  return GetU64LE(buf, CommitRelationOffset(buf) + 1 + 64);
 }
 // Index.HC — hash -> offset lookup over a .HGS object section.
 //
@@ -1955,6 +1971,38 @@ U0 HashToHex(U8 *hash, U8 *hex_out)
   }
   hex_out[128] = 0;
 }
+
+// Writes 16 lowercase hex chars + NUL (17 bytes total) into hex_out -
+// same convention as HashToHex, but for a U64 (e.g. ADR 0004's entity
+// IDs), which otherwise print as a negative number under a plain
+// signed %d when the high bit is set (a real, hit-in-practice
+// annoyance, not hypothetical - see experiments/49-entity-id/'s own
+// README). Hex round-trips cleanly regardless of sign.
+U0 U64ToHex(U64 v, U8 *hex_out)
+{
+  U8 *digits = "0123456789abcdef";
+  I64 i;
+  for (i=0; i<16; i++) {
+    I64 shift = (15-i)*4;
+    hex_out[i] = digits[(v >> shift) & 0xF];
+  }
+  hex_out[16] = 0;
+}
+
+// hex must be exactly 16 characters. Returns FALSE (out untouched) if
+// any character isn't a valid hex digit.
+Bool HexToU64(U8 *hex, U64 *out)
+{
+  U64 v = 0;
+  I64 i;
+  for (i=0; i<16; i++) {
+    U8 d = HexDigit(hex[i]);
+    if (d == 0xFF) return FALSE;
+    v = (v << 4) | d;
+  }
+  *out = v;
+  return TRUE;
+}
 // HistoryDoc.HC — `hgit historydoc`: the real DolDoc history view.
 //
 // Probe 46 (`experiments/46-doldoc-format/`) resolved the research
@@ -2083,11 +2131,17 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
 // repo reports SEE_ERR cleanly rather than crashing or guessing.
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
-// Index.HC.
+// Index.HC, Hex.HC (HashToHex for a relation target; U64ToHex for
+// entity IDs, printed in hex rather than plain %d since a U64 with the
+// high bit set otherwise prints as a negative number).
 //
 // Tree-entry parsing updated for ADR 0004's 8-byte entity ID field
 // (experiments/49-entity-id/) - this file walks tree entries manually
 // (not via Tree.HC's TreeFindEntry) so it needed its own offset fix.
+//
+// Also prints ADR 0005/0006's relation tag/target/entity, if the
+// commit has one (experiments/51-relation-commands/,
+// experiments/53-entity-scoped-relations/).
 
 U0 HgitSee(U8 *repo_path, U8 *target_hash)
 {
@@ -2125,6 +2179,18 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
   for (i=0; i<mlen; i++) CommPrint(1, "%c", msg[i]);
   CommPrint(1, "\n");
 
+  U8 rel_tag = CommitRelationTag(content);
+  if (rel_tag != REL_NONE) {
+    U8 *rel_target = CommitRelationTarget(content);
+    U8 rel_hex[129];
+    HashToHex(rel_target, rel_hex);
+    U64 rel_entity_id = CommitRelationEntityId(content); // ADR 0006
+    U8 rel_entity_hex[17];
+    U64ToHex(rel_entity_id, rel_entity_hex);
+    CommPrint(1, "SEE_RELATION tag=%d target=%s entity=%s\n",
+              rel_tag, rel_hex, rel_entity_hex);
+  }
+
   I64 tree_off_rel;
   Bool tree_found = IndexLookup(idx_hashes, idx_offsets, idx_count, tree_hash, &tree_off_rel);
   if (!tree_found) { CommPrint(1, "SEE_ERR tree_not_found\n"); return; }
@@ -2142,7 +2208,14 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
     U8 ttype = tree_content[tpos]; tpos += 1;
     tpos += 64;
     U64 entity_id = GetU64LE(tree_content, tpos); tpos += 8; // ADR 0004
-    CommPrint(1, "  entry type=%d id=%d name=", ttype, entity_id);
+    U8 entity_hex[17];
+    U64ToHex(entity_id, entity_hex); // hex, not %d - a U64 with the high
+                                     // bit set prints as negative under
+                                     // plain %d (hit in practice, see
+                                     // experiments/49-entity-id/); hex
+                                     // round-trips cleanly and is what
+                                     // a user copies into `correct`/etc.
+    CommPrint(1, "  entry type=%d id=%s name=", ttype, entity_hex);
     for (i=0; i<nlen; i++) CommPrint(1, "%c", name[i]);
     CommPrint(1, "\n");
   }
@@ -2342,9 +2415,18 @@ U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
 // (Tree.HC's GenerateEntityId). Deliberately minimal: same name = same
 // identity; an actual rename is NOT detected here (see ADR 0004's own
 // "what this slice does not do").
+//
+// Per ADR 0005 (experiments/51-relation-commands/): HgitOffer itself
+// is now a thin wrapper over HgitOfferWithRelation (REL_NONE/NULL),
+// defined first since HolyC has no forward declarations - a call to a
+// not-yet-defined function later in the same push fails to compile -
+// `hgit correct`/`hgit revert`/`hgit reconcile` call the same
+// underlying logic with a real relation attached, rather than
+// duplicating the whole offer process.
 
-U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
-             U64 timestamp)
+U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
+                          U64 timestamp, U8 relation_tag, U8 *relation_target,
+                          U64 relation_entity_id)
 {
   // Load the existing repo's object section into a working buffer.
   I64 rsize;
@@ -2444,7 +2526,7 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
                has_parent, timestamp, message, message_len,
-               REL_NONE, NULL);
+               relation_tag, relation_target, relation_entity_id);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
@@ -2470,6 +2552,13 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   OpLogAppend(repo_path, log_prev_head, commit_hash, timestamp);
 
   CurrentHeadWrite(repo_path, commit_hash);
+}
+
+U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
+             U64 timestamp)
+{
+  HgitOfferWithRelation(repo_path, find_mask, message, message_len,
+                         timestamp, REL_NONE, NULL, 0);
 }
 // Hgit.HC — the actual entry point. Resolves the open question from
 // doc 01 ("how does an argv-taking hgit command fit a system whose cmd
@@ -2574,6 +2663,40 @@ I64 ParseI64(U8 *s)
   return v;
 }
 
+// Shared by the `correct`/`revert`/`reconcile` dispatch branches
+// (ADR 0005, experiments/51-relation-commands/): parses
+// "<repo> <target_hex> <find_mask> <message...>" from `rest` and
+// offers with the given relation tag naming the decoded target commit.
+// Reports its own DISPATCH_OK/ERR so each caller doesn't repeat it.
+// Parses "<repo> <target_hex> <entity_hex> <find_mask> <message...>" -
+// `entity_hex` is 16 hex chars per Hex.HC's U64ToHex/HexToU64 (ADR
+// 0006); pass 16 zero digits ("0000000000000000") for "not
+// entity-scoped," matching Commit.HC's own 0-means-unscoped sentinel.
+U0 HgitOfferRelatedCmd(U8 *rest, U8 relation_tag, U8 *cmd_name)
+{
+  U8 rel_repo_path[256], rel_hex[129], rel_entity_hex[17], rel_find_mask[256];
+  I64 rel_p = 0;
+  rel_p = ExtractToken(rest, rel_p, rel_repo_path, 256);
+  rel_p = ExtractToken(rest, rel_p, rel_hex, 129);
+  rel_p = ExtractToken(rest, rel_p, rel_entity_hex, 17);
+  rel_p = ExtractToken(rest, rel_p, rel_find_mask, 256);
+  U8 *rel_message = rest + rel_p;
+  I64 rel_mlen = StrLen(rel_message);
+
+  U8 rel_target[64];
+  Bool hok = HexToHash(rel_hex, rel_target);
+  if (!hok) { CommPrint(1, "DISPATCH_ERR bad_hash %s\n", rel_hex); return; }
+
+  U64 rel_entity_id;
+  Bool eok = HexToU64(rel_entity_hex, &rel_entity_id);
+  if (!eok) { CommPrint(1, "DISPATCH_ERR bad_entity_id %s\n", rel_entity_hex); return; }
+
+  U64 rel_ts = cnts.jiffies;
+  HgitOfferWithRelation(rel_repo_path, rel_find_mask, rel_message, rel_mlen,
+                         rel_ts, relation_tag, rel_target, rel_entity_id);
+  CommPrint(1, "DISPATCH_OK %s\n", cmd_name);
+}
+
 U0 Hgit(U8 *cmdline)
 {
   I64 i = 0;
@@ -2622,6 +2745,12 @@ U0 Hgit(U8 *cmdline)
     U64 offer_ts = cnts.jiffies;
     HgitOffer(offer_repo_path, offer_find_mask, offer_message, offer_mlen, offer_ts);
     CommPrint(1, "DISPATCH_OK offer\n");
+  } else if (StrCmp(cmd, "correct") == 0) {
+    HgitOfferRelatedCmd(rest, REL_CORRECTS, "correct");
+  } else if (StrCmp(cmd, "revert") == 0) {
+    HgitOfferRelatedCmd(rest, REL_REVERTS, "revert");
+  } else if (StrCmp(cmd, "reconcile") == 0) {
+    HgitOfferRelatedCmd(rest, REL_RECONCILES, "reconcile");
   } else if (StrCmp(cmd, "undo") == 0) {
     U8 undo_repo_path[256];
     ExtractToken(rest, 0, undo_repo_path, 256);

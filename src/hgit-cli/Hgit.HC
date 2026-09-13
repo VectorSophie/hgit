@@ -101,6 +101,40 @@ I64 ParseI64(U8 *s)
   return v;
 }
 
+// Shared by the `correct`/`revert`/`reconcile` dispatch branches
+// (ADR 0005, experiments/51-relation-commands/): parses
+// "<repo> <target_hex> <find_mask> <message...>" from `rest` and
+// offers with the given relation tag naming the decoded target commit.
+// Reports its own DISPATCH_OK/ERR so each caller doesn't repeat it.
+// Parses "<repo> <target_hex> <entity_hex> <find_mask> <message...>" -
+// `entity_hex` is 16 hex chars per Hex.HC's U64ToHex/HexToU64 (ADR
+// 0006); pass 16 zero digits ("0000000000000000") for "not
+// entity-scoped," matching Commit.HC's own 0-means-unscoped sentinel.
+U0 HgitOfferRelatedCmd(U8 *rest, U8 relation_tag, U8 *cmd_name)
+{
+  U8 rel_repo_path[256], rel_hex[129], rel_entity_hex[17], rel_find_mask[256];
+  I64 rel_p = 0;
+  rel_p = ExtractToken(rest, rel_p, rel_repo_path, 256);
+  rel_p = ExtractToken(rest, rel_p, rel_hex, 129);
+  rel_p = ExtractToken(rest, rel_p, rel_entity_hex, 17);
+  rel_p = ExtractToken(rest, rel_p, rel_find_mask, 256);
+  U8 *rel_message = rest + rel_p;
+  I64 rel_mlen = StrLen(rel_message);
+
+  U8 rel_target[64];
+  Bool hok = HexToHash(rel_hex, rel_target);
+  if (!hok) { CommPrint(1, "DISPATCH_ERR bad_hash %s\n", rel_hex); return; }
+
+  U64 rel_entity_id;
+  Bool eok = HexToU64(rel_entity_hex, &rel_entity_id);
+  if (!eok) { CommPrint(1, "DISPATCH_ERR bad_entity_id %s\n", rel_entity_hex); return; }
+
+  U64 rel_ts = cnts.jiffies;
+  HgitOfferWithRelation(rel_repo_path, rel_find_mask, rel_message, rel_mlen,
+                         rel_ts, relation_tag, rel_target, rel_entity_id);
+  CommPrint(1, "DISPATCH_OK %s\n", cmd_name);
+}
+
 U0 Hgit(U8 *cmdline)
 {
   I64 i = 0;
@@ -149,6 +183,12 @@ U0 Hgit(U8 *cmdline)
     U64 offer_ts = cnts.jiffies;
     HgitOffer(offer_repo_path, offer_find_mask, offer_message, offer_mlen, offer_ts);
     CommPrint(1, "DISPATCH_OK offer\n");
+  } else if (StrCmp(cmd, "correct") == 0) {
+    HgitOfferRelatedCmd(rest, REL_CORRECTS, "correct");
+  } else if (StrCmp(cmd, "revert") == 0) {
+    HgitOfferRelatedCmd(rest, REL_REVERTS, "revert");
+  } else if (StrCmp(cmd, "reconcile") == 0) {
+    HgitOfferRelatedCmd(rest, REL_RECONCILES, "reconcile");
   } else if (StrCmp(cmd, "undo") == 0) {
     U8 undo_repo_path[256];
     ExtractToken(rest, 0, undo_repo_path, 256);

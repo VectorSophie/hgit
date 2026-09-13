@@ -123,7 +123,11 @@ U32       message_len (LE)
 message_len bytes of message
 U8        relation_tag  (0=none/plain continuation, 1=CONTINUES explicit,
                          2=CORRECTS, 3=REVERTS, 4=RECONCILES)
-if relation_tag != 0: 64 bytes relation_target_hash
+if relation_tag != 0:
+  64 bytes relation_target_hash
+  U64      relation_entity_id (0 = not entity-scoped, applies to the
+                               whole commit; otherwise names an entity
+                               ID from a tree entry, see below)
 ```
 
 Verified with a real two-commit chain: a root commit (`parent_count=0`)
@@ -133,16 +137,28 @@ ancestor by content address), not just "a commit object exists."
 
 `relation_tag`/`relation_target_hash` (added per
 `docs/adr/0005-typed-relation-vocabulary.md`,
-`experiments/50-relation-vocabulary/`) let a commit name an explicit
+`experiments/50-relation-vocabulary/`, wired into real
+`hgit correct`/`revert`/`reconcile` commands in
+`experiments/51-relation-commands/`) let a commit name an explicit
 typed relationship to an earlier commit (not necessarily its direct
 parent), beyond plain "comes after." `relation_tag=0` is the default
 for every ordinary offer and costs exactly one byte; only commits that
-record a richer relation pay the extra 64 bytes. No CLI command
-produces a relation yet (storage layer only), and relations are not
-yet scoped to a specific entity (ADR 0004's per-tree-entry ID) within
-a commit — both real follow-up work, not done yet. **Breaking format
-change**: repos built before this are not migrated (same stance ADR
-0003/0004 already took).
+record a richer relation pay the extra bytes.
+
+`relation_entity_id` (added per
+`docs/adr/0006-entity-scoped-relations.md`,
+`experiments/53-entity-scoped-relations/`) lets a relation optionally
+name a specific tracked entity (ADR 0004's per-tree-entry ID) within
+the commit, rather than the commit as a whole. `0` is a practical
+"unscoped" sentinel, not formally collision-proof (same honest caveat
+as `OpLog.HC`'s all-zero `prev_head` sentinel) — a real
+`GenerateEntityId()` landing on exactly `0` is vanishingly unlikely.
+Entity IDs are printed/parsed as 16-char hex (`Hex.HC`'s
+`U64ToHex`/`HexToU64`), not plain decimal — a `U64` with the high bit
+set prints as a negative number under a plain `%d`, a real
+hit-in-practice issue (see probe 49's own README) that hex avoids.
+**Breaking format change**: repos built before this are not migrated
+(same stance ADR 0003/0004/0005 already took).
 
 No author/identity field yet — deliberately deferred further into M3
 per the product thesis's "stable entity ID"/"human mark" concepts;

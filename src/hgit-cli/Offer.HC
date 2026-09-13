@@ -37,9 +37,18 @@
 // (Tree.HC's GenerateEntityId). Deliberately minimal: same name = same
 // identity; an actual rename is NOT detected here (see ADR 0004's own
 // "what this slice does not do").
+//
+// Per ADR 0005 (experiments/51-relation-commands/): HgitOffer itself
+// is now a thin wrapper over HgitOfferWithRelation (REL_NONE/NULL),
+// defined first since HolyC has no forward declarations - a call to a
+// not-yet-defined function later in the same push fails to compile -
+// `hgit correct`/`hgit revert`/`hgit reconcile` call the same
+// underlying logic with a real relation attached, rather than
+// duplicating the whole offer process.
 
-U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
-             U64 timestamp)
+U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
+                          U64 timestamp, U8 relation_tag, U8 *relation_target,
+                          U64 relation_entity_id)
 {
   // Load the existing repo's object section into a working buffer.
   I64 rsize;
@@ -139,7 +148,7 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
                has_parent, timestamp, message, message_len,
-               REL_NONE, NULL);
+               relation_tag, relation_target, relation_entity_id);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
@@ -165,4 +174,11 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   OpLogAppend(repo_path, log_prev_head, commit_hash, timestamp);
 
   CurrentHeadWrite(repo_path, commit_hash);
+}
+
+U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
+             U64 timestamp)
+{
+  HgitOfferWithRelation(repo_path, find_mask, message, message_len,
+                         timestamp, REL_NONE, NULL, 0);
 }

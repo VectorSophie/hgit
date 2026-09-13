@@ -7,17 +7,30 @@ own engineering-discipline rule against freezing decisions without
 evidence. What follows is a risk register and M0 acceptance draft, useful
 for planning the next sessions of work.
 
+**Note on this doc's own age**: the risk register immediately below was
+written during early M0 research and, until this note, had not been
+updated to reflect how much of it the project has since resolved through
+real, verified work (M0-M3 are now substantially complete — see the
+narrative log further down this file for the actual, dated history).
+Table entries below are now corrected to their real current status
+rather than left stale; the prose sections after the M0 checklist remain
+the authoritative, chronological record of what was actually done and
+verified, probe by probe.
+
 ## Risk register (highest risk first)
 
 | Risk | Status | Evidence |
 |---|---|---|
 | TempleOS doesn't run in any available environment | **Resolved — low risk** | `experiments/00-qemu-boot/`: boots clean under plain QEMU/TCG, no KVM, no patches |
 | Automated pass/fail signal out of a booted TempleOS guest | **Resolved — low risk** | `experiments/01-temple-repl/`: scripted install + COM2 injection + real `D_OK`/`PASS .../D_DONE` round trip through a host file, zero human interaction |
-| No usable host-side HolyC toolchain, forcing every test through QEMU | **Open — downgraded to medium**: a lint/validate-only option (`holyc-parser`) is now evidenced; a full execute-on-host option (`holyc-lang`) is still unverified | doc 07 |
-| Canonical encoding / BLAKE2b feasibility natively in HolyC | **Open — unknown risk, but now has a proven execution path to test it on** | Not probed; blocked on doc 06, but doc 08's proven injection loop removes the "how would we even run this" uncertainty |
-| RedSea contiguous-file storage constraints on an append/rebuild archive format | **Downgraded — small files empirically fine, growth pattern still unverified** | `FileWrite`/`FileRead` round-tripped small (154/170-byte) `.HGS` archives correctly across three separate probes and multiple reboots; RedSea source itself still not read, and repeated in-place *growth* of one archive (vs. write-once) is untested |
-| ZealOS networking maturity as a transport target | **Open — low priority for M0/M1** | README claims are unverified; not on the critical path yet |
-| QEMU test-harness input timing is not naively reliable | **New risk, resolved as a design constraint** | probe 01's boot-phase-quirk false start: fixed-delay scripted input is unsafe; a real idle/ready check is required (now documented, not yet implemented as reusable tooling) |
+| No usable host-side HolyC toolchain, forcing every test through QEMU | **Accepted, not a blocker** — every probe (00 through 53) has gone through the real QEMU injection loop; this was never worked around, just proven fast and reliable enough (paced_push.py, stage-2 error capture) to not need a host toolchain | `experiments/01-temple-repl/`, `docs/research/01-templeos-holyc.md` |
+| Canonical encoding / BLAKE2b feasibility natively in HolyC | **Resolved** — both built, verified against RFC 7693 and official KAT vectors, running natively | `src/hgit-core/Canon.HC`, `Blake2b.HC`; `experiments/03-canonical-encoding/`, `experiments/04-blake2b-native/`, `experiments/08-blake2b-streaming/` |
+| RedSea contiguous-file storage constraints on an append/rebuild archive format | **Resolved** — `FileWrite` transparently handles both growth and shrinkage of an existing file (confirmed directly, not just for small archives); the entire object store (`.hgs`) and `Meta.HC`'s combined metadata file both rely on this pattern across 53 probes with no failure traced to it | `experiments/14-file-growth/`, `experiments/30-oplog-undo/` (shrink), and every probe since |
+| ZealOS networking maturity as a transport target | **Superseded** — hgit ended up needing no network transport of its own; `hgit export`/`import` (whole-repo portability) use plain local file copies instead | `experiments/45-hgit-export-import/` |
+| QEMU test-harness input timing is not naively reliable | **Resolved as an established, repeatable workflow** — real idle/ready checks (reading literal screendump text before typing, never assuming timing) are now the standing practice for every probe, documented and followed consistently since probe 01 | `docs/research/01-templeos-holyc.md`, every probe's own README |
+| Stage-1 daemon has no compile-error capture, silently hangs on a real syntax error | **Resolved** — found via deliberate reproduction, fixed by upgrading to the devkit's stage-2 daemon (`D2`/`_DRun`, `Fs->catch_except`-based `COMPILE_OK`/`COMPILE_FAIL` reporting) before pushing new/changed source; now standing practice | `experiments/31-oplog-in-offer/`, `docs/research/01-templeos-holyc.md` |
+| A real, previously-undocumented 33-character path-length ceiling (`FileWrite`/`FileRead` silently no-op past it) | **Resolved architecturally** — `Meta.HC` consolidates every per-repo tool-state concern into one combined file, immune to the ceiling scaling with path names; every real command now runs on it | `docs/adr/0003-path-length-ceiling.md`, `experiments/36` through `44` |
+| Large unpaced pushes over the injection channel can silently drop bytes under host memory pressure | **Resolved** — `experiments/01-temple-repl/paced_push.py` sends in small paced chunks; standard practice for any push over ~10KB | `experiments/34-hgit-paths/` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -494,9 +507,42 @@ timestamp, and parent count all correct together
 this ADR's own scope: no CLI command produces a relation yet, and
 relations aren't scoped to a specific entity ID within a commit.
 
-Remaining M3 work: a real command surface for relations (e.g.
-`hgit correct`/`hgit revert`/`hgit reconcile`), and entity-scoping
-relations to a specific tracked file rather than a whole commit.
+**Real relation commands done and verified**
+(`experiments/51-relation-commands/`, PASS) — `hgit correct`/
+`hgit revert`/`hgit reconcile <repo> <target_hex> <find_mask>
+<message>` all work through the real dispatcher (sharing one
+`HgitOfferRelatedCmd` helper, not tripled logic). A real `hgit correct`
+produced a commit whose relation target hash exactly matches the named
+prior commit, confirmed both directly and via `hgit see`'s own
+independent output (now also prints `SEE_RELATION` when present) — and
+the same commit's tree entry still shows its correct ADR 0004 entity
+ID, confirming both M3 features work together in one real commit.
+
+**`revert`/`reconcile` independently verified too**
+(`experiments/52-revert-reconcile/`, PASS) — closing the gap flagged
+above: both pushed through the real dispatcher on their own (not just
+inferred from sharing `correct`'s code path), each producing a commit
+with the correct relation tag (`REL_REVERTS`/`REL_RECONCILES`) and an
+exactly matching target hash.
+
+**Entity-scoped relations done and verified**
+(`docs/adr/0006-entity-scoped-relations.md`,
+`experiments/53-entity-scoped-relations/`, PASS) — a relation can now
+optionally name a specific tracked entity (ADR 0004's per-tree-entry
+ID) within the target commit, not just the commit as a whole. Verified
+with a real entity ID read straight from an actual tree entry (not
+invented) round-tripping correctly through a real `hgit correct`, and
+the unscoped (all-zero sentinel) case still working. Along the way,
+fixed a real usability issue: entity IDs are `U64` and previously
+printed with plain `%d` (a value with the high bit set shows as
+negative, hit directly in probe 49's own evidence) — switched to hex
+throughout (`Hex.HC`'s new `U64ToHex`/`HexToU64`), matching how hashes
+are already handled.
+
+With this, both of the brief's M3 headline features — stable entity
+identity and the typed relation vocabulary, now including entity-
+scoping — are designed, implemented, wired into real commands, and
+verified on real TempleOS.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

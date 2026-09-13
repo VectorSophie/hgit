@@ -2,21 +2,20 @@
 
 ## Status
 
-**Minimal first slice implemented and verified**
-(`experiments/50-relation-vocabulary/`, PASS). `Commit.HC`'s content
-format carries `relation_tag`/`relation_target_hash` after the message;
-`CommitRelationTag`/`CommitRelationTarget` accessors verified to
-round-trip correctly alongside a real message, timestamp, and parent
-count, and a real `hgit offer`'s `REL_NONE` case confirmed unaffected
-(regression check). Builds directly on ADR 0004 (stable entity IDs,
-implemented and verified in probe 49) and covers the second half of
-the brief's M3 milestone: a small typed relation vocabulary —
-CONTINUES, CORRECTS, REVERTS, RECONCILES — describing how one offering
-relates to a prior one, beyond the plain parent-chain "came after"
-relationship `Commit.HC` already encodes. **Not yet done**: no CLI
-command produces a relation (storage layer only), and relations are
-not yet entity-scoped — both still accurate to this ADR's own stated
-scope below.
+**Implemented, wired into a real command surface, and fully verified.**
+`Commit.HC`'s content format carries `relation_tag`/
+`relation_target_hash` after the message (probe 50), and real
+`hgit correct`/`hgit revert`/`hgit reconcile` commands
+(`experiments/51-relation-commands/`, `experiments/52-revert-reconcile/`,
+both PASS) produce them — all three independently pushed through the
+real `Hgit(cmdline)` dispatcher and verified (not inferred from shared
+code), each producing a commit whose relation tag and target hash
+match exactly. `hgit see` independently confirms a relation round-trips
+correctly too. Builds directly on ADR 0004 (stable entity IDs,
+implemented and verified in probe 49) and covers the brief's M3
+milestone's typed relation vocabulary. **Still not done**: no
+entity-scoping (a relation names a whole commit, not a specific
+tracked file within it) — see below, unchanged.
 
 ## Context
 

@@ -123,17 +123,23 @@ is a real, breaking change to the tree object format — no rename
 detection or relation vocabulary yet, both explicitly out of scope for
 this first slice.
 
-The typed relation vocabulary itself is also implemented: `Commit.HC`
-can now carry an optional CONTINUES/CORRECTS/REVERTS/RECONCILES tag
-naming an earlier commit, verified both for the common no-relation
-case and a real `REL_CORRECTS` round-trip
-(`experiments/50-relation-vocabulary/`). No CLI command produces a
-relation yet — that, and scoping a relation to a specific tracked
-entity rather than a whole commit, are the next concrete M3 steps.
+The typed relation vocabulary is fully wired in and independently
+verified: real `hgit correct`/`hgit revert`/`hgit reconcile` commands
+each produce commits carrying the right CONTINUES/CORRECTS/REVERTS/
+RECONCILES tag and an exactly-matching target hash, each pushed
+through the real dispatcher on its own — `hgit see` shows a commit's
+relation too. Both M3 features (stable identity and relations)
+confirmed working together in one real commit.
+
+Relations can now also be scoped to a specific tracked entity, not just
+a whole commit (`docs/adr/0006-entity-scoped-relations.md`), verified
+with a real entity ID read from an actual tree. Entity IDs are now
+shown/entered as hex, not decimal — a `U64` with its high bit set used
+to print as a negative number, a real issue found and fixed. Both of
+M3's headline features (stable identity, typed relations) are now
+complete and verified on real TempleOS.
 
 ## Next steps
 
 See `docs/research/10-product-proposal.md` for the live risk register
-and milestone checklist. A real command surface for relations (e.g.
-`hgit correct`/`hgit revert`/`hgit reconcile`) is the next concrete
-step.
+and milestone checklist.

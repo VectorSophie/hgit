@@ -13,11 +13,17 @@
 // repo reports SEE_ERR cleanly rather than crashing or guessing.
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
-// Index.HC.
+// Index.HC, Hex.HC (HashToHex for a relation target; U64ToHex for
+// entity IDs, printed in hex rather than plain %d since a U64 with the
+// high bit set otherwise prints as a negative number).
 //
 // Tree-entry parsing updated for ADR 0004's 8-byte entity ID field
 // (experiments/49-entity-id/) - this file walks tree entries manually
 // (not via Tree.HC's TreeFindEntry) so it needed its own offset fix.
+//
+// Also prints ADR 0005/0006's relation tag/target/entity, if the
+// commit has one (experiments/51-relation-commands/,
+// experiments/53-entity-scoped-relations/).
 
 U0 HgitSee(U8 *repo_path, U8 *target_hash)
 {
@@ -55,6 +61,18 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
   for (i=0; i<mlen; i++) CommPrint(1, "%c", msg[i]);
   CommPrint(1, "\n");
 
+  U8 rel_tag = CommitRelationTag(content);
+  if (rel_tag != REL_NONE) {
+    U8 *rel_target = CommitRelationTarget(content);
+    U8 rel_hex[129];
+    HashToHex(rel_target, rel_hex);
+    U64 rel_entity_id = CommitRelationEntityId(content); // ADR 0006
+    U8 rel_entity_hex[17];
+    U64ToHex(rel_entity_id, rel_entity_hex);
+    CommPrint(1, "SEE_RELATION tag=%d target=%s entity=%s\n",
+              rel_tag, rel_hex, rel_entity_hex);
+  }
+
   I64 tree_off_rel;
   Bool tree_found = IndexLookup(idx_hashes, idx_offsets, idx_count, tree_hash, &tree_off_rel);
   if (!tree_found) { CommPrint(1, "SEE_ERR tree_not_found\n"); return; }
@@ -72,7 +90,14 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
     U8 ttype = tree_content[tpos]; tpos += 1;
     tpos += 64;
     U64 entity_id = GetU64LE(tree_content, tpos); tpos += 8; // ADR 0004
-    CommPrint(1, "  entry type=%d id=%d name=", ttype, entity_id);
+    U8 entity_hex[17];
+    U64ToHex(entity_id, entity_hex); // hex, not %d - a U64 with the high
+                                     // bit set prints as negative under
+                                     // plain %d (hit in practice, see
+                                     // experiments/49-entity-id/); hex
+                                     // round-trips cleanly and is what
+                                     // a user copies into `correct`/etc.
+    CommPrint(1, "  entry type=%d id=%s name=", ttype, entity_hex);
     for (i=0; i<nlen; i++) CommPrint(1, "%c", name[i]);
     CommPrint(1, "\n");
   }

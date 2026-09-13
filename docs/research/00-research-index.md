@@ -19,8 +19,8 @@ authored before its supporting evidence exists).
 | [06-storage-hashing-compression.md](06-storage-hashing-compression.md) | 🟡 | Canonical encoding, full BLAKE2b-512, a tiny append/read/verify object archive, **and a versioned `.HGS` header format** (see `FORMAT.md`) all passing in native HolyC on real TempleOS; compression/chunking not started |
 | [07-portability-and-toolchains.md](07-portability-and-toolchains.md) | ✅ | `holyc-parser` (210-snippet VM-validated corpus, found via templeos-devkit) is now the strongest evidence; holyc-lang still only homepage-level |
 | [08-qemu-testing.md](08-qemu-testing.md) | ✅ | Boot **and** scripted install+inject+capture both reproduced end to end, see `experiments/00-qemu-boot/` and `experiments/01-temple-repl/` |
-| [09-packaging-and-releases.md](09-packaging-and-releases.md) | ⛔ | Not started |
-| [10-product-proposal.md](10-product-proposal.md) | 🟡 | Preliminary risk register only — too early for a real proposal |
+| [09-packaging-and-releases.md](09-packaging-and-releases.md) | ✅ | TempleOS has no package manager/installer — release artifact is `packaging/HgitAll.HC` itself (already built and verified, `experiments/28-hgit-package/`), attached to a tagged GitHub Release |
+| [10-product-proposal.md](10-product-proposal.md) | ✅ | Started as a preliminary risk register; now the project's live, dated narrative log — M0 through M3's core deliverables (object storage, undo/redo, named paths, ADR 0003's metadata-file fix, stable entity identity, entity-scoped typed relations) are built, wired into real commands, and verified. Risk register table corrected to current status (was stale). |
 | [failed-approaches.md](failed-approaches.md) | ✅ | Living log |
 
 ## What actually happened in this first pass

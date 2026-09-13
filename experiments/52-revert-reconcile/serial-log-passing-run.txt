@@ -1,0 +1,61 @@
+D_OK
+D_DONE
+D_DONE
+D_EXIT
+D2_OK
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P49Repo.hgs
+DISPATCH_OK offer
+found1=1 id1=6918486067039080059
+DISPATCH_OK offer
+found2=1 id2=6918486067039080059
+id_same_across_offers=1 blob_hash_differs=1
+DISPATCH_OK offer
+foundB=1 idB=-3748984827403573720
+foundA3=1 fileA_id_still_same=1
+idB_is_different=1
+PASS entity_id
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P50Repo.hgs
+DISPATCH_OK offer
+mlen1=14 msg1=ordinary offer
+rel_tag1=0 (expect 0, REL_NONE)
+mlen2=43 msg2_matches=1
+rel_tag2=2 (expect 2, REL_CORRECTS) target_matches=1
+ts2=999888 (expect 999888) pcount2=1 (expect 1)
+PASS relation_vocabulary
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P51Repo.hgs
+DISPATCH_OK offer
+head1_hex=34ab512f0b71f57f497d99fe20b1920ebdf2d753a892474751b39e4252297a9825a71f7446e903cd1b5ce677949310f228a1a41a9e7e6af9d020ba33bbd14bca
+DISPATCH_OK correct
+rel_tag=2 (expect 2, REL_CORRECTS) target_matches_head1=1
+msg=fixes the bug from the previous commit
+SEE_COMMIT ts=1782790 parents=1 msg=fixes the bug from the previous commit
+SEE_RELATION tag=2 target=34ab512f0b71f57f497d99fe20b1920ebdf2d753a892474751b39e4252297a9825a71f7446e903cd1b5ce677949310f228a1a41a9e7e6af9d020ba33bbd14bca
+SEE_TREE entries=1
+  entry type=1 id=2483912366885522070 name=P51FileA.txt
+SEE_END
+PASS relation_commands
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P52Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK revert
+revert_tag=3 (expect 3, REL_REVERTS) revert_target_ok=1
+DISPATCH_OK reconcile
+reconcile_tag=4 (expect 4, REL_RECONCILES) reconcile_target_ok=1
+PASS revert_reconcile
+COMPILE_OK
+D_DONE
