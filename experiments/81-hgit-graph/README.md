@@ -52,6 +52,17 @@ it, and `[feature]`'s own unique commit nested a further level under
 `offer_two` - precisely the fork point, confirmed by exact string
 match against the raw `.DD` bytes, not just visual inspection.
 
+**Rendered, not just raw bytes**: `evidence/rendered-graph-collapsed.png`
+- the same document opened in TempleOS's own `Ed()` (real technique
+from probes 54/57/58/59: push a snippet calling `Ed()`, which blocks
+the daemon's own command loop; screendump while it's open; dismiss
+with `sendkey shift-esc`; confirm the daemon resumes via a post-marker
+in the log). Shows the real title line and the root `[+] 468bbd6656
+offer_one` node, collapsed by default - matching every other `$TR$`
+tree this project has ever rendered (probe 57's own finding); the
+daemon resumed cleanly afterward (`POST_ED` printed, then normal
+`COMPILE_OK`/`D_DONE`).
+
 **Regression**: re-ran `experiments/65-head-deletion/test_driver.hc`
 (the project's standing full command-surface regression) immediately
 after - all still correct, `PASS p65_head_deletion_regression`.

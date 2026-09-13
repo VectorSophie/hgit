@@ -1,0 +1,13 @@
+DISPATCH_OK init C:/Home/P84Repo.hgs
+DISPATCH_OK offer
+SEE_COMMIT ts=11582288 parents=0 msg=initial_offer
+SEE_TREE entries=1
+  entry type=1 id=6c3a916dbd13cb00 name=P84Orig.txt
+SEE_END
+DISPATCH_OK offer
+SEE_COMMIT ts=11584466 parents=1 msg=second_offer
+SEE_TREE entries=2
+  entry type=1 id=ca60efd0021f6002 name=P84GenuinelyNew.txt
+  entry type=1 id=6c3a916dbd13cb00 name=P84Renamed.txt
+SEE_END
+PASS p84_fuzzy_rename_test

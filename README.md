@@ -20,35 +20,56 @@
 
 <p align="center">
   <a href="INSTALL.md">Install</a> ·
-  <a href="docs/research/10-product-proposal.md">Milestone plan</a> ·
   <a href="#what-hgit-actually-does">Commands</a> ·
-  <a href="docs/adr/">ADRs</a> ·
-  <a href="docs/research/failed-approaches.md">Dead ends</a>
+  <a href="#the-graph">The graph</a> ·
+  <a href="#how-hgit-differs-from-git">vs. Git</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="docs/adr/">ADRs</a>
 </p>
 
 M0 through M4 of the milestone plan are complete and independently
-verified on real TempleOS under QEMU — object storage (canonical
-encoding, BLAKE2b-512, typed blob/tree/commit objects, a hash→offset
-index), the full command surface (`init`/`status`/`offer`/`history`/
-`see`/`check`/`undo`/`redo`/named paths/`correct`/`revert`/`reconcile`/
-`export`/`import`/`historydoc`/`reconciledoc`/`help`/`version`/`logo`),
-stable entity identity across renames, and executable DolDoc
-reconciliation views. See `docs/research/10-product-proposal.md` for
-the live, dated, self-correcting record of what's actually built vs.
-still open — nothing here is claimed without a real, re-runnable test
-behind it.
+verified on real TempleOS under QEMU — object storage, the full
+command surface, stable entity identity across renames, and executable
+DolDoc reconciliation views. See `docs/research/10-product-proposal.md`
+for the live, dated, self-correcting record of what's actually built
+— nothing here is claimed without a real, re-runnable test behind it.
 
-The whole toolchain packages into one file
-(`packaging/HgitAll.HC`), loadable with a single `#include` — there is
-no argv/shell syntax in TempleOS to build a traditional CLI around
-(confirmed from primary source), so `Hgit(cmdline)` is the idiomatic
-shape, not a workaround:
+The whole toolchain packages into one file (`packaging/HgitAll.HC`),
+loadable with a single `#include` — there is no argv/shell syntax in
+TempleOS to build a traditional CLI around (confirmed from primary
+source), so `Hgit(cmdline)` is the idiomatic shape, not a workaround.
+
+## Try it
+
+Every line below is a real command, run against a real TempleOS
+instance under QEMU — not a mockup:
 
 ```c
 #include "C:/Home/HgitAll.HC";
-Hgit("init C:/Home/MyRepo.hgs");
-Hgit("offer C:/Home/MyRepo.hgs *.txt first_offer");
-Hgit("history C:/Home/MyRepo.hgs");
+
+Hgit("init C:/Home/P80Repo.hgs");
+Hgit("offer C:/Home/P80Repo.hgs P80File.txt offer_one");
+Hgit("offer C:/Home/P80Repo.hgs P80File.txt offer_two");
+
+Hgit("path new C:/Home/P80Repo.hgs feature");
+Hgit("path go C:/Home/P80Repo.hgs feature");
+Hgit("offer C:/Home/P80Repo.hgs P80File.txt offer_on_feature");
+Hgit("path go C:/Home/P80Repo.hgs main");
+
+Hgit("graph C:/Home/P80Repo.hgs C:/Home/P80Graph.DD");
+```
+
+Real output from that exact sequence (`experiments/81-hgit-graph/`):
+
+```
+DISPATCH_OK init C:/Home/P80Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK offer
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK graph
 ```
 
 ## What hgit actually does
@@ -63,6 +84,7 @@ loaded) for the same list straight from the live dispatcher.
 | `offer` | Snapshot matching files as a new commit (hgit's own name for git's "commit") |
 | `status` | Compare the working directory against HEAD — new/modified/deleted, **and renamed** (exact-content match, ADR 0009) |
 | `history` | Walk the current path's commit chain |
+| `graph` | Render the entire commit history across every path as a real, collapsible DolDoc tree — see below |
 | `see` | Show one commit's tree, message, and relation |
 | `check` | Repo integrity: hash verification, referential integrity (`git fsck`-style missing-object check), **and dangling/unreachable-object detection** |
 | `undo` / `redo` | Step through the operation log — reversible, not destructive |
@@ -73,368 +95,84 @@ loaded) for the same list straight from the live dispatcher.
 | `export` / `import` | Whole-repo portability, own paths and history intact |
 | `help` / `version` / `logo` | Discoverability and a bit of fun |
 
-## What's here
+## The graph
 
-- `docs/research/` — the research dossier, with an honest per-doc status
-  in [`00-research-index.md`](docs/research/00-research-index.md). Most
-  docs are partial or stubs; see that index before assuming coverage.
-- `experiments/` — one directory per probe, each with its own `README.md`
-  (what was tried, the exact result, what's not yet done) and, where
-  relevant, the exact HolyC source that was pushed and verified.
-  `experiments/00-qemu-boot/` proves TempleOS 5.03 boots to a live
-  desktop under QEMU on a plain Linux host; `experiments/01-temple-repl/`
-  is the reusable install + scripted source-injection channel every
-  later probe runs through.
-- `FORMAT.md` — the `.HGS` repository/archive format, documented
-  byte-for-byte, matched to what's actually implemented.
-- `docs/adr/` — 0001 (repository model) and 0002 (canonical encoding),
-  each backed by working, tested `src/` code, updated as that code grew;
-  0003 (the real 33-character path-length ceiling found in probe 36 —
-  decided and now fully implemented: one combined per-repo metadata
-  file instead of one sidecar file per concern. Every real command
-  (`Paths.HC`, `OpLog.HC`) now genuinely runs on
-  `src/hgit-core/Meta.HC` — a path name the old scheme would have
-  rejected now succeeds). No ADR should be written before its own
-  evidence exists — 0003 is backed by probes 36/37/40/41/42/43/44's
-  real, binary-searched/QEMU-verified measurements.
-- `src/hgit-core/` — the object storage layer: `Canon.HC` (canonical
-  little-endian encoding), `Blake2b.HC` (BLAKE2b-512, single-block +
-  streaming, matches RFC 7693), `Archive.HC`/`Hgs.HC` (the `.HGS` record
-  format and file header), `Object.HC`/`Tree.HC`/`Commit.HC` (typed
-  objects: blob/tree/commit content), `Index.HC` (hash→offset lookup),
-  `Meta.HC` (ADR 0003's combined per-repo metadata file — HEAD, path
-  list/current-path, and operation-log storage in one file, immune to
-  the real 33-char path-length ceiling; `Paths.HC` now runs on it),
-  `Fossil.HC` (ADR 0008 — a prototype of Fossil's delta compression
-  format; byte-level mechanics verified correct and reliable — a real
-  root-cause bug found and fixed, see the ADR — but it's **not** wired
-  into any real command yet, since it has no real diff algorithm and
-  no compression value on its own).
-- `src/hgit-cli/` — the command surface: `Init.HC`, `Check.HC`
-  (`hgit check` — repo integrity verification: M0's own `Archive.HC`
-  `ArchiveVerify` for hash integrity, plus a real referential-integrity
-  pass modeled on `git fsck`'s own "missing object" check), `WorkDir.HC`,
-  `Paths.HC` (named paths, backed by
-  `Meta.HC`), `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
-  (hex string ↔ hash bytes), `HistoryDoc.HC` (`hgit historydoc` — a
-  real, colored, rendered DolDoc history view), `ReconcileDoc.HC`
-  (`hgit reconciledoc` — a real DolDoc reconciliation view with a live
-  `$LK$` link to a commit's relation target), `OpLog.HC` (operation
-  log + undo/redo stack, wired into `Offer.HC`, now backed by
-  `Meta.HC`), `Portable.HC` (`hgit export`/`import` — whole-repo copy,
-  both files), and `Hgit.HC` — the real entry point (`Hgit(cmdline)`)
-  composing all of the above behind one dispatcher.
-  Every file in both directories verified running on real TempleOS via
-  `experiments/01-temple-repl/`'s injection channel — see each probe's
-  README for exact evidence, and each source file's own comments for
-  which probe verified it.
-- `tools/build-package.sh` — concatenates every `src/hgit-core/` and
-  `src/hgit-cli/` file, in dependency order, into `packaging/HgitAll.HC`
-  — the actual distributable: verified loadable on real TempleOS with a
-  single `#include "C:/Home/HgitAll.HC";`, followed by a working
-  `Hgit(...)` call, in a session that never pushed any individual
-  source file directly (`experiments/28-hgit-package/`).
-- `tools/lint-package.sh` — host-side HolyC lint before paying the
-  ~1-minute QEMU round trip, via `holyc-parser`
-  (`experiments/templeos-devkit/holyc-parser/`), verified against
-  hgit's own real source with zero real errors and confirmed to
-  actually catch real problems (the `pi`-reserved-constant and
-  "Duplicate member" quirks specifically) — see
-  `docs/research/07-portability-and-toolchains.md` for what it does
-  and doesn't catch.
-- `tests/` — still scaffolded/empty.
+`hgit graph` walks every declared path (not just the current one) and
+renders the whole commit history as a real, native DolDoc tree — the
+same collapsible `$TR$` widget TempleOS itself ships, not an ASCII
+approximation. The trunk is whichever path came first; every other
+path attaches as its own nested branch at the exact commit it forked
+from.
 
-**M2 in progress**: the operation log (`src/hgit-cli/OpLog.HC`) is
-built, path-scoped, and wired into `hgit offer` itself; real
-`hgit undo`/`hgit redo`/`hgit operation history` commands all exist (a
-proper undo/redo stack, not just single-level) and are now genuinely
-path-aware; named paths (`hgit path list/new/go/close`,
-`src/hgit-cli/Paths.HC`) are wired into `offer`/`status`/`history`/
-`undo`/`redo` — switching the current path changes what all of those
-commands see — all verified end-to-end through the real `Hgit(cmdline)`
-entry point on TempleOS (`experiments/30-oplog-undo/`,
-`experiments/31-oplog-in-offer/`, `experiments/32-oplog-redo/`,
-`experiments/33-operation-history/`, `experiments/34-hgit-paths/`,
-`experiments/35-path-aware-offer/`, `experiments/36-path-scoped-oplog/`).
+<p align="center">
+  <img src="experiments/81-hgit-graph/evidence/rendered-graph-collapsed.png" alt="hgit graph rendered in Ed()" width="380">
+</p>
 
-Along the way, a genuine, previously-undocumented TempleOS/RedSea
-constraint was found: **a full path string longer than 33 characters
-is silently rejected by `FileWrite`/`FileRead`** — a real risk for
-every sidecar-file design this project uses. `hgit path new` now
-proactively refuses a name that would cross this ceiling instead of
-silently leaving behind an unreadable path (`experiments/37-path-length-guard/`),
-though the underlying architectural constraint isn't resolved. See
-`docs/research/01-templeos-holyc.md`.
+That screenshot is the real output of the sequence above, open in
+TempleOS's own editor (`Ed()`) — collapsed by default, matching every
+other `$TR$` tree this project has ever rendered (probe 57's own
+finding). Reformatted for readability, the raw document underneath is:
 
-`hgit operation restore <op>` (jump HEAD directly to any logged
-operation by index) is also done, closing out the brief's full
-operation-log vocabulary (`undo`/`redo`/`operation history`/
-`operation restore <op>`). ADR 0003 (the real 33-char path-length
-ceiling) is fully implemented — every real command now runs on
-`src/hgit-core/Meta.HC`'s combined metadata file — and `hgit export`/
-`import` give genuine whole-repo portability (own paths, own history,
-own working `undo` on the copy), a direct payoff of that design.
+```
+hgit history graph
 
-**A real, rendered DolDoc history view now exists**: `hgit historydoc
-<repo> <dest.DD>` (`src/hgit-cli/HistoryDoc.HC`) builds a colored
-`$..$`-formatted document from real commit history and writes it with
-a plain `FileWrite` — verified both by its raw file content and its
-actual rendered appearance (screenshotted via TempleOS's own `Ed()`).
-This closes out M2's tracked work list.
+[+] 468bbd6656 offer_one
+      0c6b94e6ba offer_two
+        [feature] b0598745e9 offer_on_feature
+```
 
-**M3 has started and its first slice is implemented**: every tree
-entry now carries a stable 64-bit entity ID (`docs/adr/0004-stable-entity-identity.md`),
-grounded in real evidence that TempleOS's `RandU32` is a genuine,
-usable random source. `Offer.HC` carries a file's ID forward across
-offers as long as its name persists; verified the same name keeps its
-ID through content changes and across multiple generations, while a
-new name gets a distinct one (`experiments/49-entity-id/`, PASS). This
-is a real, breaking change to the tree object format — no rename
-detection or relation vocabulary yet, both explicitly out of scope for
-this first slice.
+`offer_one` is the root; `offer_two` nests one level under it (its
+real parent); `feature`'s own unique commit nests a further level
+under `offer_two` — exactly its fork point, not guessed.
 
-The typed relation vocabulary is fully wired in and independently
-verified: real `hgit correct`/`hgit revert`/`hgit reconcile` commands
-each produce commits carrying the right CONTINUES/CORRECTS/REVERTS/
-RECONCILES tag and an exactly-matching target hash, each pushed
-through the real dispatcher on its own — `hgit see` shows a commit's
-relation too. Both M3 features (stable identity and relations)
-confirmed working together in one real commit.
+## How hgit differs from Git
 
-Relations can now also be scoped to a specific tracked entity, not just
-a whole commit (`docs/adr/0006-entity-scoped-relations.md`), verified
-with a real entity ID read from an actual tree. Entity IDs are now
-shown/entered as hex, not decimal — a `U64` with its high bit set used
-to print as a negative number, a real issue found and fixed. Both of
-M3's headline features (stable identity, typed relations) are now
-complete and verified on real TempleOS.
+Not a Git clone wearing a different hat — a few real, deliberate
+departures, each backed by a decision doc:
 
-**M4 is underway**: `experiments/54-doldoc-widgets/` confirmed a real
-`$LK$` link widget renders correctly (underlined, clickable) from
-HolyC-generated `.DD` output. `hgit reconciledoc <repo> <commit_hex>
-<dest.DD>` (`src/hgit-cli/ReconcileDoc.HC`, `experiments/55-reconciledoc/`)
-now puts that to use for real: given a commit with an ADR 0005/0006
-relation, it builds a document showing the commit, a real `$LK$` link
-to its relation target (tagged with the target's full hash), the
-target's own message, and any entity scope — verified through the real
-dispatcher, by raw-byte content, and by rendered appearance in `Ed()`.
-`$TR$` (tree widget) syntax is also resolved now
-(`experiments/57-tree-widget/`), from real shipped TempleOS demo source
-(`C:/Demo/DolDoc/TreeDemo.HC`): a single self-contained `$TR,"label"$`
-command (no closing tag) plus `$ID,+2$`/`$ID,-2$` for nesting —
-verified rendering a real `[+]` collapse marker. `ReconcileDoc.HC` now
-uses this for real (`experiments/58-reconciledoc-tree/`): a commit's
-relation renders as a real collapsible `[+] relation: <TYPE>` node with
-the link/target-message/entity-scope nested inside. Found a real
-gotcha while verifying it — redefining a function doesn't retroactively
-fix up an already-compiled caller's call site in this long-running
-daemon; the caller (here, `Hgit.HC`) must be re-pushed too, even with
-no source changes, or the change silently doesn't take effect despite
-a clean compile. **A real multi-commit view now exists too**:
-`hgit reconcileoverview <repo> <dest.DD>`
-(`experiments/59-reconcile-overview/`) walks a repo's whole history and
-shows a real tree node for every commit that carries a relation,
-skipping ordinary offers entirely — verified with a real four-commit
-repo where exactly the one relevant commit appears in the output.
-`$LS$` (the list widget) is also resolved now
-(`experiments/63-list-widget/`), closing doc 02's last tracked DolDoc
-widget question — a real form-input widget bound via `DocForm()`,
-deliberately not adopted into any hgit command since every hgit view
-is a generated, read-only document, not an interactive form.
-`hgit check <repo>` also now exists — the original brief's "shrine
-check" (repo integrity verification), a thin wrapper over M0's own
-`ArchiveVerify` — verified against a real repo and against a
-deliberately corrupted one (correctly reports `CHECK_FAIL`, not a
-false pass). `hgit check` was then extended with real **referential**
-integrity checking (`experiments/69-check-referential-integrity/`),
-modeled on real `git fsck`'s own "missing object" check — walks every
-commit/tree's own hash references and confirms each resolves, verified
-against both a valid repo (`CHECK_REFS_OK`) and a deliberately
-corrupted one (`CHECK_REFS_FAIL`). Finding this also surfaced a real
-test-harness limit: the package had grown past the QEMU daemon's own
-128KB receive buffer, causing a genuine reproducible (not random)
-truncated-compile error — fixed by rebootstrapping with a 512KB
-buffer. `Head.HC` (unused since ADR 0003, previously left
-undeleted as "a separate decision") is now actually deleted — confirmed
-zero real callers, then verified on a truly fresh QEMU boot with a
-full command-surface regression, nothing broke
-(`experiments/65-head-deletion/`). **A more severe bug class was then
-found and fixed in `Meta.HC` itself** — the shared metadata layer
-underneath every real command had the same fixed-buffer pattern in
-nine of its own functions, but unlike every prior crash-based bug this
-one produced **zero error signal**: a real 150-offer stress test
-reported `DISPATCH_OK` for every single call while silently losing 35
-of 150 real operation-log entries and leaving `HEAD` stuck 36 offers
-behind the true latest commit. Fixed the same way (`MAlloc`'d from the
-file's real size); verified with full data-integrity accounting after
-the fix (`experiments/66-meta-dynamic-buffer/`). **Two more real
-buffer bugs were then found by auditing every remaining fixed-size
-array directly** (`experiments/67-historydoc-buffer-guard/`):
-`HistoryDoc.HC`'s `doc[8192]` (no bound against a repo's real commit
-count — reproduced a real GPF against an actual ~300-commit repo) and
-`Status.HC`'s `tagged[512]` (the same per-file-size bug probe 56 fixed
-in `Offer.HC`, never applied here). Both fixed with the same
-already-proven patterns and verified against real reproductions.
+| | Git | hgit |
+|---|---|---|
+| **File identity** | Path-based — a rename is a heuristic guess Git makes *after the fact*, from a similarity score | A stable **entity ID** travels with a tracked thing across renames, content changes, and generations (ADR 0004), independent of its current name |
+| **History editing** | `rebase`/`reset --hard`/`git gc` can genuinely destroy commits; recovery means `reflog` archaeology before the grace period expires | Nothing is ever deleted. `undo` moves a pointer. A commit nobody points to anymore just sits there — `hgit check` will tell you it's dangling, not that it's gone |
+| **Relations between commits** | A plain parent-pointer DAG — "this corrects that" lives in a commit message, if anywhere | Typed relations (`correct`/`revert`/`reconcile`, ADR 0005/0006) are real fields on the commit object, optionally scoped to one tracked entity |
+| **Viewing history** | Plain text (`log`), or a third-party GUI | Executable **DolDoc** documents — real rendered files with live links and collapsible trees, generated by hgit itself |
+| **Distribution** | A compiled binary + installer per platform | One `.HC` source file, `#include`d — matches TempleOS's own convention of no compiled binaries at all |
+| **Renames** | Similarity-scored heuristic (`-M50%` by default) | Exact-content match today (ADR 0009); `FossilSimilarityPercent` (ADR 0008) exists for a real fuzzy match, not yet wired in |
 
-**A Fossil delta-format prototype was then built and honestly
-partially verified** (`docs/adr/0008-fossil-delta-format-prototype.md`,
-`experiments/68-fossil-delta-format/`) — the byte-level algorithm
-(base-64 integers, checksum, delta structure) is confirmed correct in
-a minimal test, with a genuine new HolyC quirk found along the way
-(casting a raw byte read directly to `(I64)` gives garbage; `(U64)`
-works correctly). **Left open, not resolved**: the same call passes or
-fails depending on unrelated local variables declared in the caller —
-bisected precisely but not root-caused, so `Fossil.HC` stays a
-standalone, not-yet-adopted prototype. Getting here also surfaced a real crash — `hgit offer *` against a directory holding
-dozens of pre-existing files caused a genuine kernel-level GPF (not a
-graceful error) — since **root-caused and fixed**
-(`experiments/56-offer-buffer-guard/`): two unbounded stack buffers in
-`Offer.HC` now cleanly skip a file that doesn't fit (`OFFER_SKIP ...`)
-instead of corrupting memory. A **second, different crash** was then
-found and fixed the same way: a repo that simply accumulates ~13+
-ordinary offers alone (no wildcards, no large files) eventually
-overflows `Offer.HC`'s `archive[8192]` in-memory copy buffer — bisected
-precisely (repo grows ~600 bytes/offer, crash confirmed at exactly the
-point the repo alone exceeds 8192 bytes) and fixed with a clean
-`OFFER_REFUSED` refusal instead of a crash
-(`experiments/60-archive-buffer-guard/`). **That ceiling is now fully
-lifted** (`docs/adr/0007-dynamic-archive-buffer.md`,
-`experiments/61-dynamic-archive/`): `archive` is `MAlloc`'d from the
-repo's real size instead of a fixed array. Fixing it surfaced a
-*second*, different fixed-buffer bug at a larger scale
-(`old_idx_hashes[64*64]`, a hardcoded 64-object-in-the-whole-repo cap)
-— fixed the same way. Verified with 30 corrections growing a repo to
-30,808 bytes, no crash. The same fixed-array pattern also existed in
-five other read-only view commands (`see`/`history`/`status`/
-`historydoc`/`reconcileoverview`) — **now fixed too**
-(`experiments/62-index-buffer-sweep/`), verified against a real
-26-offer/~78-object repo run through all five, no crash; see
-`docs/research/failed-approaches.md`.
+None of this makes hgit a *replacement* for Git — it makes it a
+different answer to the same problem, built for a system (TempleOS)
+where none of Git's own accumulated compatibility debt (packfile
+formats, sharded object directories, POSIX permission bits) applies in
+the first place.
 
-**Exact-content rename detection now closes a gap ADR 0004 explicitly
-deferred**: a renamed file (same content, new name) used to get a
-fresh entity ID, indistinguishable from delete+create
-(`docs/adr/0009-rename-detection.md`,
-`experiments/70-rename-detection/`). `Tree.HC` gains
-`TreeFindEntryByHash` — the content-addressed counterpart to the
-existing by-name `TreeFindEntry` — and `Offer.HC` tries it whenever a
-by-name lookup against the parent tree fails, carrying the old entity
-ID forward on a content-hash match instead of generating a fresh one.
-Verified with a real rename (identical entity ID `bed2cffaf4e6391c`
-carried across two `hgit see` calls) and a real negative case (a
-genuinely different file correctly gets a fresh ID, `661281709c60602e`,
-despite an old entry existing under another name — exercising the real
-code path without a false positive). Exact-content matching only, the
-same scope as Git's own 100%-similarity rename detection — a fuzzy/
-partial-similarity heuristic still needs a reliable diff algorithm ADR
-0008's Fossil prototype isn't yet.
+## Why a burning bush?
 
-**`hgit status` now surfaces detected renames too**
-(`experiments/71-status-rename-surfacing/`), closing the last item
-ADR 0009 explicitly deferred - the same exact-content matching now
-also runs against the working directory vs. HEAD's own tree, reporting
-`STATUS_RENAMED old -> new` in place of separate `STATUS_NEW`/
-`STATUS_DELETED` lines, verified with an unrelated genuinely-new and
-genuinely-deleted file present alongside the real rename (no
-false-positive pairing). Also confirmed the real TempleOS file-delete
-call is `Del(path, FALSE, FALSE, FALSE)` - not any `File*`/`Disk*`-
-prefixed name, three of which were tried and failed first.
+Exodus 3: a bush burns and is never consumed. TempleOS's own creator,
+Terry Davis, built an entire OS on the premise that God speaks in
+640×480 and 16 colors, and was never shy about saying so — HolyC,
+"the Third Temple," the whole thing. hgit doesn't share the theology.
+It steals the one line that happens to describe what the tool
+actually does: **history burns here, and it is never consumed.**
 
-**`hgit check` now detects dangling/unreachable objects too**
-(`experiments/72-check-dangling-objects/`), closing the gap `Check.HC`
-flagged since probe 69's referential-integrity pass. A real
-reachability walk from every declared path's own HEAD reports anything
-left unmarked as `CHECK_DANGLING <kind> <hash>` - verified against a
-real, naturally-occurring case: `undo` leaves a commit's own three
-unique objects genuinely unreachable without deleting them (hgit's own
-non-destructive-history design). A real correctness bug was found and
-fixed testing this against a long-lived repo: duplicate-content
-objects (the store never dedupes identical content across offers) were
-false-positive-reported dangling until a coalescing pass was added.
+Every programmer has stood in front of a scorched `git reflog`,
+whispering "please still be in there" after a bad rebase. hgit's
+answer is structural, not miraculous: `undo` moves a pointer, it
+doesn't delete anything; `hgit check` will happily tell you about
+commits nobody points to anymore, because they're still just sitting
+there, unharmed, in the fire. No revelation required — just an object
+store that never actually throws anything away.
 
-**`hgit help` now exists** (`experiments/73-hgit-help/`), closing a
-real "modern CLI" gap: `hgit help` (also a bare/empty command, also a
-new `DISPATCH_HINT` line after any `unknown_command`) lists every real
-command with its literal argument shape - writing it caught a real
-mismatch between a first guess and `correct`/`revert`/`reconcile`'s
-actual dispatcher argument order, corrected against the real code
-before shipping.
+(We asked Terry for a code review. He'd probably have notes. We're
+taking the fifth on test coverage.)
 
-**`hgit version` now exists** (`experiments/74-hgit-version/`),
-closing a gap `docs/research/09-packaging-and-releases.md` explicitly
-flagged: a real `HGIT_VERSION` string, printed by `hgit version` and
-shown as `hgit help`'s own first line, bumped by hand alongside each
-real release tag.
+## Releases
 
-**A real `INSTALL.md` now exists** (repo root), closing doc 09's last
-flagged gap. Built around the one transport this project has verified
-end-to-end - COM2 serial injection, the mechanism every probe in this
-project has actually used - with real-hardware alternatives flagged
-honestly as unverified rather than presented as tested. A real attempt
-to also verify a CD-ROM-based install path
-(`experiments/75-cd-media-attempt/`) did not conclusively work; logged
-as a genuine dead end in `docs/research/failed-approaches.md` instead
-of being hidden or overclaimed - the disposable QEMU probe VM used to
-try it was confirmed afterward to have left the main dev session and
-disk untouched.
-
-**A genuinely new debugging capability was found for ADR 0008's own
-open Fossil.HC question** (`experiments/76-compiler-source-access/`):
-TempleOS ships its own compiler source, readable at runtime
-(`D:/Compiler/*.HC.Z`, transparently decompressed by `FileRead`). A
-real, named optimizer stage documented in that source
-(`OptPass012`'s constant-folding/NOP-elimination pass) matches the
-bug's exact known trigger - not a full root cause yet, but no longer
-an unexplained black box, and a genuinely new tool for future HolyC
-quirk investigations generally.
-
-**ADR 0008's Fossil.HC bug is RESOLVED** (`experiments/80-fossil-checksum-root-cause/`),
-after three more hypotheses ruled out in `experiments/79-fossil-checksum-isolation/`.
-The real root cause: a raw byte cast to `(U64)` doesn't reliably
-zero-extend once composed with *other* `(U64)`-cast byte reads in one
-shifted-OR expression - garbage above bit 7 leaks in, varying by
-caller shape (what was previously in that register/stack slot).
-Explicit `& 0xFF` masking after each cast fixes it - verified against
-an independently-computed ground-truth checksum, matching exactly
-where every unmasked version had matched nothing (not even the
-mathematically correct value, in any caller shape). `Canon.HC`'s
-`GetU32LE`/`GetU64LE` were checked directly and confirmed unaffected -
-each composes its bytes in a structurally different, safe way.
-`Fossil.HC` still isn't wired into a real command, but now only
-because it has no real diff algorithm yet, not for reliability.
-
-**Real releases are cut regularly**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
-(M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
-(M4's reconciliation view underway),
-[`v0.5.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.5.0)
-(every known fixed-size-buffer overflow found and fixed),
-[`v0.6.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.6.0)
-(a critical silent-data-loss fix in `Meta.HC`),
-[`v0.7.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.7.0)
-(two more buffer fixes, real VCS research, a Fossil delta prototype),
-and [`v0.8.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.8.0)
-(referential integrity checking, host-side lint tooling),
-[`v0.9.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.9.0)
-(exact-content rename detection), [`v0.10.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.10.0)
-(status surfaces detected renames), [`v0.11.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.11.0)
-(check detects dangling/unreachable objects), [`v0.12.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.12.0)
-(hgit help), [`v0.13.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.13.0)
-(hgit version - the first release tag whose own `HGIT_VERSION` string
-matches it exactly),
-[`v0.14.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.14.0)
-(hgit logo + real project branding), and
-[`v1.0.0`](https://github.com/VectorSophie/hgit/releases/tag/v1.0.0)
-(`hgit graph`, ADR 0008's Fossil.HC bug root-caused and fixed, this
-README's own redesign — the first release under a new versioning
-policy: a major bump now marks a real product milestone rather than
-every single change getting its own version number, see
-`docs/research/09-packaging-and-releases.md`). Each attaches
-`packaging/HgitAll.HC` — verified downloaded and byte-identical to the
-local build before being announced done. Matches TempleOS's own
-convention (no installer/package manager; a program is `#include`d as
-one source file) — see `docs/research/09-packaging-and-releases.md`.
-
-## Next steps
-
-See `docs/research/10-product-proposal.md` for the live risk register
-and milestone checklist.
+Every tagged release attaches `packaging/HgitAll.HC` — verified
+downloaded and byte-identical to the local build before being
+announced done (matches TempleOS's own convention: no installer, a
+program is `#include`d as one source file). Major versions now mark
+real product milestones rather than every single change getting its
+own tag (`docs/research/09-packaging-and-releases.md`). See the
+[Releases page](https://github.com/VectorSophie/hgit/releases) for the
+full, dated history — [`v1.0.0`](https://github.com/VectorSophie/hgit/releases/tag/v1.0.0)
+is current.

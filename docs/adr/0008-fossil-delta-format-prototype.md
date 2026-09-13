@@ -2,25 +2,27 @@
 
 ## Status
 
-**Byte-level mechanics prototyped AND verified reliable - still not
-adopted into any real command, for a different reason now.**
-`src/hgit-core/Fossil.HC` (`experiments/68-fossil-delta-format/`)
-implements the format's byte-level mechanics (base-64 integer
-encode/decode, checksum, three-part delta structure), and the long-open
-"caller-shape-sensitivity" reliability gap (probes 68/77/79) is now
-**resolved** - a real root cause found and fixed in probe 80
+**Byte-level mechanics prototyped, verified reliable, AND now wired
+into a real command.** `src/hgit-core/Fossil.HC`
+(`experiments/68-fossil-delta-format/`) implements the format's
+byte-level mechanics (base-64 integer encode/decode, checksum,
+three-part delta structure), and the long-open "caller-shape-
+sensitivity" reliability gap (probes 68/77/79) is **resolved** - a
+real root cause found and fixed in probe 80
 (`experiments/80-fossil-checksum-root-cause/`): a raw byte cast to
 `(U64)` does not reliably zero-extend once composed with other such
 casts in one shifted-OR expression; explicitly masking each with
 `& 0xFF` fixes it, verified against independently-computed ground
 truth across every previously-failing reproduction. A real, if
-minimal, diff algorithm now exists too (probe 82,
+minimal, diff algorithm exists (probe 82,
 `experiments/82-fossil-real-diff/`, `FossilDeltaMakeReal` - single
 longest-match copy segment, ~61% compression verified on a real test
-case). `Fossil.HC` still isn't wired into `tools/build-package.sh` -
-not for reliability or lack of a diff algorithm anymore, but because
-no real hgit command currently stores or needs delta-compressed
-objects; see "Decision" below.
+case), and a real similarity measure built on it (probe 83,
+`experiments/83-fossil-similarity/`, `FossilSimilarityPercent`).
+**`Fossil.HC` is now in `tools/build-package.sh`** (probe 84,
+`experiments/84-fuzzy-rename-detection/`) - `Offer.HC`'s own fuzzy
+rename detection is its first real caller, exactly the concrete need
+this ADR's own "Decision" originally said would justify adoption.
 
 ## Context
 
@@ -111,22 +113,23 @@ explained rather than just observed to work.
 `Fossil.HC`'s reliability question is closed - the checksum is
 correct, verified against ground truth, across every caller shape
 tested - and a real, minimal diff algorithm exists
-(`FossilDeltaMakeReal`, probe 82, real compression verified on a real
-test case). It is still **not** added to `tools/build-package.sh` and
-is not called from any real hgit command, but now for a genuine
-product reason, not a technical gap: no real hgit command currently
-stores or needs delta-compressed objects - the object store is
-append-only, whole-content blobs, and adopting delta compression there
-is a real architectural decision (would every object be delta-encoded
-against a prior version? which ones? at what point in `hgit offer`'s
-own pipeline?) that hasn't been made, not something to bolt on for its
-own sake. The byte-level format understanding gained across probes
-68/77/79/80/82 (and the HolyC quirks found, including probe 80's real
-root cause) are real, durable value - the research question doc 04
-raised ("does Fossil's delta format work in HolyC at all") is now
-answered "yes, verified reliable, with a real working diff algorithm,
-pending a real decision on whether/where hgit's own storage layer
-should use it."
+(`FossilDeltaMakeReal`, probe 82). **`Fossil.HC` is now in
+`tools/build-package.sh`** (probe 84): `Offer.HC` calls
+`FossilSimilarityPercent` (probe 83) as the third fallback in its
+entity-ID chain - fuzzy (edited-during-rename) detection, closing ADR
+0009's own explicitly-deferred item. Delta-compressed object storage
+itself (would every object be delta-encoded against a prior version?
+which ones? at what point in `hgit offer`'s own pipeline?) remains a
+real, separate architectural decision, genuinely not made here -
+`Fossil.HC`'s adoption so far is for its similarity measure, not for
+compressing the object store. The byte-level format understanding
+gained across probes 68/77/79/80/82/84 (and the HolyC quirks found,
+including probe 80's real root cause) are real, durable value - the
+research question doc 04 raised ("does Fossil's delta format work in
+HolyC at all") is now answered "yes, verified reliable, with a real
+working diff algorithm, adopted into a real command for its
+similarity measure - object-store compression remains a real,
+separate decision."
 
 ## What would justify revisiting this
 

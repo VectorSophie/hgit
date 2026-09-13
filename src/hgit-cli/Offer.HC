@@ -68,6 +68,68 @@
 #define ARCHIVE_HEADROOM 20000
 #define ARCHIVE_SANITY_MAX 1000000000
 
+// ADR 0009 addendum (experiments/84-fuzzy-rename-detection/): the
+// fuzzy-rename threshold, matching git's own real default (`-M50%`)
+// rather than inventing a different number. A currently-offered
+// file's content must score at least this similar
+// (`FossilSimilarityPercent`) to some old, name-unmatched blob before
+// its identity is carried forward this way.
+#define FOSSIL_RENAME_SIMILARITY_THRESHOLD 50
+
+// Third fallback in the entity-ID chain (name match, then exact-hash
+// match, now this): scans every BLOB entry in the parent's own tree
+// and, for each, resolves its actual content (via the same
+// old_idx_hashes/old_idx_offsets/rbuf the caller already built for the
+// exact-hash path) and scores it against `target_content` with
+// Fossil's own similarity measure (ADR 0008,
+// experiments/83-fossil-similarity/). Returns the BEST-scoring
+// candidate's entity ID if it meets FOSSIL_RENAME_SIMILARITY_THRESHOLD,
+// FALSE otherwise. Same "first/best match wins, no cross-file
+// disambiguation" simplification ADR 0009 already documents for its
+// own exact-content matching: this doesn't check whether some OTHER
+// file in the same offering already exactly matched this same old
+// entry - a real, documented limitation, not a hidden bug (see this
+// probe's own README).
+Bool OfferFindFuzzyRename(U8 *rbuf, U8 *old_tree_content, I64 old_tree_content_len,
+                          U8 *old_idx_hashes, I64 *old_idx_offsets, I64 old_idx_count,
+                          U8 *target_content, I64 target_content_len,
+                          U64 *entity_id_out)
+{
+  U32 count = GetU32LE(old_tree_content, 0);
+  I64 pos = 4;
+  U32 e;
+  I64 best_sim = -1;
+  U64 best_entity_id = 0;
+  for (e=0; e<count; e++) {
+    U8 name_len = old_tree_content[pos]; pos += 1;
+    pos += name_len;
+    U8 child_type = old_tree_content[pos]; pos += 1;
+    U8 *child_hash = old_tree_content + pos; pos += 64;
+    U64 this_entity_id = GetU64LE(old_tree_content, pos); pos += 8;
+
+    if (child_type == OBJ_BLOB) {
+      I64 off_rel;
+      if (IndexLookup(old_idx_hashes, old_idx_offsets, old_idx_count, child_hash, &off_rel)) {
+        I64 off = 16 + off_rel;
+        U64 rec_len = GetU64LE(rbuf, off);
+        U8 *content = rbuf + off + 9; // skip the OBJ_BLOB type tag byte
+        I64 content_len = rec_len - 1;
+        I64 sim = FossilSimilarityPercent(content, content_len,
+                                          target_content, target_content_len);
+        if (sim > best_sim) {
+          best_sim = sim;
+          best_entity_id = this_entity_id;
+        }
+      }
+    }
+  }
+  if (best_sim >= FOSSIL_RENAME_SIMILARITY_THRESHOLD) {
+    *entity_id_out = best_entity_id;
+    return TRUE;
+  }
+  return FALSE;
+}
+
 U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
                           U64 timestamp, U8 relation_tag, U8 *relation_target,
                           U64 relation_entity_id)
@@ -148,8 +210,11 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
       }
     }
   }
-  Free(old_idx_hashes);
-  Free(old_idx_offsets);
+  // old_idx_hashes/old_idx_offsets stay alive through the per-file
+  // loop below now (ADR 0009 addendum, experiments/84-fuzzy-rename-detection/)
+  // - OfferFindFuzzyRename needs them to resolve an old blob's hash
+  // back to its actual content. Freed once, after that loop, instead
+  // of here.
 
   // Build blobs + tree from every file matching find_mask.
   //
@@ -218,6 +283,15 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
           found_old = TreeFindEntryByHash(old_tree_content, old_tree_content_len,
                                            blob_hash, &entity_id);
         }
+        // ADR 0009 addendum (experiments/84-fuzzy-rename-detection/):
+        // exact name and exact content both failed - try a fuzzy
+        // (edited-during-rename) match before giving up and generating
+        // a fresh identity.
+        if (!found_old) {
+          found_old = OfferFindFuzzyRename(rbuf, old_tree_content, old_tree_content_len,
+                                           old_idx_hashes, old_idx_offsets, old_idx_count,
+                                           fbuf, fsize, &entity_id);
+        }
       }
       if (!found_old) entity_id = GenerateEntityId();
 
@@ -228,6 +302,8 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
     tmpde = tmpde->next;
   }
   DirTreeDel(tmpde1);
+  Free(old_idx_hashes);
+  Free(old_idx_offsets);
   PutU32LE(tree_content, 0, entry_count);
 
   I64 tree_content_len = tlen;
