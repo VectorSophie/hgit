@@ -71,6 +71,13 @@ start).
 
 ## Not yet done
 
+- ~~The tree-only-entry "no longer present on disk in any form" branch
+  wasn't directly exercised with a genuinely vanished subdirectory~~
+  **Closed** (probe 103, `experiments/103-statustree-nested-directory-gone/`):
+  using probe 101's own verified real directory-delete primitive,
+  `SubA` was genuinely removed from disk (not just emptied); a real
+  `hgit statustree` correctly reported both nested files as
+  `STATUS_DELETED SubA/x.txt`/`SubA/y.txt`.
 - Cross-directory rename/move detection (ADR 0010's own deferred
   scope, unchanged).
 - `STATUS_TYPE_CHANGED` doesn't recurse into either side - same,

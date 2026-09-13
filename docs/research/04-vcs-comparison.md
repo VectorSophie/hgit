@@ -89,7 +89,7 @@ this project already takes toward, e.g., object-store compression
 (see the Fossil section above) and cross-directory rename detection
 (ADR 0010).
 
-## Verified documentation — Sapling's undo/absorb model
+## Verified documentation — Sapling's undo/absorb/stacks model
 
 Source: `sapling-scm.com/docs/overview/undo/` and
 `sapling-scm.com/docs/commands/absorb`. Sapling keeps "a full record of
@@ -117,21 +117,52 @@ merge, or otherwise immutable commits (a real safety boundary against
 rewriting shared/pushed history); commits that end up empty after
 absorbing are deleted automatically.
 
-**Relevance to hgit**: the graph/working-copy undo split is already
-how hgit's own design works by construction (`hgit undo`/`redo`
-operate on `Meta.HC`'s operation log, entirely separate from what
-`hgit offer` does to the working directory) - Sapling's docs are
-confirming an existing choice, not suggesting a change. `absorb`'s
-idea - automatically routing a change to the right prior commit
-instead of always appending - is a genuinely new concept relative to
-anything hgit has built (M0-M4's own `correct`/`revert`/`reconcile`
-all name an explicit target commit; none infer one from content). Real
-candidate for real M5-or-later feature work if the brief's own future
-scope wants it - not attempted here, no evidence yet that hgit's
-object model needs to change to support it (a `correct` already
-targets an arbitrary prior commit; the missing piece would be
-*picking* that target automatically from a diff, not the storage
-underneath it).
+Source: `sapling-scm.com/docs/overview/stacks/`. A "stack" is Sapling's
+own name for a linear sequence of dependent commits worked on
+together - editing one in the middle (`sl goto` to it, edit, `sl
+amend`) automatically rebases every commit above it in the same stack
+to keep the whole sequence consistent, rather than leaving later
+commits pointing at a now-stale parent. Real navigation commands
+(`sl prev`/`next`/`top`/`bottom`) move through a stack without
+remembering hashes. Sapling's own docs don't spell out whether this
+automatic cascading rebase uses the identical obsolescence-marker
+machinery `sl undo` itself relies on (both draw on the same underlying
+"full record of the mutation history of commits," per Sapling's own
+phrasing, but the exact mechanism tying `amend`'s own cascade to that
+record isn't detailed in the fetched page) - not verified further here,
+flagged honestly rather than guessed at.
+
+**Relevance to hgit**: a real, structurally different concept from
+anything hgit has - hgit has no `amend`/rebase of any kind. A
+committed object is immutable; the closest analogues are `correct`
+(ADR 0005/0006, names a NEW commit relating to an old one, doesn't
+rewrite it) and `hgit merge` (ADR 0011, also only ever adds new
+commits). Automatically cascading a mid-stack edit through every real
+descendant commit would mean hgit committing to real, in-place history
+rewriting for the first time - a substantial, real departure from this
+project's own "nothing is ever deleted or rewritten, only added to or
+pointed away from" stance (the same stance ADR 0011's own total-abort-
+on-conflict decision and the non-destructive `undo`/`redo` model both
+already rest on). Not adopted, no evidence yet hgit's real usage needs
+it - a real, well-scoped M5-or-later candidate if the brief's own
+future scope calls for it, distinct in kind (not just scope) from every
+other item already flagged on this list.
+
+**Relevance to hgit (undo/absorb, unchanged from before)**: the graph/
+working-copy undo split is already how hgit's own design works by
+construction (`hgit undo`/`redo` operate on `Meta.HC`'s operation log,
+entirely separate from what `hgit offer` does to the working
+directory) - Sapling's docs are confirming an existing choice, not
+suggesting a change. `absorb`'s idea - automatically routing a change
+to the right prior commit instead of always appending - is a genuinely
+new concept relative to anything hgit has built (M0-M4's own
+`correct`/`revert`/`reconcile` all name an explicit target commit; none
+infer one from content). Real candidate for real M5-or-later feature
+work if the brief's own future scope wants it - not attempted here, no
+evidence yet that hgit's object model needs to change to support it (a
+`correct` already targets an arbitrary prior commit; the missing piece
+would be *picking* that target automatically from a diff, not the
+storage underneath it).
 
 ## Verified documentation — GitButler's virtual branches
 
@@ -262,12 +293,19 @@ Not designed further here - flagged, matching this project's own
   list - not designed, just flagged as a concrete shape distinct from
   Git's own conflict-marker approach, should real usage ever make
   ADR 0011's current total-abort stance a practical burden.
+- Sapling's own "stacks" (cascading a mid-stack `amend` through every
+  real descendant commit) isn't adopted - it's a different KIND of
+  departure from anything else on this list, since it would mean hgit
+  committing to real, in-place history rewriting for the first time,
+  a substantial break from this project's own "nothing is ever
+  rewritten, only added to or pointed away from" stance. Flagged as a
+  real, well-scoped M5-or-later candidate distinct in kind (not just
+  scope) from the others, not designed further here.
 
 ## Not yet done
 
 Darcs (patch theory, same family as Pijul — comparison only, brief
-explicitly warns against adopting without evidence), Breezy, and
-Sapling's own "stacks" feature (still unread). Lower priority now that
-the six most load-bearing comparisons (operation log, delta format,
-undo/absorb, obsolescence markers, virtual branches, patch theory) are
-done.
+explicitly warns against adopting without evidence) and Breezy. Lower
+priority now that the seven most load-bearing comparisons (operation
+log, delta format, undo/absorb, obsolescence markers, virtual
+branches, patch theory, stacks) are done.

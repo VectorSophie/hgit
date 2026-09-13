@@ -1584,6 +1584,96 @@ concrete alternative shape to ADR 0011's own "what would justify
 revisiting this" list, should a total abort ever become a real
 practical burden.
 
+**Research: Sapling's "stacks" feature** (`docs/research/04-vcs-comparison.md`,
+real primary source - `sapling-scm.com/docs/overview/stacks/`). Closes
+the last item doc 04's own "Not yet done" list had flagged within an
+already-covered VCS. A "stack" is a linear sequence of dependent
+commits; editing one in the middle (`sl goto`, edit, `sl amend`)
+automatically cascades a rebase through every commit above it in the
+same stack. Comparison: a real, structurally different concept from
+anything hgit has - hgit has no `amend`/rebase at all, a committed
+object is immutable (the closest analogues, `correct` and `hgit
+merge`, both only ever ADD new commits). Adopting cascading-amend
+would mean hgit committing to real, in-place history rewriting for the
+first time - a substantial departure from this project's own "nothing
+is ever rewritten, only added to or pointed away from" stance (the
+same stance the non-destructive `undo`/`redo` model and ADR 0011's own
+total-abort-on-conflict decision both already rest on). Not adopted -
+flagged as a real, well-scoped M5-or-later candidate, distinct in kind
+(not just scope) from every other deferred candidate on doc 04's own
+list. Doc 04 now has all seven of its most load-bearing comparisons
+done; only Darcs/Breezy remain, both lower priority.
+
+**A real "delete a directory from disk" primitive, found and
+verified** (`experiments/101-real-dir-delete/`, PASS). This project
+has repeatedly flagged "no proven primitive for deleting a real
+directory entry from disk" as an open gap (`docs/research/failed-
+approaches.md`'s 2026-09-14 entry, probe 94's own "Not yet done" list)
+since the earlier `DirTreeDel` API-misuse incident. Reading TempleOS's
+own real kernel source directly (`Kernel/BlkDev/DskCopy.HC`) found it:
+the real `Del(files_find_mask, make_mask=FALSE, del_dir=FALSE,
+print_msg=TRUE)` signature has a `del_dir` parameter this project had
+never once investigated in its entire history of calling
+`Del(path, FALSE, FALSE, FALSE)`. Tracing into `FileSysRedSea.HC`'s
+own `RedSeaFilesDel` confirmed exactly what it does (a matched
+directory entry is only actually deleted if `del_dir` is set), then a
+real, isolated QEMU test confirmed it in practice, not just from
+reading source: a real directory existed (`FilesFind` found it),
+`Del(dir_path, FALSE, TRUE, FALSE)` was called (after deleting its own
+real file individually first, the already-established safe practice),
+and the directory entry was genuinely gone afterward (`FilesFind` no
+longer found it). Full command-surface regression re-run clean.
+Real, honest scope note: whether `del_dir=TRUE` alone (skipping the
+individual-file-deletion step) also safely recovers a directory's own
+contained files' storage is a related, separate question this probe
+doesn't answer - the established safe practice (empty first, then
+delete the directory) remains correct.
+
+**Put straight to use**: `experiments/102-diff-nested-directory-gone/`
+(PASS) uses probe 101's own new primitive to directly exercise the one
+gap probe 94's own README had honestly left open - `hgit diff`'s
+not-found-by-name "wholly vanished directory" DELETED-recursion
+branch, previously only tested indirectly (an emptied-but-still-
+present directory). With `SubA` genuinely removed from disk entirely
+(not just emptied), a real `hgit diff` correctly recursed against an
+empty tree for it, reporting both nested files as `DIFF_DELETED
+SubA/x.txt`/`SubA/y.txt` with their real full paths - the true branch,
+directly confirmed, not just inferred from the structurally symmetric
+NEW-branch test. A post-commit `statustree` and `hgit check` both
+confirmed clean. Full regression re-run clean.
+
+**Same closure for `hgit statustree`**: `experiments/103-statustree-nested-directory-gone/`
+(PASS). `Status.HC`'s own `StatusTreeWalk` already had the same real
+`FilesFind`-based directory probe since probe 95, but had never been
+given the adversarial input it was built for - a genuinely vanished
+subdirectory. With `SubA` truly removed from disk (probe 101's
+primitive) and left uncommitted, a real `hgit statustree` correctly
+reported `STATUS_DELETED SubA/x.txt`/`SubA/y.txt`, comparing the live
+(now-`SubA`-less) directory against the still-committed tree. Full
+regression re-run clean.
+
+**ADR 0012: named paths, written up retroactively.**
+`docs/adr/0012-named-paths.md` documents a real design this project
+has already built and relied on since M2 (probes 34/35/37, re-
+platformed onto `Meta.HC` in probe 43) - `Paths.HC` predates this
+project's own ADR discipline entirely, a gap ADR 0011 itself noted in
+passing while building `hgit merge` on top of it ("`Paths.HC`, ADR-less
+since it predates this project's own ADR discipline"). Documents the
+real decisions: a path is exactly a name plus a HEAD pointer (no
+richer branch object); one current-path pointer per repo that every
+real command's own `CurrentHeadRead`/`CurrentHeadWrite` transparently
+goes through; `path new` copying the current path's own HEAD at
+creation time (not an empty history) - the real guarantee `Graph.HC`'s
+fork-point search and `MergeBase.HC`'s lowest-common-ancestor walk
+(ADR 0011) both depend on; the real Meta.HC re-platforming (probe 43)
+that collapsed ADR 0003's own path-length constraint from
+`repo_path + name` down to just `repo_path`, with zero observable
+behavior change for any real caller. `Paths.HC`'s own header comment
+now points to this ADR. Comment-only source change, still re-verified
+on the shared daemon (`COMPILE_OK`) and against the full regression,
+per this project's own standing discipline of never skipping real
+verification even for changes that "obviously" can't affect behavior.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

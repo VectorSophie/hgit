@@ -113,16 +113,14 @@ if slightly different, coverage of the same DELETED-reporting logic.
 
 ## Not yet done
 
-- The not-found-by-name "wholly vanished directory" branches (both
-  NEW and DELETED sides) are exercised for NEW (a brand-new `SubA`
-  itself, not just its contents, in the very first `offertree` of this
-  same test) but not directly for DELETED, since this project has no
-  proven "delete a directory entry from disk" primitive yet. The code
-  is structurally symmetric between the two sides, giving real, if
-  indirect, confidence - not the same as a direct test.
-- A real, tested "delete a directory entry from disk" primitive
-  (`DirTreeDel` is not it - see above) - a real, separate follow-up if
-  this project ever genuinely needs one.
+- ~~The not-found-by-name "wholly vanished directory" DELETED branch
+  still isn't directly exercised in THIS probe~~ **Closed** (probe 102,
+  `experiments/102-diff-nested-directory-gone/`): using probe 101's own
+  verified `Del(dir_path, FALSE, TRUE, FALSE)` primitive to genuinely
+  remove a subdirectory from disk (not just empty it), a real `hgit
+  diff` correctly recursed against an empty tree for the vanished
+  `SubA`, reporting both nested files as `DIFF_DELETED SubA/x.txt`/
+  `SubA/y.txt` with their full real paths.
 - `Status.HC` (comparing a live directory against nested trees) is
   still the one remaining item on ADR 0010's own "rendering-command
   awareness of nested trees" list.

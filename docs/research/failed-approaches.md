@@ -1434,11 +1434,17 @@ and held off touching the shared daemon throughout - real, coordinated
 avoidance of a second collision on top of an already-live incident.
 
 **Standing lesson, threefold**: (1) `DirTreeDel` takes a `CDirEntry*`
-(a `FilesFind` result list to free), never a path string - this
-project has no proven "delete a real directory entry from disk"
-primitive at all; that remains a real, separate, unexplored gap if a
-future probe genuinely needs one, not something to reach for by
-name-guessing. (2) When a hang's cause seems isolated by a "minimal"
+(a `FilesFind` result list to free), never a path string. **Update,
+2026-09-14, probe 101**: a real "delete a directory entry from disk"
+primitive was found and verified after all - `Kernel/BlkDev/DskCopy.HC`'s
+own real `Del(files_find_mask, make_mask=FALSE, del_dir=FALSE,
+print_msg=TRUE)` has a `del_dir` parameter this project had never
+investigated; `Del(dir_path, FALSE, TRUE, FALSE)` genuinely removes
+the directory entry itself from disk, confirmed both by reading
+`FileSysRedSea.HC`'s own `RedSeaFilesDel` and by a real QEMU test
+(`experiments/101-real-dir-delete/`) - not by name-guessing, this
+time, by reading the real source first. (2) When a hang's cause seems
+isolated by a "minimal"
 follow-up test, check that the minimal test doesn't repeat the exact
 same mistake in smaller form before trusting the isolation - a smaller
 repro of the same bug looks identical to proof the underlying function

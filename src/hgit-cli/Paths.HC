@@ -1,5 +1,6 @@
 // Paths.HC — named paths (hgit's branch equivalent), per the brief's
-// `hgit path list/new/go/close` vocabulary.
+// `hgit path list/new/go/close` vocabulary. Design decisions written
+// up retroactively in `docs/adr/0012-named-paths.md`.
 //
 // Probe 43: this file's PUBLIC API (CurrentPathGet/PathExists/
 // PathListPrint/PathNew/PathGo/CurrentHeadRead/CurrentHeadWrite/
