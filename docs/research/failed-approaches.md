@@ -1153,3 +1153,41 @@ session (confirmed after the fact: `disk.qcow2`'s own mtime never
 changed, and the main daemon process was untouched throughout) - a
 real, reusable technique for future probes that want to try something
 against real accumulated state without commitment.
+
+## 2026-09-13 — Re-running an old probe's own test driver against the persistent session repo gave a confusing (but not wrong) result
+
+**Context:** Verifying probe 85's fuzzy-rename addition to `hgit
+status` didn't break probe 71's own exact-content rename test, by
+re-running `experiments/71-status-rename-surfacing/test_driver.hc`
+directly against the live daemon.
+
+**Happened:** Instead of the original expected output
+(`STATUS_RENAMED`/`STATUS_NEW`/`STATUS_DELETED` for the three test
+files), it printed `STATUS_UNCHANGED` for two of them and
+`STATUS_DELETED` for two *different* ones - looking, at a glance, like
+a real regression.
+
+**Why:** Not a bug. That test driver's own `P71Repo.hgs` is a real,
+long-lived repo on this session's persistent QEMU disk, and that
+driver has **no `Del()` cleanup** at its start (written before probe
+84 established that convention) - so this re-run offered into the SAME
+repo probe 71 already committed to, earlier this session. The files
+it reported `STATUS_UNCHANGED` genuinely *were* unchanged relative to
+that accumulated HEAD; the files it reported `STATUS_DELETED` genuinely
+didn't exist on disk anymore (never recreated by this particular
+script run). `hgit status` was reporting the real, correct state of a
+repo whose actual history no longer matched what the test's own
+comments assumed a "fresh" run would look like.
+
+**Worked instead:** Wrote a **new** test
+(`experiments/85-status-fuzzy-rename/test_driver_exact_regression.hc`)
+replicating probe 71's exact scenario against a **fresh** repo (`Del()`
+both the `.hgs` and its `.m` sidecar first, per probe 79's own
+established convention) - confirmed exact-content rename detection
+still works identically after probe 85's fuzzy-pass addition.
+**Standing note**: any probe whose own test driver predates the
+`Del()`-cleanup convention (roughly, anything before probe 84) will
+give a misleading result if just re-run later in the same session
+against the accumulated persistent disk - write a fresh-repo variant
+to actually re-verify it, don't trust a bare re-run's output at face
+value.

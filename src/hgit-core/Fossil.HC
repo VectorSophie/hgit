@@ -271,6 +271,15 @@ U0 FossilDeltaMakeReal(U8 *source, I64 source_len, U8 *target, I64 target_len,
   *delta_len_out = len;
 }
 
+// Shared rename-detection threshold (experiments/84-fuzzy-rename-detection/,
+// experiments/85-status-fuzzy-rename/): git's own real default
+// (`-M50%`), not an invented number. Lives here, not in either real
+// caller (`Offer.HC`/`Status.HC`), so both use the exact same value -
+// defined once, before both of them in build order, since a `#define`
+// is no more forward-declarable across this project's own single
+// concatenated build than a function is.
+#define FOSSIL_RENAME_SIMILARITY_THRESHOLD 50
+
 // A real similarity measure, in whole percent (0-100), between
 // `source` and `target`: the fraction of `target` covered by the
 // single longest match `FossilFindLongestMatch` would find - the same

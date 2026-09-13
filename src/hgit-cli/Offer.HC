@@ -68,13 +68,12 @@
 #define ARCHIVE_HEADROOM 20000
 #define ARCHIVE_SANITY_MAX 1000000000
 
-// ADR 0009 addendum (experiments/84-fuzzy-rename-detection/): the
-// fuzzy-rename threshold, matching git's own real default (`-M50%`)
-// rather than inventing a different number. A currently-offered
-// file's content must score at least this similar
-// (`FossilSimilarityPercent`) to some old, name-unmatched blob before
-// its identity is carried forward this way.
-#define FOSSIL_RENAME_SIMILARITY_THRESHOLD 50
+// ADR 0009 addendum (experiments/84-fuzzy-rename-detection/): a
+// currently-offered file's content must score at least
+// `FOSSIL_RENAME_SIMILARITY_THRESHOLD` similar (`FossilSimilarityPercent`,
+// `Fossil.HC`'s own shared threshold - also used by `Status.HC`) to
+// some old, name-unmatched blob before its identity is carried forward
+// this way.
 
 // Third fallback in the entity-ID chain (name match, then exact-hash
 // match, now this): scans every BLOB entry in the parent's own tree

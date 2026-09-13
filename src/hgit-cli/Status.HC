@@ -25,7 +25,7 @@
 // "C:/Home/OfferFile*") - not derived automatically here.
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC, Index.HC, WorkDir.HC (the whole
+// Tree.HC, Commit.HC, Index.HC, Fossil.HC, WorkDir.HC (the whole
 // hgit-core object layer plus the CLI pieces built so far).
 //
 // Both tree-entry walks (TreeFindEntry's new signature, and the manual
@@ -43,6 +43,14 @@
 // This only *reports* the match; it doesn't change what gets committed
 // - the next real `hgit offer` still does its own independent rename
 // detection when the file is actually offered.
+//
+// ADR 0009 addendum (experiments/85-status-fuzzy-rename/): a second
+// rename pass, for renames WITH an edit - reusing Fossil's similarity
+// measure (ADR 0008, `experiments/83-fossil-similarity/`) the same
+// way `Offer.HC`'s own fuzzy detection does (probe 84), same git-style
+// `-M50%` threshold (`Fossil.HC`'s own `FOSSIL_RENAME_SIMILARITY_THRESHOLD`).
+// Runs only against pairs the exact-hash pass above left unmatched.
+// Now depends on `Fossil.HC` too (for the similarity call).
 
 U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 {
@@ -105,6 +113,13 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   U8 *new_names = MAlloc(disk_count*256 + 256);   // one 256-byte slot each
   U8 *new_hashes = MAlloc(disk_count*64 + 64);
   Bool *new_matched = MAlloc(disk_count + 1);
+  // ADR 0009 addendum (experiments/85-status-fuzzy-rename/): a fuzzy
+  // rename check needs each candidate's real CONTENT, not just its
+  // hash - one 512-byte slot each, matching the same per-file size cap
+  // this loop already enforces below (STATUS_TOO_LARGE_TO_CHECK), so
+  // every candidate that reaches this buffering step already fits.
+  U8 *new_contents = MAlloc(disk_count*512 + 512);
+  I64 *new_content_lens = MAlloc(disk_count*8 + 8);
   I64 new_count = 0;
 
   CDirEntry *tmpde = FilesFind(find_mask, 0);
@@ -149,6 +164,8 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
         for (i=0; i<cap; i++) new_names[new_count*256+i] = tmpde->full_name[name_start+i];
         new_names[new_count*256+cap] = 0;
         for (i=0; i<64; i++) new_hashes[new_count*64+i] = file_hash[i];
+        for (i=0; i<fsize; i++) new_contents[new_count*512+i] = fbuf[i];
+        new_content_lens[new_count] = fsize;
         new_matched[new_count] = FALSE;
         new_count++;
       } else {
@@ -225,6 +242,42 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     }
   }
 
+  // ADR 0009 addendum (experiments/85-status-fuzzy-rename/): a second
+  // pass for renames WITH an edit - exact hash already failed above,
+  // so try Fossil's similarity measure (ADR 0008, probe 83) against
+  // each still-unmatched pair, same git-style -M50% threshold Offer.HC
+  // already uses (probe 84). Each deleted entry's real content is
+  // resolved on demand via the index already built above - deleted
+  // candidates only ever store a hash, not their own content buffer,
+  // since (unlike new-on-disk files) their bytes already live in the
+  // repo's own archive and don't need a second copy. Same "first/best
+  // match wins" simplification as the exact-hash pass just above.
+  for (di=0; di<del_count; di++) {
+    if (!del_matched[di]) {
+      I64 del_off_rel;
+      if (IndexLookup(idx_hashes, idx_offsets, idx_count, del_hashes+di*64, &del_off_rel)) {
+        I64 del_off = 16 + del_off_rel;
+        U64 del_rec_len = GetU64LE(rbuf, del_off);
+        U8 *del_content = rbuf + del_off + 9; // skip the OBJ_BLOB type tag
+        I64 del_content_len = del_rec_len - 1;
+
+        I64 best_ni = -1, best_sim = -1;
+        for (ni=0; ni<new_count; ni++) {
+          if (!new_matched[ni]) {
+            I64 sim = FossilSimilarityPercent(del_content, del_content_len,
+                                              new_contents+ni*512, new_content_lens[ni]);
+            if (sim > best_sim) { best_sim = sim; best_ni = ni; }
+          }
+        }
+        if (best_ni >= 0 && best_sim >= FOSSIL_RENAME_SIMILARITY_THRESHOLD) {
+          CommPrint(1, "STATUS_RENAMED %s -> %s\n", del_names+di*256, new_names+best_ni*256);
+          new_matched[best_ni] = TRUE;
+          del_matched[di] = TRUE;
+        }
+      }
+    }
+  }
+
   for (ni=0; ni<new_count; ni++) {
     if (!new_matched[ni]) CommPrint(1, "STATUS_NEW %s\n", new_names+ni*256);
   }
@@ -237,6 +290,8 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   Free(idx_offsets);
   Free(new_names);
   Free(new_hashes);
+  Free(new_contents);
+  Free(new_content_lens);
   Free(new_matched);
   Free(del_names);
   Free(del_hashes);

@@ -80,7 +80,13 @@ do").
   in the same offer correctly NOT matching. Same "first/best match
   wins" simplification as the exact-content case; no cross-file
   disambiguation within one offer (see that probe's own "Not yet
-  done").
+  done"). **Update (probe 85, `experiments/85-status-fuzzy-rename/`)**:
+  `hgit status` surfaces fuzzy renames too now, the same way it
+  already surfaced exact-content ones (probe 71) - a second pass
+  reusing the same `FossilSimilarityPercent` call and threshold.
+  Verified with a real rename-with-edit alongside an unrelated
+  genuinely-new and genuinely-deleted file in the same status check,
+  no false positives.
 - **Tracking renames via a separate, explicit `hgit rename` command**
   (the user declares the rename, rather than it being inferred):
   rejected as a much bigger UX/workflow question, and inference (when
