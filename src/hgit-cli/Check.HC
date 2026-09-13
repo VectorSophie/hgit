@@ -16,16 +16,81 @@
 // assumed: fsck's most common real failure mode is a commit/tree
 // referencing a hash with no corresponding object in the store, found
 // by walking the object graph and checking every reference resolves.
-// This is a real, direct analogue of that check, scoped to hgit's own
-// simpler model (no refs/reachability graph - just "does every object
-// currently in this repo's own store reference other objects that are
-// also in the store," a strict subset of what `git fsck` calls
-// "missing objects" and skips the "dangling"/"unreachable" categories,
-// which need a real reachability-from-HEAD walk this project hasn't
-// built).
+// This is a real, direct analogue of that check ("missing objects").
+// The "dangling"/"unreachable" categories `git fsck` also reports were
+// left out of that first slice, since they need a real reachability
+// walk from every ref this project hadn't built yet - see the ADR
+// addendum below for that.
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Commit.HC, Tree.HC, Index.HC.
+// Commit.HC, Tree.HC, Index.HC, Meta.HC.
+//
+// ADR addendum (experiments/72-check-dangling-objects/): the "does no
+// dangling/unreachable analysis" gap this file's own header comment
+// used to flag is now closed too. `CheckMarkReachable` walks the real
+// object graph - every declared path's HEAD (main plus every
+// MetaPathDeclare'd name, via Meta.HC's `MetaPathListInto`), each
+// commit's parents/tree/relation-target, each tree's own blob
+// children - marking a parallel `reachable[]` array (indexed the same
+// way `IndexBuild` filled `idx_hashes`/`idx_offsets`, via the new
+// `IndexLookupPos`). Anything left unmarked after every path's history
+// is walked is dangling: present in the store, unreachable from any
+// real ref this repo has. Recursion stops the instant it re-enters an
+// already-marked object, so shared history between multiple paths is
+// only ever walked once.
+
+// Marks `hash`'s object (and everything real it references) reachable
+// in `reachable[]`. A no-op if `hash` isn't in the index at all (a
+// broken reference - already reported by the referential-integrity
+// pass above) or if it's already marked (stops re-walking shared
+// history between paths, and rules out infinite recursion - a real
+// content-addressed object graph can't contain a cycle without a hash
+// collision).
+U0 CheckMarkReachable(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
+                      Bool *reachable, U8 *hash)
+{
+  I64 ipos;
+  if (!IndexLookupPos(idx_hashes, idx_count, hash, &ipos)) return;
+  if (reachable[ipos]) return;
+  reachable[ipos] = TRUE;
+
+  I64 off = 16 + idx_offsets[ipos]; // idx_offsets are relative to
+                                     // rbuf+16 - same convention every
+                                     // other real command follows
+                                     // (See.HC/Status.HC's own "Index
+                                     // offsets are relative to..." note).
+  U8 obj_type = rbuf[off+8];
+  U8 *content = rbuf + off + 9;
+
+  if (obj_type == OBJ_COMMIT) {
+    U8 *tree_hash = CommitTreeHash(content);
+    CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, tree_hash);
+    U8 pcount = CommitParentCount(content);
+    U8 pidx;
+    for (pidx=0; pidx<pcount; pidx++) {
+      U8 *parent_hash = CommitParentHash(content, pidx);
+      CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, parent_hash);
+    }
+    U8 rel_tag = CommitRelationTag(content);
+    if (rel_tag != REL_NONE) {
+      U8 *rel_target = CommitRelationTarget(content);
+      CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, rel_target);
+    }
+  } else if (obj_type == OBJ_TREE) {
+    U32 tcount = GetU32LE(content, 0);
+    I64 tpos = 4;
+    U32 te;
+    for (te=0; te<tcount; te++) {
+      U8 tname_len = content[tpos]; tpos += 1;
+      tpos += tname_len; // skip name
+      tpos += 1; // skip child_type
+      U8 *child_hash = content + tpos; tpos += 64;
+      tpos += 8; // skip entity_id (ADR 0004)
+      CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, child_hash);
+    }
+  }
+  // OBJ_BLOB: no outgoing references, nothing further to mark.
+}
 
 U0 HgitCheck(U8 *repo_path)
 {
@@ -131,6 +196,75 @@ U0 HgitCheck(U8 *repo_path)
     CommPrint(1, "CHECK_REFS_FAIL broken=%d\n", broken_refs);
   }
 
+  // Dangling/unreachable pass: mark every object reachable from every
+  // real path's HEAD, then report whatever's left unmarked.
+  Bool *reachable = MAlloc(idx_count + 1);
+  I64 zi;
+  for (zi=0; zi<idx_count; zi++) reachable[zi] = FALSE;
+
+  I64 path_count = MetaPathCount(repo_path);
+  U8 *path_names = MAlloc((path_count+1)*META_MAX_PATH_NAME);
+  I64 real_path_count;
+  MetaPathListInto(repo_path, path_names, &real_path_count);
+
+  I64 pi2; // NOT "pi" - reserved F64 constant, probe 41's own gotcha
+  for (pi2=0; pi2<real_path_count; pi2++) {
+    U8 *pname = path_names + pi2*META_MAX_PATH_NAME;
+    U8 phead_hash[64];
+    if (MetaReadHead(repo_path, pname, phead_hash)) {
+      CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, phead_hash);
+    }
+  }
+
+  // Coalesce duplicates: `Object.HC`'s own `ObjectPut` is a plain
+  // append with no content-hash dedup, so if the same content is
+  // offered more than once over a repo's life (found in practice on
+  // `P65Repo.hgs`, a long-lived repo this project has reoffered the
+  // same "v1"/"v2" content into across many probes), the exact same
+  // hash can occupy several different archive positions.
+  // `CheckMarkReachable`'s `IndexLookupPos` scan only ever marks
+  // whichever position it finds *first* as reachable - every OTHER
+  // position holding that identical hash is content-identical (same
+  // hash = same content) and therefore equally reachable, just never
+  // marked. One linear coalescing pass fixes this: no fixed point
+  // needed, since a duplicate's own outgoing references are
+  // byte-identical to the original's and already resolved by the
+  // original's own walk.
+  I64 ca, cb;
+  for (ca=0; ca<idx_count; ca++) {
+    if (!reachable[ca]) {
+      for (cb=0; cb<idx_count; cb++) {
+        Bool dup_of_reachable = reachable[cb];
+        I64 hb;
+        if (dup_of_reachable) {
+          for (hb=0; hb<64; hb++) {
+            if (idx_hashes[ca*64+hb] != idx_hashes[cb*64+hb]) dup_of_reachable = FALSE;
+          }
+        }
+        if (dup_of_reachable) { reachable[ca] = TRUE; break; }
+      }
+    }
+  }
+
+  I64 dangling = 0;
+  for (zi=0; zi<idx_count; zi++) {
+    if (!reachable[zi]) {
+      dangling++;
+      I64 doff = 16 + idx_offsets[zi];
+      U8 dtype = rbuf[doff+8];
+      U8 *kind = "blob";
+      if (dtype == OBJ_COMMIT) kind = "commit";
+      else if (dtype == OBJ_TREE) kind = "tree";
+      U8 dhex[129];
+      HashToHex(idx_hashes + zi*64, dhex);
+      CommPrint(1, "CHECK_DANGLING %s %s\n", kind, dhex);
+    }
+  }
+  if (dangling == 0) CommPrint(1, "CHECK_DANGLING_NONE\n");
+  else CommPrint(1, "CHECK_DANGLING_COUNT %d\n", dangling);
+
   Free(idx_hashes);
   Free(idx_offsets);
+  Free(reachable);
+  Free(path_names);
 }

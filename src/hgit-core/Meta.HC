@@ -293,6 +293,67 @@ U0 MetaPathList(U8 *repo_path)
   }
 }
 
+// Real-count variant of the same scan MetaPathList does, for a caller
+// (Check.HC's dangling-object walk, experiments/72-check-dangling-objects/)
+// that needs to size a buffer first instead of just printing. Counts
+// META_TAG_PATH_DECLARED records only - "main" is always implicit, not
+// counted here (same convention MetaPathList's own hardcoded first
+// line uses).
+I64 MetaPathCount(U8 *repo_path)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return 0;
+  I64 pos = 0, n = 0;
+  while (pos < size) {
+    U8 name_len = buf[pos]; pos += 1;
+    pos += name_len;
+    U8 rec_tag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    pos += payload_len;
+    if (rec_tag == META_TAG_PATH_DECLARED) n++;
+  }
+  return n;
+}
+
+// Fills `out_names` (caller-provided, one META_MAX_PATH_NAME-byte slot
+// per entry, sized from MetaPathCount(repo_path)+1) with every path
+// name - "main" first, then each declared path, same order
+// MetaPathList prints them in. Returns the real count via *out_count
+// (always MetaPathCount(repo_path)+1, but computed directly here
+// rather than trusting the caller's own earlier count stayed correct).
+U0 MetaPathListInto(U8 *repo_path, U8 *out_names, I64 *out_count)
+{
+  I64 n = 0;
+  out_names[0]='m'; out_names[1]='a'; out_names[2]='i'; out_names[3]='n';
+  out_names[4]=0;
+  n++;
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf != NULL) {
+    I64 pos = 0;
+    while (pos < size) {
+      U8 name_len = buf[pos]; pos += 1;
+      U8 *rec_name = buf + pos; pos += name_len;
+      U8 rec_tag = buf[pos]; pos += 1;
+      U8 payload_len = buf[pos]; pos += 1;
+      pos += payload_len;
+      if (rec_tag == META_TAG_PATH_DECLARED) {
+        U8 *slot = out_names + n*META_MAX_PATH_NAME;
+        I64 ni;
+        for (ni=0; ni<name_len; ni++) slot[ni] = rec_name[ni];
+        slot[name_len] = 0;
+        n++;
+      }
+    }
+  }
+  *out_count = n;
+}
+
 // Writes out_name = the current path's name (defaults to "main" if no
 // META_TAG_CURRENT record exists yet - same convention as Paths.HC's
 // CurrentPathGet).

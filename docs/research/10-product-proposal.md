@@ -39,6 +39,7 @@ verified, probe by probe.
 | `HistoryDoc.HC`'s `doc[8192]` (no bound against a repo's real commit count) and `Status.HC`'s `tagged[512]` (no bound against a matched file's real size, same class probe 56 fixed in `Offer.HC`) | **Resolved** — found by proactively auditing every remaining fixed-size buffer after probes 60-62/66 closed out `Offer.HC`/`Index.HC`-call-site/`Meta.HC`'s own instances. `historydoc` reproduced a real GPF against the actual ~300-commit repo probe 66 built; fixed with the same truncation-guard pattern `HgitReconcileOverview` already used. `status` fixed the same way probe 56 fixed `Offer.HC` (`STATUS_TOO_LARGE_TO_CHECK`, skip instead of overflow). Both verified against real reproductions plus a normal-case regression | `experiments/67-historydoc-buffer-guard/` |
 | ADR 0004's entity IDs don't survive a rename (a renamed file, same content/different name, got a fresh ID indistinguishable from delete+create) | **Resolved for the exact-content case** — `Tree.HC`'s `TreeFindEntryByHash` lets `Offer.HC` carry the old entity ID forward when a name lookup fails but a content-hash lookup on the parent tree succeeds; verified with a real rename (identical entity ID carried across two `hgit see` calls) and a real negative case (genuinely different content correctly gets a fresh ID despite an old entry existing under another name). Fuzzy/partial-similarity rename detection remains out of scope, pending a reliable diff algorithm | `docs/adr/0009-rename-detection.md`, `experiments/70-rename-detection/` |
 | A detected rename wasn't surfaced in any command's own output (ADR 0009's own deferred item) | **Resolved for `status`** — the same exact-content matching now also runs in `hgit status` (working directory vs. HEAD's tree instead of old-tree vs. new-tree), reporting `STATUS_RENAMED old -> new` in place of separate `STATUS_NEW`/`STATUS_DELETED` lines; verified against a real repo with an unrelated genuinely-new file and an unrelated genuinely-deleted file present too, confirming no false-positive pairing. `hgit history`/`reconciledoc` don't surface it yet | `docs/adr/0009-rename-detection.md`, `experiments/71-status-rename-surfacing/` |
+| `hgit check` skipped `git fsck`'s "dangling"/"unreachable" object categories (only "missing object" referential integrity was built) | **Resolved** — `CheckMarkReachable` walks the real object graph from every declared path's own HEAD (a repo's only real ref concept), reporting anything left unmarked as `CHECK_DANGLING <kind> <hash>`. Verified against a real, naturally-occurring case (`undo` leaves a commit's own unique objects genuinely unreachable, without deleting them — hgit's own non-destructive-history design). A real correctness bug was found and fixed along the way: duplicate-content objects (the store never dedupes) were false-positive-reported dangling until a coalescing pass was added; caught by testing against a long-lived real repo, not a fresh fixture | `experiments/72-check-dangling-objects/` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -275,9 +276,13 @@ ever captures the first space-separated word) — only `history` is
 implemented; anything else reports an explicit unknown-subcommand
 error.
 
-Still not yet done: `hgit operation restore <op>` (jumping to an
-arbitrary point in the log, not just one step via undo/redo - a bigger
-design question, deliberately not decided yet).
+~~Still not yet done: `hgit operation restore <op>`~~ **Done** —
+implemented soon after this paragraph was written (`Hgit.HC`'s
+`operation restore` sub-command, `DISPATCH_OK operation_restore <n>`),
+closing the brief's full operation-log vocabulary
+(`undo`/`redo`/`operation history`/`operation restore <op>`). Left
+here uncorrected as the honest original snapshot, per this doc's own
+convention of not editing stale notes to look pre-solved.
 
 **Named paths (`hgit path list/new/go/close`) done and verified**
 (`experiments/34-hgit-paths/`, PASS) — "main" is the always-existing
@@ -598,11 +603,17 @@ the way: `hgit offer *` against a directory holding ~60 accumulated
 files from prior probes caused a real kernel-level General Protection
 fault (not a graceful error), requiring a full VM reboot to recover -
 logged in `docs/research/failed-approaches.md`'s 2026-09-13 entry.
-Root cause not yet isolated (a candidate list of fixed-size buffers is
-flagged, not confirmed); worked around for this probe by naming one
-file explicitly instead of using `*`. **This is a real, open risk**:
-`hgit offer *` at scale is untested and now known-unsafe until
-root-caused - explicitly not glossed over as solved.
+Root cause not yet isolated at the time (a candidate list of
+fixed-size buffers was flagged, not confirmed); worked around for this
+probe by naming one file explicitly instead of using `*`. **Note: this
+was flagged here as a real, open risk when first found - it no longer
+is.** `experiments/56-offer-buffer-guard/`, several probes later,
+root-caused and fixed it directly (`tree_content[2048]`/
+`blob_tagged[512]` stack buffers with no bounds check) - see that
+probe's own entry further down this file. Left here, uncorrected in
+place, as the honest original record of what was known at the time
+this paragraph was written - not edited after the fact to look like it
+was already solved.
 
 **`$TR$`'s real syntax is now resolved** (`experiments/57-tree-widget/`,
 PASS), closing the item probe 54 left open. Found via real shipped
@@ -880,6 +891,36 @@ one, `Del(path, FALSE, FALSE, FALSE)`, already used correctly (if
 undocumented at the standing-facts level) in
 `experiments/21-status-deleted/` from much earlier in this project -
 now promoted into `docs/research/01-templeos-holyc.md`.
+
+**`hgit check` now detects dangling/unreachable objects too**:
+`experiments/72-check-dangling-objects/` (PASS) - closes the gap
+`Check.HC`'s own header comment flagged since probe 69. A new
+`CheckMarkReachable` walks the real object graph (commit ->
+tree/parents/relation-target, tree -> blob children) from every
+declared path's own HEAD (`Meta.HC` gains `MetaPathCount`/
+`MetaPathListInto` to enumerate them; `Index.HC` gains
+`IndexLookupPos` to mark a parallel per-object flag array), reporting
+anything left unmarked as `CHECK_DANGLING <kind> <hash>`. Verified
+with a real, naturally-occurring case: offering a file twice then
+`undo`-ing back one commit leaves that commit's own three unique
+objects genuinely unreachable (hgit's own non-destructive-history
+design keeps them stored, just no longer HEAD-reachable) -
+`CHECK_DANGLING_COUNT 3`, exactly the undone commit's own objects.
+**A real correctness bug was found and fixed along the way**: testing
+against `P65Repo.hgs` (a long-lived repo this project has reoffered
+identical content into across many probes) found 16 of 36 objects
+falsely reported dangling - `Object.HC`'s own `ObjectPut` never
+deduplicates identical content, so the same hash can occupy multiple
+archive positions, and the first version of the reachability walk only
+ever marked whichever position it found first. Fixed with one linear
+coalescing pass (any position sharing a hash with an already-reachable
+position is content-identical, hence reachable too); re-verified
+`P65Repo.hgs` then correctly reports `CHECK_DANGLING_NONE`. A second,
+separate bug was found in the test driver itself, not the feature
+(deleting only `<repo>.hgs` and not `Meta.HC`'s own `<repo>.hgs.m`
+sidecar before re-`init`-ing left a stale HEAD pointing at a hash the
+fresh object store no longer had) - both logged in
+`docs/research/failed-approaches.md`.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

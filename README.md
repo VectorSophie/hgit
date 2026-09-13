@@ -286,6 +286,18 @@ false-positive pairing). Also confirmed the real TempleOS file-delete
 call is `Del(path, FALSE, FALSE, FALSE)` - not any `File*`/`Disk*`-
 prefixed name, three of which were tried and failed first.
 
+**`hgit check` now detects dangling/unreachable objects too**
+(`experiments/72-check-dangling-objects/`), closing the gap `Check.HC`
+flagged since probe 69's referential-integrity pass. A real
+reachability walk from every declared path's own HEAD reports anything
+left unmarked as `CHECK_DANGLING <kind> <hash>` - verified against a
+real, naturally-occurring case: `undo` leaves a commit's own three
+unique objects genuinely unreachable without deleting them (hgit's own
+non-destructive-history design). A real correctness bug was found and
+fixed testing this against a long-lived repo: duplicate-content
+objects (the store never dedupes identical content across offers) were
+false-positive-reported dangling until a coalescing pass was added.
+
 **Real releases are cut regularly**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
 (M4's reconciliation view underway),
@@ -296,9 +308,11 @@ prefixed name, three of which were tried and failed first.
 [`v0.7.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.7.0)
 (two more buffer fixes, real VCS research, a Fossil delta prototype),
 and [`v0.8.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.8.0)
-(referential integrity checking, host-side lint tooling), and
+(referential integrity checking, host-side lint tooling),
 [`v0.9.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.9.0)
-(exact-content rename detection). Each attaches
+(exact-content rename detection), and
+[`v0.10.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.10.0)
+(status surfaces detected renames). Each attaches
 `packaging/HgitAll.HC` — verified downloaded and byte-identical to the
 local build before being announced done. Matches TempleOS's own
 convention (no installer/package manager; a program is `#include`d as

@@ -1056,3 +1056,53 @@ been made and corrected once before, just never promoted into
 **the real TempleOS file-delete call is `Del(path, FALSE, FALSE,
 FALSE)`, not any `File*`/`Disk*`-prefixed name** - check prior probes'
 own test drivers before guessing a kernel API name from convention.
+
+## 2026-09-13 — Two real bugs found writing `experiments/72-check-dangling-objects/`'s test, neither in the shipped feature's own core logic
+
+**Context:** Building `hgit check`'s new dangling/unreachable-object
+detection (`CheckMarkReachable`, a real reachability walk from every
+declared path's HEAD).
+
+**Bug 1 - a real correctness bug in the new check itself, found by
+testing against a long-lived, previously-used repo, not a fresh
+one:** `Object.HC`'s own `ObjectPut` is a plain append with no
+content-hash dedup - if the exact same content gets offered more than
+once over a repo's life, the identical hash can occupy several
+different archive positions. The first version of
+`CheckMarkReachable`'s reachability walk (via `IndexLookupPos`, itself
+a first-match-wins linear scan, matching every other lookup this
+project has built) only ever marked whichever position it found
+*first* as reachable - every OTHER position holding that same hash
+was left unmarked and got reported as a false-positive
+`CHECK_DANGLING`, even though the content was genuinely reachable
+under a different stored copy. Caught by running the real check
+against `P65Repo.hgs` (this project's own long-lived regression repo,
+carrying real accumulated `undo`/`redo` history across many probes
+with repeated "v1"/"v2" content) - reported 16 dangling objects out of
+36, an implausibly high fraction that prompted a closer look rather
+than being accepted at face value.
+
+**Worked instead:** one linear coalescing pass after the main walk -
+any position sharing a hash with an already-reachable position is
+content-identical (same hash = same content) and therefore equally
+reachable, marked in a single pass (no fixed point needed, since a
+duplicate's own outgoing references are byte-identical to the
+original's and already resolved by the original's own walk). Re-ran
+against the same `P65Repo.hgs`: dropped to a real, sane
+`CHECK_DANGLING_NONE`.
+
+**Bug 2 - not a bug in `hgit check` at all, but in the test driver
+itself:** the test's own cleanup, `Del("...P72Repo.hgs", ...)` before
+each run, deleted only the object-store file - not
+`Meta.HC`'s own sidecar (`<repo_path>.m`, holding HEAD/paths/oplog).
+A fresh `init` over the leftover `.m` file produces a repo whose
+object store is genuinely empty but whose stale `HEAD` still points at
+a hash from the previous run - a real `CHECK_BROKEN_REF
+commit_parent_missing` from the very first commit, immediately.
+**Worked instead:** delete both files (`<repo>.hgs` and
+`<repo>.hgs.m`) before re-`init`-ing the same repo path in a test.
+Standing note: `hgit init` does not itself detect or refuse this
+combination (a deleted `.hgs` but a surviving `.m`) - a real, minor gap
+this project hasn't decided whether to close (most real usage
+wouldn't reuse a path this way), left here as an honest observation,
+not chased further.

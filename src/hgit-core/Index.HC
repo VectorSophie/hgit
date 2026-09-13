@@ -59,3 +59,20 @@ Bool IndexLookup(U8 *index_hashes, I64 *index_offsets, I64 count,
   }
   return FALSE;
 }
+
+// Same scan as IndexLookup, but returns the array position (0..count-1)
+// instead of the byte offset - for a caller (Check.HC's dangling-object
+// walk, experiments/72-check-dangling-objects/) that needs to mark a
+// per-object "visited" flag in a parallel array indexed the same way
+// IndexBuild filled index_hashes/index_offsets, not the raw byte offset
+// IndexLookup returns.
+Bool IndexLookupPos(U8 *index_hashes, I64 count, U8 *target_hash, I64 *pos_out)
+{
+  I64 i, j;
+  for (i=0; i<count; i++) {
+    Bool same = TRUE;
+    for (j=0; j<64; j++) if (index_hashes[i*64+j] != target_hash[j]) same = FALSE;
+    if (same) { *pos_out = i; return TRUE; }
+  }
+  return FALSE;
+}
