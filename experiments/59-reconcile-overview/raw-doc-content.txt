@@ -1,0 +1,4 @@
+DOC_SIZE=338
+DOC_CONTENT_BEGIN
+$FG,5$hgit reconciliation overview$FG$$CR$$CR$$FG,2$fa3051bafd0f$FG$ correcting_offer_two$CR$$CR$$TR,"relation: CORRECTS"$$CR$$ID,+2$target: $LK,"1a13d607a0f94181aa6e7f4b020d7271c92fb7a9debea8d8a50dfd939edd6d2f35d059b70eb1a3370c8295a1f70a1988251e4064984bba516b614b187878a4b5"$1a13d607a0f9$LK$$CR$target message: plain_offer_two$CR$$ID,-2$
+DOC_CONTENT_END

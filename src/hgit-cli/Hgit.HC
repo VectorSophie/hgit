@@ -274,6 +274,12 @@ U0 Hgit(U8 *cmdline)
       HgitReconcileDoc(rdoc_repo, rdoc_hash, rdoc_dest);
       CommPrint(1, "DISPATCH_OK reconciledoc\n");
     }
+  } else if (StrCmp(cmd, "reconcileoverview") == 0) {
+    U8 rov_repo[256], rov_dest[256];
+    I64 rov_p = ExtractToken(rest, 0, rov_repo, 256);
+    ExtractToken(rest, rov_p, rov_dest, 256);
+    HgitReconcileOverview(rov_repo, rov_dest);
+    CommPrint(1, "DISPATCH_OK reconcileoverview\n");
   } else if (StrCmp(cmd, "export") == 0) {
     U8 export_src[256], export_dest[256];
     I64 export_p = ExtractToken(rest, 0, export_src, 256);

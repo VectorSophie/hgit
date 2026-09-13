@@ -162,18 +162,26 @@ gotcha while verifying it — redefining a function doesn't retroactively
 fix up an already-compiled caller's call site in this long-running
 daemon; the caller (here, `Hgit.HC`) must be re-pushed too, even with
 no source changes, or the change silently doesn't take effect despite
-a clean compile. Getting here also surfaced a real crash — `hgit offer *` against a directory holding
+a clean compile. **A real multi-commit view now exists too**:
+`hgit reconcileoverview <repo> <dest.DD>`
+(`experiments/59-reconcile-overview/`) walks a repo's whole history and
+shows a real tree node for every commit that carries a relation,
+skipping ordinary offers entirely — verified with a real four-commit
+repo where exactly the one relevant commit appears in the output.
+Getting here also surfaced a real crash — `hgit offer *` against a directory holding
 dozens of pre-existing files caused a genuine kernel-level GPF (not a
 graceful error) — since **root-caused and fixed**
 (`experiments/56-offer-buffer-guard/`): two unbounded stack buffers in
 `Offer.HC` now cleanly skip a file that doesn't fit (`OFFER_SKIP ...`)
 instead of corrupting memory; see `docs/research/failed-approaches.md`.
 
-**First real release is cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
-attaches `packaging/HgitAll.HC` — verified downloaded and byte-identical
-to the local build before the release was announced done. Matches
-TempleOS's own convention (no installer/package manager; a program is
-`#include`d as one source file) — see `docs/research/09-packaging-and-releases.md`.
+**Two real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
+(M0–M3 complete) and [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
+(M4's reconciliation view underway). Each attaches `packaging/HgitAll.HC`
+— verified downloaded and byte-identical to the local build before
+being announced done. Matches TempleOS's own convention (no
+installer/package manager; a program is `#include`d as one source
+file) — see `docs/research/09-packaging-and-releases.md`.
 
 ## Next steps
 

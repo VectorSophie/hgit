@@ -622,6 +622,26 @@ version until it too was re-pushed (no source change needed in it).
 Now standing practice for this project's long-running daemon sessions,
 documented in `docs/research/01-templeos-holyc.md`.
 
+**A real multi-commit reconciliation view now exists**:
+`hgit reconcileoverview <repo> <dest.DD>`
+(`experiments/59-reconcile-overview/`, PASS) walks a repo's entire
+history (same parent-chain walk `HistoryDoc.HC` does) and emits a real
+`$TR$` tree node for every commit that carries a relation, silently
+skipping ordinary offers - closing the gap probe 58 flagged
+("multiple relations in one document... isn't built"). Verified with a
+real four-commit repo (two plain offers, one `correct`, one more plain
+offer): the document correctly contains exactly the one
+relation-carrying commit, the three ordinary ones entirely absent (not
+just hidden), confirmed via raw bytes and a rendered `[+]` node in
+`Ed()`. Also added a bounds guard on the same fixed-buffer risk class
+probe 56 found in `Offer.HC` (a heuristic stop before `doc[8192]`
+overflows, printing a clear truncation notice) - reasoned through and
+wired in, though a repo large enough to actually trigger it wasn't
+constructed to exercise that path directly. Hit the same `pi`
+reserved-identifier collision documented since probe 41 a second time
+while writing this, independently - a reminder that documenting a
+mistake doesn't reliably prevent repeating it.
+
 **Root-caused and fixed**: `experiments/56-offer-buffer-guard/` (PASS)
 confirms it - `Offer.HC`'s `tree_content[2048]`/`blob_tagged[512]`
 stack buffers had no bounds check, overflowing at ~24 small matched
