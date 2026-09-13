@@ -39,8 +39,10 @@ cat \
   src/hgit-cli/Status.HC \
   src/hgit-cli/History.HC \
   src/hgit-cli/Hex.HC \
+  src/hgit-cli/HistoryDoc.HC \
   src/hgit-cli/See.HC \
   src/hgit-cli/OpLog.HC \
+  src/hgit-cli/Portable.HC \
   src/hgit-cli/Offer.HC \
   src/hgit-cli/Hgit.HC \
   > "$OUT"

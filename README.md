@@ -56,10 +56,12 @@ packages into one file, loadable with a single `#include`.
   `Head.HC` (now unused by real commands — retired in favor of
   `Meta.HC`, not yet deleted), `Paths.HC` (named paths, backed by
   `Meta.HC`), `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
-  (hex string ↔ hash bytes), `OpLog.HC` (operation log + undo/redo
-  stack, wired into `Offer.HC`, now backed by `Meta.HC`), and
-  `Hgit.HC` — the real entry point (`Hgit(cmdline)`) composing all of
-  the above behind one dispatcher.
+  (hex string ↔ hash bytes), `HistoryDoc.HC` (`hgit historydoc` — a
+  real, colored, rendered DolDoc history view), `OpLog.HC` (operation
+  log + undo/redo stack, wired into `Offer.HC`, now backed by
+  `Meta.HC`), `Portable.HC` (`hgit export`/`import` — whole-repo copy,
+  both files), and `Hgit.HC` — the real entry point (`Hgit(cmdline)`)
+  composing all of the above behind one dispatcher.
   Every file in both directories verified running on real TempleOS via
   `experiments/01-temple-repl/`'s injection channel — see each probe's
   README for exact evidence, and each source file's own comments for
@@ -97,14 +99,41 @@ though the underlying architectural constraint isn't resolved. See
 `hgit operation restore <op>` (jump HEAD directly to any logged
 operation by index) is also done, closing out the brief's full
 operation-log vocabulary (`undo`/`redo`/`operation history`/
-`operation restore <op>`). `.HGS` object-layer portability is confirmed
-(a raw file copy, no sidecars, still resolves its full commit history
-via a known hash) — whole-repo portability (bundling HEAD/oplog/paths
-too) is still future work.
+`operation restore <op>`). ADR 0003 (the real 33-char path-length
+ceiling) is fully implemented — every real command now runs on
+`src/hgit-core/Meta.HC`'s combined metadata file — and `hgit export`/
+`import` give genuine whole-repo portability (own paths, own history,
+own working `undo` on the copy), a direct payoff of that design.
+
+**A real, rendered DolDoc history view now exists**: `hgit historydoc
+<repo> <dest.DD>` (`src/hgit-cli/HistoryDoc.HC`) builds a colored
+`$..$`-formatted document from real commit history and writes it with
+a plain `FileWrite` — verified both by its raw file content and its
+actual rendered appearance (screenshotted via TempleOS's own `Ed()`).
+This closes out M2's tracked work list.
+
+**M3 has started and its first slice is implemented**: every tree
+entry now carries a stable 64-bit entity ID (`docs/adr/0004-stable-entity-identity.md`),
+grounded in real evidence that TempleOS's `RandU32` is a genuine,
+usable random source. `Offer.HC` carries a file's ID forward across
+offers as long as its name persists; verified the same name keeps its
+ID through content changes and across multiple generations, while a
+new name gets a distinct one (`experiments/49-entity-id/`, PASS). This
+is a real, breaking change to the tree object format — no rename
+detection or relation vocabulary yet, both explicitly out of scope for
+this first slice.
+
+The typed relation vocabulary itself is also implemented: `Commit.HC`
+can now carry an optional CONTINUES/CORRECTS/REVERTS/RECONCILES tag
+naming an earlier commit, verified both for the common no-relation
+case and a real `REL_CORRECTS` round-trip
+(`experiments/50-relation-vocabulary/`). No CLI command produces a
+relation yet — that, and scoping a relation to a specific tracked
+entity rather than a whole commit, are the next concrete M3 steps.
 
 ## Next steps
 
 See `docs/research/10-product-proposal.md` for the live risk register
-and milestone checklist. Remaining M2 work: a durable architectural
-fix for the path-length ceiling itself, a real `hgit export`/`import`
-for whole-repo portability, and a real DolDoc history view.
+and milestone checklist. A real command surface for relations (e.g.
+`hgit correct`/`hgit revert`/`hgit reconcile`) is the next concrete
+step.

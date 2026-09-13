@@ -35,17 +35,35 @@ views rendered as DolDoc are not a stretch, they're the existing norm.
   DolDoc history/reconcile view should degrade: same underlying content,
   viewable as plain text for scripting/diffing, rendered for interactive use.
 
+## Resolved (probe 46, `experiments/46-doldoc-format/`)
+
+- ~~Format is not yet read byte-for-byte...~~ **Resolved**: read a real
+  shipped help document's raw bytes directly (`FileRead`, no special
+  API) — `$..$` commands are confirmed **literal plain text** in the
+  file, e.g. `$WW,1$$FG,5$$TX+CX,"Command Line Overview"$$FG$`, exactly
+  the prose-described syntax, not a binary/escaped form.
+- ~~Whether DolDoc documents can be generated/written from HolyC code...~~
+  **Resolved**: wrote a small `.DD` file from HolyC using plain
+  `FileWrite` (color commands `$FG,N$`, hard breaks `$CR$`) and opened
+  it with `Ed()` — it rendered correctly (distinct colors, real line
+  breaks, confirmed via screenshot), and a follow-up `FileRead`
+  confirmed the on-disk bytes are exactly the literal text written, no
+  transformation on write. **No new writing or viewing mechanism is
+  needed** — `hgit history`-as-DolDoc is just building a `$..$` string
+  with the same `FileWrite` every other hgit command already uses, and
+  TempleOS's own `Ed()` (or another doc-aware viewer) renders it live.
+
 ## Unresolved risk
 
-- Format is not yet read byte-for-byte — only prose description. Before
-  any `hgit`-generated DolDoc (e.g. a reconciliation doc) is built, need
-  the actual widget help doc (`Widget.DD.HTML`, not yet fetched) and,
-  ideally, a `.DD` file opened in a hex viewer to confirm whether `$..$`
-  commands are stored as literal text in the file or as a binary escape
-  form the text-mode toggle decodes.
-- Whether DolDoc documents can be generated/written *from HolyC code*
-  (not just typed interactively) hasn't been confirmed — needed for
-  "executable DolDoc reconciliation" to be buildable at all.
+- Only `$FG$`/`$CR$` were tested from real HolyC-generated output.
+  Doc 02's richer widget vocabulary (`$LK$` links, `$TR$` trees, `$LS$`
+  lists — the shapes a real history/reconciliation view actually
+  wants) is still untested from generated output, only read from an
+  existing help file.
+- Whether `Ed()` specifically (vs. some read-only doc-display API) is
+  the right viewer to launch from a real `hgit history` command isn't
+  decided — `Ed()` puts the user in edit mode, which may not be the
+  right UX for a read-oriented history view.
 
 ## Architectural implications so far
 

@@ -1,0 +1,36 @@
+D_OK
+D_DONE
+D_DONE
+D_EXIT
+D2_OK
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P49Repo.hgs
+DISPATCH_OK offer
+found1=1 id1=6918486067039080059
+DISPATCH_OK offer
+found2=1 id2=6918486067039080059
+id_same_across_offers=1 blob_hash_differs=1
+DISPATCH_OK offer
+foundB=1 idB=-3748984827403573720
+foundA3=1 fileA_id_still_same=1
+idB_is_different=1
+PASS entity_id
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P50Repo.hgs
+DISPATCH_OK offer
+mlen1=14 msg1=ordinary offer
+rel_tag1=0 (expect 0, REL_NONE)
+mlen2=43 msg2_matches=1
+rel_tag2=2 (expect 2, REL_CORRECTS) target_matches=1
+ts2=999888 (expect 999888) pcount2=1 (expect 1)
+PASS relation_vocabulary
+COMPILE_OK
+D_DONE

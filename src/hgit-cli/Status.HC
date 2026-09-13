@@ -27,6 +27,10 @@
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
 // Tree.HC, Commit.HC, Index.HC, Head.HC, WorkDir.HC (the whole
 // hgit-core object layer plus the CLI pieces built so far).
+//
+// Both tree-entry walks (TreeFindEntry's new signature, and the manual
+// pass-2 walk below) updated for ADR 0004's 8-byte entity ID field
+// (experiments/49-entity-id/).
 
 U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 {
@@ -90,9 +94,10 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 
     U8 tree_type;
     U8 tree_entry_hash[64];
+    U64 tree_entity_id;
     Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
                                   tmpde->full_name+name_start, name_len,
-                                  &tree_type, tree_entry_hash);
+                                  &tree_type, tree_entry_hash, &tree_entity_id);
     if (!in_tree) {
       CommPrint(1, "STATUS_NEW ");
     } else {
@@ -119,6 +124,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     U8 *tname = tree_content + tpos; tpos += tname_len;
     tpos += 1; // skip type
     tpos += 64; // skip hash
+    tpos += 8; // skip entity_id (ADR 0004)
 
     U8 check_path[256];
     I64 k = 0;

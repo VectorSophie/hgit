@@ -216,6 +216,24 @@ U0 Hgit(U8 *cmdline)
     } else {
       CommPrint(1, "DISPATCH_ERR unknown_path_subcommand %s\n", path_sub);
     }
+  } else if (StrCmp(cmd, "historydoc") == 0) {
+    U8 hdoc_repo[256], hdoc_dest[256];
+    I64 hdoc_p = ExtractToken(rest, 0, hdoc_repo, 256);
+    ExtractToken(rest, hdoc_p, hdoc_dest, 256);
+    HgitHistoryDoc(hdoc_repo, hdoc_dest);
+    CommPrint(1, "DISPATCH_OK historydoc\n");
+  } else if (StrCmp(cmd, "export") == 0) {
+    U8 export_src[256], export_dest[256];
+    I64 export_p = ExtractToken(rest, 0, export_src, 256);
+    ExtractToken(rest, export_p, export_dest, 256);
+    HgitCopyRepo(export_src, export_dest);
+    CommPrint(1, "DISPATCH_OK export\n");
+  } else if (StrCmp(cmd, "import") == 0) {
+    U8 import_src[256], import_dest[256];
+    I64 import_p = ExtractToken(rest, 0, import_src, 256);
+    ExtractToken(rest, import_p, import_dest, 256);
+    HgitCopyRepo(import_src, import_dest);
+    CommPrint(1, "DISPATCH_OK import\n");
   } else {
     CommPrint(1, "DISPATCH_ERR unknown_command %s\n", cmd);
   }

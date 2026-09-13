@@ -415,8 +415,88 @@ real command hgit has now runs on `Meta.HC`; the old sidecar-file
 scheme is fully retired from real code paths (`Head.HC` remains
 unused-but-present).
 
-Remaining M2 work: a real `hgit export`/`import` for whole-repo (not
-just object-layer) portability, and a real DolDoc history view.
+**`hgit export`/`import` done and verified** (`experiments/45-hgit-export-import/`,
+PASS) — a direct payoff of ADR 0003's completion: since a repo's entire
+tool state now lives in exactly two files (the object file + `Meta.HC`'s
+`.m` file), a full working copy is just copying both. Verified with a
+repo holding two paths and real independent history on each: the copy's
+HEADs match exactly, its own `path list`/`history` work correctly
+through the real dispatcher, and — going further than probe 39's
+read-only object-layer proof — `undo` on the **copy** genuinely
+changes its HEAD, a real, independently mutable repository, with the
+original confirmed completely unaffected.
+
+**DolDoc research resolved** (`experiments/46-doldoc-format/`, PASS) —
+the two real unknowns flagged in `docs/research/02-doldoc-interface.md`
+before any DolDoc-generating code could be built are now confirmed with
+direct evidence: `$..$` commands are literal plain text in a real
+shipped `.DD` file (read directly, not just prose), and a HolyC-written
+`.DD` file (color + line-break commands, plain `FileWrite`) renders
+correctly via `Ed()` — screenshotted, and its on-disk bytes confirmed
+unchanged from what was written. No new writing or viewing mechanism
+is needed for a real DolDoc history view; building the actual
+`hgit history`-as-DolDoc output is the next concrete step, not done
+yet.
+
+**Real DolDoc history view done and verified**
+(`experiments/47-hgit-historydoc/`, PASS) — `hgit historydoc <repo>
+<dest.DD>` walks the same commit chain `hgit history` does, builds a
+colored `$..$`-formatted document (green hash prefix, colored
+timestamp, plain message, most-recent-first), and writes it with a
+plain `FileWrite`. Verified two ways: the raw file content is correct
+(right order, real distinct hashes, timestamps that increase in true
+chronological order even though displayed newest-first), and the
+**rendered** appearance (screenshotted via `Ed()`) shows the hash and
+timestamp genuinely colored, not just a text file containing dollar
+signs. This closes out M2's tracked work list.
+
+## M3 — stable entity identity + typed relations (started)
+
+With M2's tracked work complete, M3 begins: stable entity identity and
+the typed relation vocabulary (CONTINUES/CORRECTS/REVERTS/RECONCILES),
+per the brief's own milestone ordering (ADR 0001 explicitly deferred
+this, not designed there).
+
+**First step done**: confirmed TempleOS has a real, usable
+random-number source (`RandU32`) to build a stable ID from — verified
+both from primary source (`cia-foundation/TempleOS`'s own real usage,
+e.g. a filesystem serial number) and empirically on real TempleOS
+(`experiments/48-rand-for-identity/`, PASS): three successive reads
+returned genuinely distinct values.
+
+**Implemented and verified**: `docs/adr/0004-stable-entity-identity.md`
+— `Tree.HC`'s entry format now carries a per-entry 8-byte entity ID
+(two `RandU32` reads combined); `Offer.HC` looks up the parent
+commit's own tree before building the new one and copies each
+still-present name's ID forward, generating a fresh one only for a
+genuinely new name (`experiments/49-entity-id/`, PASS — verified the
+same name keeps its ID across content changes, a new name gets a
+distinct one, and an ID survives two full generations). Explicitly
+scoped as a minimal first slice: no rename detection (a renamed file
+gets a new ID, indistinguishable from delete+create), no relation
+vocabulary yet (CONTINUES/CORRECTS/REVERTS/RECONCILES need IDs to
+exist before they can refer to them — that's the next concrete M3
+step). This is a real, breaking change to the tree object format
+(`FORMAT.md` updated); older repos built under the previous 65-byte
+entry shape are not migrated, matching this project's "no released
+users yet" stance.
+
+**Typed relation vocabulary implemented and verified**:
+`docs/adr/0005-typed-relation-vocabulary.md` — `Commit.HC`'s content
+gains an optional trailing `relation_tag`/`relation_target_hash`
+(CONTINUES/CORRECTS/REVERTS/RECONCILES, naming an earlier commit not
+necessarily the direct parent), costing one byte for the common
+`REL_NONE` case. Verified both a real `hgit offer`'s ordinary commit
+decodes correctly (regression) and a direct `CommitEncode`/accessor
+round-trip with a real `REL_CORRECTS` relation — message, target hash,
+timestamp, and parent count all correct together
+(`experiments/50-relation-vocabulary/`, PASS). Storage layer only, per
+this ADR's own scope: no CLI command produces a relation yet, and
+relations aren't scoped to a specific entity ID within a commit.
+
+Remaining M3 work: a real command surface for relations (e.g.
+`hgit correct`/`hgit revert`/`hgit reconcile`), and entity-scoping
+relations to a specific tracked file rather than a whole commit.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

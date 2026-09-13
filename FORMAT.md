@@ -87,11 +87,27 @@ repeated entry_count times:
   name_len bytes of name
   U8 child_type   (OBJ_BLOB or OBJ_TREE)
   64 bytes child_hash
+  U64 entity_id (LE)
 ```
 
 A tree entry's `child_hash` can point at another tree (nesting/recursion
 is supported by the format), but this has not been tested yet — only a
 flat, single-level, two-entry tree has been verified so far.
+
+`entity_id` (added per `docs/adr/0004-stable-entity-identity.md`,
+`experiments/49-entity-id/`) is a stable identifier for "this tracked
+name," independent of its content hash — generated once (two `RandU32`
+reads combined into a `U64`) the first time a name appears in any tree
+this repo has built, and copied forward unchanged into every later
+tree that still has an entry for that same name (`Offer.HC` does the
+carrying-forward, by looking up the parent commit's own tree before
+building the new one). Deliberately minimal: same name = same
+identity; an actual rename is not detected and gets a fresh ID - see
+ADR 0004's own scope notes. **Breaking format change**: repos built
+before this change used a 65-byte entry shape (no `entity_id` field);
+this is not migrated, matching this project's stated "no released
+users yet" stance on breaking changes (same as ADR 0003's own
+migration non-goal).
 
 ## Commit object content
 
@@ -105,6 +121,9 @@ repeated parent_count times: 64 bytes parent_hash
 U64       timestamp (LE)
 U32       message_len (LE)
 message_len bytes of message
+U8        relation_tag  (0=none/plain continuation, 1=CONTINUES explicit,
+                         2=CORRECTS, 3=REVERTS, 4=RECONCILES)
+if relation_tag != 0: 64 bytes relation_target_hash
 ```
 
 Verified with a real two-commit chain: a root commit (`parent_count=0`)
@@ -112,9 +131,23 @@ and a child commit (`parent_count=1`) whose parent hash is the root
 commit's own computed hash — the actual point of the design (naming an
 ancestor by content address), not just "a commit object exists."
 
-No author/identity field yet — deliberately deferred to M3 per the
-product thesis's "stable entity ID"/"human mark" concepts; not invented
-ahead of that milestone.
+`relation_tag`/`relation_target_hash` (added per
+`docs/adr/0005-typed-relation-vocabulary.md`,
+`experiments/50-relation-vocabulary/`) let a commit name an explicit
+typed relationship to an earlier commit (not necessarily its direct
+parent), beyond plain "comes after." `relation_tag=0` is the default
+for every ordinary offer and costs exactly one byte; only commits that
+record a richer relation pay the extra 64 bytes. No CLI command
+produces a relation yet (storage layer only), and relations are not
+yet scoped to a specific entity (ADR 0004's per-tree-entry ID) within
+a commit — both real follow-up work, not done yet. **Breaking format
+change**: repos built before this are not migrated (same stance ADR
+0003/0004 already took).
+
+No author/identity field yet — deliberately deferred further into M3
+per the product thesis's "stable entity ID"/"human mark" concepts;
+ADR 0004 covers the entity-ID half, this covers the relation-vocabulary
+half; author/identity itself is still not invented.
 
 ## What this format deliberately does NOT have yet
 

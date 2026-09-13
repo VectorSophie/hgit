@@ -1,0 +1,217 @@
+D_OK
+D_DONE
+D_DONE
+D_EXIT
+D2_OK
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+no loop here
+COMPILE_OK
+D_DONE
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+COMPILE_ERR_BEGIN
+&LexExcept PrsType PrsVarLst PrsStmt ERROR: Expecting '*' at "INT:400921FB54442D18"  (0x400921FB54442D18(F64))
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+renamed ok
+COMPILE_OK
+D_DONE
+name_buf ok, qi instead of pi
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+main_exists_before=1 feature_exists_before=0 cur0=main
+PATH main
+feature_exists_after=1
+PATH main
+PATH feature
+cur1=feature cur1_is_feature=1
+cur2=main cur2_is_main=1
+never_declared_exists=0 (expect 0)
+PASS meta_paths_current
+COMPILE_OK
+D_DONE
+COMPILE_ERR_BEGIN
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'MetaFind'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'payload_len' in 'MetaFind'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'rtag' in 'MetaFind'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'MetaSpliceOut'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'name_len' in 'MetaPathList'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'rec_tag' in 'MetaPathList'
+OptPass3 COCCompile PrsFun PrsGlblVarLst WARNING: Using 64-bit reg var.
+  'payload_len' in 'MetaPathList'
+&LexExcept MemberAdd PrsVarLst PrsStmt ERROR: Duplicate member at ";"    for (ci=0; ci<match_start; ci++) out_buf[new_len++] = buf[ci];
+
+COMPILE_ERR_END
+COMPILE_FAIL
+D_DONE
+COMPILE_OK
+D_DONE
+pop1_ok=1 pop1_ts=3000 pop1_prev_ok=1 pop1_new_ok=1
+fpop_ok=1 fpop_ts=5000 fpop_new_ok=1
+fpop2_ok=0 (expect 0)
+pop2_ok=1 pop2_ts=2000 pop2_prev_ok=1 pop2_new_ok=1
+pop3_ok=1 pop3_prev_ok=1
+pop4_ok=0 (expect 0, main now empty too)
+PASS meta_oplog
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P43Repo.hgs
+DISPATCH_OK offer
+main_head1_meta_ok=1
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+main_unchanged_after_feature_offer=1
+feature_head_ok=1 feature_differs=1
+commit ts=1983675 msg=feature commit 1
+commit ts=1982282 msg=main commit 1
+HISTORY_END shown=2
+DISPATCH_OK path_go main
+commit ts=1982282 msg=main commit 1
+HISTORY_END shown=1
+STATUS_MODIFIED P43FileA.txt
+STATUS_END
+DISPATCH_OK path_go feature
+STATUS_UNCHANGED P43FileA.txt
+STATUS_END
+long_name_now_ok=1 (was rejected under the old scheme)
+PASS paths_on_meta
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P44Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+DISPATCH_OK undo
+feature_reverted_by_own_undo=0
+main_untouched_by_feature_undo=1
+DISPATCH_OK redo
+feature_restored_by_own_redo=1
+DISPATCH_OK path_go main
+DISPATCH_OK undo
+feature_untouched_by_main_undo=1
+DISPATCH_OK path_go feature
+OP 0 ts=2881463 prev=d447fb779c9098450372a414bff42efdbf623c617e974f22d240e992618efd0a84717aaf48c1f9db911c38ac5d3e222f32d02db1166875e349b7a8499ec17cac new=f805d1cc064ca5155585f524c783e30e6eeea038529855eecc6c475eb45a5c7df814d3c402830fb2958a55388ef484919e09b32199ddf066700080aad4c0a314
+DISPATCH_OK operation_history
+DISPATCH_OK operation_restore 0
+restore0_ran=1
+FAIL oplog_on_meta
+COMPILE_OK
+D_DONE
+DISPATCH_ERR init_failed C:/Home/P44Repo.hgs
+DISPATCH_OK offer
+DISPATCH_ERR path_new_failed feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+DISPATCH_OK undo
+feature_reverted_by_own_undo=1
+main_untouched_by_feature_undo=1
+DISPATCH_OK redo
+feature_restored_by_own_redo=1
+DISPATCH_OK path_go main
+DISPATCH_ERR nothing_to_undo
+feature_untouched_by_main_undo=1
+DISPATCH_OK path_go feature
+OP 0 ts=2881463 prev=d447fb779c9098450372a414bff42efdbf623c617e974f22d240e992618efd0a84717aaf48c1f9db911c38ac5d3e222f32d02db1166875e349b7a8499ec17cac new=f805d1cc064ca5155585f524c783e30e6eeea038529855eecc6c475eb45a5c7df814d3c402830fb2958a55388ef484919e09b32199ddf066700080aad4c0a314
+OP 1 ts=2922281 prev=f805d1cc064ca5155585f524c783e30e6eeea038529855eecc6c475eb45a5c7df814d3c402830fb2958a55388ef484919e09b32199ddf066700080aad4c0a314 new=ef80a2ed65b45f874645088d4d9c69014bac745cc59d764784eb56aff33eb34199fb2b4c4e21908884bef3f47a60bdb60263c3429a4bceda3f5b80cdc958f36c
+OP 2 ts=2923566 prev=ef80a2ed65b45f874645088d4d9c69014bac745cc59d764784eb56aff33eb34199fb2b4c4e21908884bef3f47a60bdb60263c3429a4bceda3f5b80cdc958f36c new=b93e068a543432485ce7ed043076af3201b992893cf91c65af9700cc25bc51e88c2044f7b31162199f41b1573449638f798e8cf7058c1d140f27af43e59b41a7
+DISPATCH_OK operation_history
+DISPATCH_OK operation_restore 0
+restore0_ran=1
+PASS oplog_on_meta
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P45Src.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK export
+dst_main_ok=1 main_matches=1 dst_feature_ok=1 feature_matches=1
+PATH main
+PATH feature
+DISPATCH_OK path_list
+DISPATCH_OK path_go feature
+commit ts=3680806 msg=feature commit 1
+commit ts=3679494 msg=main commit 1
+HISTORY_END shown=2
+DISPATCH_OK path_go main
+commit ts=3679494 msg=main commit 1
+HISTORY_END shown=1
+DISPATCH_OK undo
+undo_changed_dst=1
+src_untouched=1
+PASS hgit_export_import
+COMPILE_OK
+D_DONE
+exists=1 size=2065
+$WW,1$$FG,5$$TX+CX,"Command Line Overview"$$FG$
+
+The cmd line feeds into the $LK,"HolyC",A="FI:::/Doc/HolyC.DD"$ compiler line-by-line as you type.  A stmt outside a function executes immediately.  Remember to add a semicolon.$WW,1$
+
+Look-up the function headers with $FG,2$AutoComplete$FG$ by hitting $FG,2$<CTRL-SHIFT-F1>$FG$ after typing the first few letters.
+
+$LK,"Click Here",A="MN:Dir"$ to see
+---END---
+COMPILE_OK
+D_DONE
+wrote 129 bytes
+COMPILE_OK
+D_DONE
+exists=1 size=117
+$FG,2$hgit history (rendered DolDoc test)$FG$
+
+$FG,4$commit 1$FG$: root offering
+$FG,4$commit 2$FG$: second offering
+
+---END---
+COMPILE_OK
+D_DONE
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P47Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK offer
+DISPATCH_OK historydoc
+doc_exists=1 size=144
+$FG,5$hgit history$FG$$CR$$CR$$FG,2$93bea8444eb5$FG$ $FG,4$5474700$FG$ second commit$CR$$FG,2$4c14b0fcda5b$FG$ $FG,4$5474280$FG$ root commit$CR$
+---END---
+COMPILE_OK
+D_DONE

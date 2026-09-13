@@ -14,6 +14,10 @@
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
 // Index.HC.
+//
+// Tree-entry parsing updated for ADR 0004's 8-byte entity ID field
+// (experiments/49-entity-id/) - this file walks tree entries manually
+// (not via Tree.HC's TreeFindEntry) so it needed its own offset fix.
 
 U0 HgitSee(U8 *repo_path, U8 *target_hash)
 {
@@ -67,7 +71,8 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
     U8 *name = tree_content + tpos; tpos += nlen;
     U8 ttype = tree_content[tpos]; tpos += 1;
     tpos += 64;
-    CommPrint(1, "  entry type=%d name=", ttype);
+    U64 entity_id = GetU64LE(tree_content, tpos); tpos += 8; // ADR 0004
+    CommPrint(1, "  entry type=%d id=%d name=", ttype, entity_id);
     for (i=0; i<nlen; i++) CommPrint(1, "%c", name[i]);
     CommPrint(1, "\n");
   }

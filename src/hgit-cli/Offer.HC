@@ -22,12 +22,21 @@
 // files" (no self-exclusion logic yet).
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC (the whole hgit-core object layer), Head.HC, and
-// OpLog.HC. Every offer now logs its own HEAD before/after transition
-// via OpLogAppend before moving HEAD, so `hgit undo` (OpLogUndo) can
-// revert it - wired in and verified in experiments/31-oplog-in-offer/
-// (probe 30 had only called OpLogAppend manually, alongside offer, not
-// from within it).
+// Tree.HC, Commit.HC (the whole hgit-core object layer), Head.HC,
+// Index.HC, and OpLog.HC. Every offer now logs its own HEAD
+// before/after transition via OpLogAppend before moving HEAD, so
+// `hgit undo` (OpLogUndo) can revert it - wired in and verified in
+// experiments/31-oplog-in-offer/ (probe 30 had only called OpLogAppend
+// manually, alongside offer, not from within it).
+//
+// Per ADR 0004 (experiments/49-entity-id/): each tree entry now
+// carries a stable entity ID. If there's a parent commit, its tree is
+// looked up first so each currently-offered file's ID can be copied
+// forward from the OLD entry of the same name (TreeFindEntry) -
+// otherwise (new name, or root offering) a fresh ID is generated
+// (Tree.HC's GenerateEntityId). Deliberately minimal: same name = same
+// identity; an actual rename is NOT detected here (see ADR 0004's own
+// "what this slice does not do").
 
 U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
              U64 timestamp)
@@ -44,6 +53,37 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   I64 i;
   for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
   alen = rsize;
+
+  // Parent lookup happens BEFORE building the new tree, so each file's
+  // entity ID can be carried forward from the parent's own tree.
+  U8 parent_hash[64];
+  Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
+
+  U8 old_idx_hashes[64*64];
+  I64 old_idx_offsets[64];
+  I64 old_idx_count = 0;
+  U8 *old_tree_content = NULL;
+  I64 old_tree_content_len = 0;
+  if (has_parent) {
+    IndexBuild(rbuf+16, rsize-16, old_idx_hashes, old_idx_offsets, &old_idx_count);
+    I64 pc_off_rel;
+    Bool pc_found = IndexLookup(old_idx_hashes, old_idx_offsets, old_idx_count,
+                                 parent_hash, &pc_off_rel);
+    if (pc_found) {
+      I64 pc_off = 16 + pc_off_rel;
+      U8 *pc_content = rbuf + pc_off + 9;
+      U8 *old_tree_hash = CommitTreeHash(pc_content);
+      I64 ot_off_rel;
+      Bool ot_found = IndexLookup(old_idx_hashes, old_idx_offsets, old_idx_count,
+                                   old_tree_hash, &ot_off_rel);
+      if (ot_found) {
+        I64 ot_off = 16 + ot_off_rel;
+        U64 ot_record_len = GetU64LE(rbuf, ot_off);
+        old_tree_content = rbuf + ot_off + 9;
+        old_tree_content_len = ot_record_len - 1; // minus the OBJ_TREE tag byte
+      }
+    }
+  }
 
   // Build blobs + tree from every file matching find_mask.
   U8 tree_content[2048];
@@ -66,8 +106,20 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
     I64 name_start = 0, j;
     for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
     I64 name_len = j - name_start;
+
+    U64 entity_id;
+    Bool found_old = FALSE;
+    if (old_tree_content != NULL) {
+      U8 old_type;
+      U8 old_hash[64];
+      found_old = TreeFindEntry(old_tree_content, old_tree_content_len,
+                                 tmpde->full_name+name_start, name_len,
+                                 &old_type, old_hash, &entity_id);
+    }
+    if (!found_old) entity_id = GenerateEntityId();
+
     TreeEncodeEntry(tree_content, &tlen, tmpde->full_name+name_start, name_len,
-                     OBJ_BLOB, blob_hash);
+                     OBJ_BLOB, blob_hash, entity_id);
     entry_count++;
     tmpde = tmpde->next;
   }
@@ -82,13 +134,12 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   B2Hash512Any(tree_tagged, tree_content_len+1, tree_hash);
   ObjectPut(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
 
-  // Commit: parent = current HEAD, if any.
-  U8 parent_hash[64];
-  Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
+  // Commit content itself (has_parent/parent_hash already computed above).
   U8 commit_content[512];
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
-               has_parent, timestamp, message, message_len);
+               has_parent, timestamp, message, message_len,
+               REL_NONE, NULL);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];

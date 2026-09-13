@@ -601,11 +601,12 @@ U8 ObjectPeekType(U8 *archive_buf, I64 offset)
   return archive_buf[pos];
 }
 // Tree.HC — tree object content: an entry list mapping name -> child
-// object (type + hash). This is what goes in the `data`/`dlen` passed
-// to ObjectPut with type=OBJ_TREE - the actual design ADR 0001 and
-// FORMAT.md deferred as "not yet designed." Verified end-to-end
-// (encode, store via ObjectPut, FileWrite, FileRead, decode, look up
-// both entries by name) in experiments/10-tree-object/.
+// object (type + hash), plus (per ADR 0004) a stable per-entry entity
+// ID. This is what goes in the `data`/`dlen` passed to ObjectPut with
+// type=OBJ_TREE. Verified end-to-end (encode, store via ObjectPut,
+// FileWrite, FileRead, decode, look up both entries by name) in
+// experiments/10-tree-object/; the entity ID field added in
+// experiments/49-entity-id/.
 //
 // Content format:
 //   U32 entry_count
@@ -615,15 +616,37 @@ U8 ObjectPeekType(U8 *archive_buf, I64 offset)
 //     or nesting handled here; a name is just an arbitrary byte string)
 //     U8 child_type   (OBJ_BLOB or OBJ_TREE, see Object.HC)
 //     64 bytes child_hash (BLAKE2b-512 content address of the child)
+//     8 bytes entity_id (U64, LE) — a stable identifier for "this
+//       tracked name," independent of content. Per ADR 0004: generated
+//       fresh (two RandU32 reads) the first time a name appears in any
+//       tree this repo has built, and copied forward unchanged into
+//       every later tree that still has an entry for that name -
+//       Offer.HC is what actually does the carrying-forward, by
+//       looking up the previous tree before building the new one.
+//       Deliberately minimal: same name = same identity; an actual
+//       rename (name change) is NOT detected and gets a fresh ID, see
+//       ADR 0004's "What this slice does not do."
 //
-// Depends on Canon.HC (PutU32LE/GetU32LE) and Object.HC's OBJ_* tags.
+// Depends on Canon.HC (PutU32LE/GetU32LE/PutU64LE/GetU64LE) and
+// Object.HC's OBJ_* tags.
+
+// Combines two RandU32 reads into a random 64-bit entity ID. RandU32
+// confirmed real and usable on real TempleOS in experiments/48-rand-for-identity/
+// (both from primary source usage - a real filesystem serial number -
+// and empirically: three successive reads returned distinct values).
+U64 GenerateEntityId()
+{
+  U32 a = RandU32;
+  U32 b = RandU32;
+  return (a(U64) << 32) | b(U64);
+}
 
 // Appends one entry to a tree-content buffer being built. Caller is
 // responsible for writing the U32 entry_count prefix themselves (not
 // done here, since it isn't known until all entries are appended) -
 // see experiments/10-tree-object/'s test driver for the pattern.
 U0 TreeEncodeEntry(U8 *buf, I64 *len, U8 *name, I64 name_len,
-                    U8 child_type, U8 *child_hash)
+                    U8 child_type, U8 *child_hash, U64 entity_id)
 {
   I64 i;
   buf[*len] = name_len; *len += 1;
@@ -632,16 +655,18 @@ U0 TreeEncodeEntry(U8 *buf, I64 *len, U8 *name, I64 name_len,
   buf[*len] = child_type; *len += 1;
   for (i=0; i<64; i++) buf[*len+i] = child_hash[i];
   *len += 64;
+  PutU64LE(buf, *len, entity_id); *len += 8;
 }
 
 // Finds the entry named `name` (name_len bytes) inside a decoded tree
 // content buffer (tree_buf points at the U32 entry_count, i.e. the
 // object's content with the OBJ_TREE type tag byte already stripped)
-// and copies its type into *type_out, hash into hash_out (64 bytes).
-// Returns FALSE if not found. Linear scan - fine for tiny trees, not
-// yet a real index (same caveat as Archive.HC's ArchiveVerify).
+// and copies its type into *type_out, hash into hash_out (64 bytes),
+// and entity ID into *entity_id_out. Returns FALSE if not found.
+// Linear scan - fine for tiny trees, not yet a real index (same
+// caveat as Archive.HC's ArchiveVerify).
 Bool TreeFindEntry(U8 *tree_buf, I64 tree_len, U8 *name, I64 name_len,
-                    U8 *type_out, U8 *hash_out)
+                    U8 *type_out, U8 *hash_out, U64 *entity_id_out)
 {
   U32 count = GetU32LE(tree_buf, 0);
   I64 pos = 4;
@@ -653,22 +678,26 @@ Bool TreeFindEntry(U8 *tree_buf, I64 tree_len, U8 *name, I64 name_len,
     if (same) for (i=0; i<name_len; i++) if (tree_buf[pos+i]!=name[i]) same=FALSE;
     U8 this_type = tree_buf[pos+this_name_len];
     U8 *this_hash = tree_buf + pos + this_name_len + 1;
+    U64 this_entity_id = GetU64LE(tree_buf, pos+this_name_len+1+64);
     if (same) {
       *type_out = this_type;
       for (i=0; i<64; i++) hash_out[i] = this_hash[i];
+      *entity_id_out = this_entity_id;
       return TRUE;
     }
-    pos += this_name_len + 1 + 64;
+    pos += this_name_len + 1 + 64 + 8;
   }
   return FALSE;
 }
 // Commit.HC — commit object content: a tree reference, zero or more
-// parent references, a timestamp, and a message. This is what goes in
+// parent references, a timestamp, a message, and (per ADR 0005) an
+// optional typed relation to an earlier commit. This is what goes in
 // the `data`/`dlen` passed to ObjectPut with type=OBJ_COMMIT - the
 // content design ADR 0001/FORMAT.md deferred alongside tree content.
 // Verified end-to-end (root commit with 0 parents, child commit with 1
 // parent referencing the root, both referencing the same tree) in
-// experiments/11-commit-object/.
+// experiments/11-commit-object/; the relation fields verified in
+// experiments/50-relation-vocabulary/.
 //
 // Content format:
 //   64 bytes  tree_hash
@@ -678,15 +707,38 @@ Bool TreeFindEntry(U8 *tree_buf, I64 tree_len, U8 *name, I64 name_len,
 //             just an opaque monotonic-ish number so far)
 //   U32       message_len LE
 //   message_len bytes of message (no encoding assumed - opaque bytes)
+//   U8        relation_tag (0=none/plain continuation, 1=CONTINUES
+//             explicit, 2=CORRECTS, 3=REVERTS, 4=RECONCILES)
+//   if relation_tag != 0: 64 bytes relation_target_hash (the prior
+//             commit this relation names - not necessarily the parent;
+//             a correction can name a commit further back)
 //
-// No author/identity field yet - that's tied up with the product
-// thesis's "stable entity ID" / "human mark" concepts (M3 work per the
-// brief's own milestone order), deliberately not invented here.
+// The relation fields are placed AFTER the message deliberately: every
+// accessor that reads UP TO the message (CommitTimestamp/
+// CommitMessageLen/CommitMessage) keeps its existing offset math
+// unchanged. Anything reading the relation fields recomputes from
+// CommitMessageLen instead of assuming a fixed offset.
+//
+// Stable entity identity (ADR 0004, Tree.HC's per-entry entity_id) is
+// a separate concern from this file - this ADR (0005) does NOT yet
+// scope a relation to a specific entity within a commit, only to
+// another commit as a whole. See ADR 0005's own "what this slice does
+// not do."
 //
 // Depends on Canon.HC (PutU64LE/GetU64LE/PutU32LE/GetU32LE).
 
+#define REL_NONE      0
+#define REL_CONTINUES 1
+#define REL_CORRECTS  2
+#define REL_REVERTS   3
+#define REL_RECONCILES 4
+
+// `relation_tag`/`relation_target` may be REL_NONE/NULL for an
+// ordinary commit with no explicit relation (the common case - costs
+// exactly one byte).
 U0 CommitEncode(U8 *buf, I64 *len, U8 *tree_hash, U8 *parent_hashes,
-                U8 parent_count, U64 timestamp, U8 *message, I64 message_len)
+                U8 parent_count, U64 timestamp, U8 *message, I64 message_len,
+                U8 relation_tag, U8 *relation_target)
 {
   I64 i, j;
   for (i=0; i<64; i++) buf[*len+i] = tree_hash[i];
@@ -700,6 +752,12 @@ U0 CommitEncode(U8 *buf, I64 *len, U8 *tree_hash, U8 *parent_hashes,
   PutU32LE(buf, *len, message_len); *len += 4;
   for (i=0; i<message_len; i++) buf[*len+i] = message[i];
   *len += message_len;
+
+  buf[*len] = relation_tag; *len += 1;
+  if (relation_tag != REL_NONE) {
+    for (i=0; i<64; i++) buf[*len+i] = relation_target[i];
+    *len += 64;
+  }
 }
 
 // Accessors - all take a pointer to the start of commit content (i.e.
@@ -725,6 +783,28 @@ U8 *CommitMessage(U8 *buf)
 {
   I64 pos = 65 + CommitParentCount(buf)*64 + 8 + 4;
   return buf + pos;
+}
+
+// Byte offset (relative to `buf`) of the relation_tag field - shared
+// by both relation accessors below, so the "recompute, don't assume a
+// fixed offset" rule from this file's own header comment lives in
+// exactly one place.
+I64 CommitRelationOffset(U8 *buf)
+{
+  I64 pos = 65 + CommitParentCount(buf)*64 + 8 + 4 + CommitMessageLen(buf);
+  return pos;
+}
+
+U8 CommitRelationTag(U8 *buf)
+{
+  return buf[CommitRelationOffset(buf)];
+}
+
+// Only valid to call if CommitRelationTag(buf) != REL_NONE - returns a
+// pointer to the 64-byte target hash.
+U8 *CommitRelationTarget(U8 *buf)
+{
+  return buf + CommitRelationOffset(buf) + 1;
 }
 // Index.HC — hash -> offset lookup over a .HGS object section.
 //
@@ -1635,6 +1715,10 @@ U0 WorkDirList()
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
 // Tree.HC, Commit.HC, Index.HC, Head.HC, WorkDir.HC (the whole
 // hgit-core object layer plus the CLI pieces built so far).
+//
+// Both tree-entry walks (TreeFindEntry's new signature, and the manual
+// pass-2 walk below) updated for ADR 0004's 8-byte entity ID field
+// (experiments/49-entity-id/).
 
 U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 {
@@ -1698,9 +1782,10 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 
     U8 tree_type;
     U8 tree_entry_hash[64];
+    U64 tree_entity_id;
     Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
                                   tmpde->full_name+name_start, name_len,
-                                  &tree_type, tree_entry_hash);
+                                  &tree_type, tree_entry_hash, &tree_entity_id);
     if (!in_tree) {
       CommPrint(1, "STATUS_NEW ");
     } else {
@@ -1727,6 +1812,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     U8 *tname = tree_content + tpos; tpos += tname_len;
     tpos += 1; // skip type
     tpos += 64; // skip hash
+    tpos += 8; // skip entity_id (ADR 0004)
 
     U8 check_path[256];
     I64 k = 0;
@@ -1869,6 +1955,119 @@ U0 HashToHex(U8 *hash, U8 *hex_out)
   }
   hex_out[128] = 0;
 }
+// HistoryDoc.HC — `hgit historydoc`: the real DolDoc history view.
+//
+// Probe 46 (`experiments/46-doldoc-format/`) resolved the research
+// question this depends on: `$..$` DolDoc commands are literal plain
+// text, and a HolyC-written `.DD` file (via plain `FileWrite`) renders
+// correctly when opened. This is that research put to use: walks the
+// same parent chain `History.HC`'s `HgitHistory` already walks
+// (reimplemented here rather than shared, since the two build very
+// different output - plain `CommPrint` text vs. a `$..$`-formatted
+// buffer), building a colored, real DolDoc document instead of plain
+// text, then writes it with a normal `FileWrite` - no special API.
+//
+// Verified colors so far: `$FG,2$...$FG$` (green - used for the commit
+// hash) and `$FG,4$...$FG$` (used for the timestamp) - the exact two
+// color commands probe 46 confirmed render correctly from
+// HolyC-generated output; `$CR$` for hard line breaks between commits.
+//
+// Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
+// Index.HC, Paths.HC (CurrentHeadRead), Hex.HC (HashToHex, for the
+// hash shown per commit - not needed by plain HgitHistory, which never
+// showed a hash at all).
+
+U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
+{
+  U8 doc[8192];
+  I64 dlen = 0;
+  U8 *title = "$FG,5$hgit history$FG$$CR$$CR$";
+  I64 ti;
+  for (ti=0; title[ti]; ti++) doc[dlen++] = title[ti];
+
+  U8 head_hash[64];
+  if (!CurrentHeadRead(repo_path, head_hash)) {
+    U8 *empty_msg = "(no offerings yet)$CR$";
+    I64 ei;
+    for (ei=0; empty_msg[ei]; ei++) doc[dlen++] = empty_msg[ei];
+    FileWrite(doc_path, doc, dlen);
+    return;
+  }
+
+  I64 rsize;
+  U8 *rbuf = FileRead(repo_path, &rsize);
+  U16 rver;
+  U64 rcount;
+  HgsReadHeader(rbuf, &rver, &rcount);
+
+  U8 idx_hashes[64*64];
+  I64 idx_offsets[64];
+  I64 idx_count;
+  IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
+
+  U8 cur_hash[64];
+  I64 k;
+  for (k=0; k<64; k++) cur_hash[k] = head_hash[k];
+  Bool has_cur = TRUE;
+
+  while (has_cur) {
+    I64 off_rel;
+    Bool found = IndexLookup(idx_hashes, idx_offsets, idx_count, cur_hash, &off_rel);
+    if (!found) break; // broken chain - stop, don't crash the doc write
+    I64 off = 16 + off_rel; // same offset-relative-to-object-section
+                             // gotcha as History.HC/See.HC - see those
+                             // files' own comments, not repeated here.
+    U8 obj_type = rbuf[off+8];
+    U8 *content = rbuf + off + 9;
+    if (obj_type != OBJ_COMMIT) break;
+
+    U8 pcount = CommitParentCount(content);
+    U64 ts = CommitTimestamp(content);
+    U32 mlen = CommitMessageLen(content);
+    U8 *msg = CommitMessage(content);
+
+    U8 hex[129];
+    HashToHex(cur_hash, hex);
+
+    U8 *fg_hash = "$FG,2$";
+    I64 fi;
+    for (fi=0; fg_hash[fi]; fi++) doc[dlen++] = fg_hash[fi];
+    // show a short prefix of the hash, not the full 128 hex chars -
+    // matches how a real history view would want to display this
+    // (full hash is still recoverable via `hgit see`).
+    I64 hi;
+    for (hi=0; hi<12; hi++) doc[dlen++] = hex[hi];
+    U8 *fg_end = "$FG$ ";
+    for (fi=0; fg_end[fi]; fi++) doc[dlen++] = fg_end[fi];
+
+    U8 *fg_ts = "$FG,4$";
+    for (fi=0; fg_ts[fi]; fi++) doc[dlen++] = fg_ts[fi];
+    U8 ts_digits[24];
+    I64 tlen = 0;
+    if (ts == 0) { ts_digits[tlen++] = '0'; }
+    U64 tsv = ts;
+    U8 rev[24];
+    I64 rlen = 0;
+    while (tsv > 0) { rev[rlen++] = '0' + (tsv % 10); tsv /= 10; }
+    for (fi=rlen-1; fi>=0; fi--) ts_digits[tlen++] = rev[fi];
+    for (fi=0; fi<tlen; fi++) doc[dlen++] = ts_digits[fi];
+    for (fi=0; fg_end[fi]; fi++) doc[dlen++] = fg_end[fi];
+
+    for (k=0; k<mlen; k++) doc[dlen++] = msg[k];
+    U8 *cr = "$CR$";
+    for (fi=0; cr[fi]; fi++) doc[dlen++] = cr[fi];
+
+    if (pcount > 0) {
+      U8 *parent = CommitParentHash(content, 0);
+      for (k=0; k<64; k++) cur_hash[k] = parent[k];
+      has_cur = TRUE;
+    } else {
+      has_cur = FALSE;
+    }
+  }
+
+  FileWrite(doc_path, doc, dlen);
+}
 // See.HC — `hgit see <offering>`: show one commit's full detail -
 // message, timestamp, parent count, and its tree's entries.
 //
@@ -1885,6 +2084,10 @@ U0 HashToHex(U8 *hash, U8 *hex_out)
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
 // Index.HC.
+//
+// Tree-entry parsing updated for ADR 0004's 8-byte entity ID field
+// (experiments/49-entity-id/) - this file walks tree entries manually
+// (not via Tree.HC's TreeFindEntry) so it needed its own offset fix.
 
 U0 HgitSee(U8 *repo_path, U8 *target_hash)
 {
@@ -1938,7 +2141,8 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
     U8 *name = tree_content + tpos; tpos += nlen;
     U8 ttype = tree_content[tpos]; tpos += 1;
     tpos += 64;
-    CommPrint(1, "  entry type=%d name=", ttype);
+    U64 entity_id = GetU64LE(tree_content, tpos); tpos += 8; // ADR 0004
+    CommPrint(1, "  entry type=%d id=%d name=", ttype, entity_id);
     for (i=0; i<nlen; i++) CommPrint(1, "%c", name[i]);
     CommPrint(1, "\n");
   }
@@ -2058,6 +2262,47 @@ Bool OpLogRestore(U8 *repo_path, I64 index)
   CurrentHeadWrite(repo_path, new_head);
   return TRUE;
 }
+// Portable.HC — whole-repo export/import.
+//
+// Probe 39 proved the OBJECT layer (`.hgs` bytes alone) is portable -
+// but a copied `.hgs` file had no HEAD, no paths, no history, because
+// those lived in N separate sidecar files keyed to the exact original
+// repo path. Now that ADR 0003 is fully wired in (probe 44), a repo's
+// ENTIRE state - object layer plus every tool-state concern (HEAD,
+// path list, current-path, operation log, redo log) - lives in exactly
+// TWO files: `<repo_path>` itself and `<repo_path>.m` (Meta.HC). So a
+// full, WORKING copy - not just the object bytes - is just copying
+// both files. This is a direct, concrete payoff of ADR 0003's design,
+// not a new architectural idea.
+//
+// `hgit export <repo> <dest>` and `hgit import <src> <dest>` are the
+// same underlying copy, named for the two directions of use.
+//
+// Depends on Meta.HC (MetaPath, to find the `.m` file alongside the
+// object file).
+
+U0 CopyFileIfExists(U8 *src_path, U8 *dest_path)
+{
+  I64 size;
+  U8 *buf = FileRead(src_path, &size);
+  if (buf == NULL) return;
+  FileWrite(dest_path, buf, size);
+}
+
+// Copies a repo's full state (object layer + Meta.HC's combined
+// metadata file) from src_repo_path to dest_repo_path. If src has no
+// `.m` file yet (never touched paths/undo/redo), only the object file
+// is copied - a plain object-layer copy, same as probe 39, still
+// works fine on the far end (Meta.HC's own functions all default
+// sensibly to "main"/empty when their `.m` file doesn't exist).
+U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
+{
+  CopyFileIfExists(src_repo_path, dest_repo_path);
+  U8 src_meta[256], dest_meta[256];
+  MetaPath(src_repo_path, src_meta);
+  MetaPath(dest_repo_path, dest_meta);
+  CopyFileIfExists(src_meta, dest_meta);
+}
 // Offer.HC — `hgit offer`: the actual recording command. This is the
 // integration point for the whole object model built so far - the
 // first command that creates real objects from real files rather than
@@ -2082,12 +2327,21 @@ Bool OpLogRestore(U8 *repo_path, I64 index)
 // files" (no self-exclusion logic yet).
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC (the whole hgit-core object layer), Head.HC, and
-// OpLog.HC. Every offer now logs its own HEAD before/after transition
-// via OpLogAppend before moving HEAD, so `hgit undo` (OpLogUndo) can
-// revert it - wired in and verified in experiments/31-oplog-in-offer/
-// (probe 30 had only called OpLogAppend manually, alongside offer, not
-// from within it).
+// Tree.HC, Commit.HC (the whole hgit-core object layer), Head.HC,
+// Index.HC, and OpLog.HC. Every offer now logs its own HEAD
+// before/after transition via OpLogAppend before moving HEAD, so
+// `hgit undo` (OpLogUndo) can revert it - wired in and verified in
+// experiments/31-oplog-in-offer/ (probe 30 had only called OpLogAppend
+// manually, alongside offer, not from within it).
+//
+// Per ADR 0004 (experiments/49-entity-id/): each tree entry now
+// carries a stable entity ID. If there's a parent commit, its tree is
+// looked up first so each currently-offered file's ID can be copied
+// forward from the OLD entry of the same name (TreeFindEntry) -
+// otherwise (new name, or root offering) a fresh ID is generated
+// (Tree.HC's GenerateEntityId). Deliberately minimal: same name = same
+// identity; an actual rename is NOT detected here (see ADR 0004's own
+// "what this slice does not do").
 
 U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
              U64 timestamp)
@@ -2104,6 +2358,37 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   I64 i;
   for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
   alen = rsize;
+
+  // Parent lookup happens BEFORE building the new tree, so each file's
+  // entity ID can be carried forward from the parent's own tree.
+  U8 parent_hash[64];
+  Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
+
+  U8 old_idx_hashes[64*64];
+  I64 old_idx_offsets[64];
+  I64 old_idx_count = 0;
+  U8 *old_tree_content = NULL;
+  I64 old_tree_content_len = 0;
+  if (has_parent) {
+    IndexBuild(rbuf+16, rsize-16, old_idx_hashes, old_idx_offsets, &old_idx_count);
+    I64 pc_off_rel;
+    Bool pc_found = IndexLookup(old_idx_hashes, old_idx_offsets, old_idx_count,
+                                 parent_hash, &pc_off_rel);
+    if (pc_found) {
+      I64 pc_off = 16 + pc_off_rel;
+      U8 *pc_content = rbuf + pc_off + 9;
+      U8 *old_tree_hash = CommitTreeHash(pc_content);
+      I64 ot_off_rel;
+      Bool ot_found = IndexLookup(old_idx_hashes, old_idx_offsets, old_idx_count,
+                                   old_tree_hash, &ot_off_rel);
+      if (ot_found) {
+        I64 ot_off = 16 + ot_off_rel;
+        U64 ot_record_len = GetU64LE(rbuf, ot_off);
+        old_tree_content = rbuf + ot_off + 9;
+        old_tree_content_len = ot_record_len - 1; // minus the OBJ_TREE tag byte
+      }
+    }
+  }
 
   // Build blobs + tree from every file matching find_mask.
   U8 tree_content[2048];
@@ -2126,8 +2411,20 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
     I64 name_start = 0, j;
     for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
     I64 name_len = j - name_start;
+
+    U64 entity_id;
+    Bool found_old = FALSE;
+    if (old_tree_content != NULL) {
+      U8 old_type;
+      U8 old_hash[64];
+      found_old = TreeFindEntry(old_tree_content, old_tree_content_len,
+                                 tmpde->full_name+name_start, name_len,
+                                 &old_type, old_hash, &entity_id);
+    }
+    if (!found_old) entity_id = GenerateEntityId();
+
     TreeEncodeEntry(tree_content, &tlen, tmpde->full_name+name_start, name_len,
-                     OBJ_BLOB, blob_hash);
+                     OBJ_BLOB, blob_hash, entity_id);
     entry_count++;
     tmpde = tmpde->next;
   }
@@ -2142,13 +2439,12 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   B2Hash512Any(tree_tagged, tree_content_len+1, tree_hash);
   ObjectPut(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
 
-  // Commit: parent = current HEAD, if any.
-  U8 parent_hash[64];
-  Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
+  // Commit content itself (has_parent/parent_hash already computed above).
   U8 commit_content[512];
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
-               has_parent, timestamp, message, message_len);
+               has_parent, timestamp, message, message_len,
+               REL_NONE, NULL);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
@@ -2393,6 +2689,24 @@ U0 Hgit(U8 *cmdline)
     } else {
       CommPrint(1, "DISPATCH_ERR unknown_path_subcommand %s\n", path_sub);
     }
+  } else if (StrCmp(cmd, "historydoc") == 0) {
+    U8 hdoc_repo[256], hdoc_dest[256];
+    I64 hdoc_p = ExtractToken(rest, 0, hdoc_repo, 256);
+    ExtractToken(rest, hdoc_p, hdoc_dest, 256);
+    HgitHistoryDoc(hdoc_repo, hdoc_dest);
+    CommPrint(1, "DISPATCH_OK historydoc\n");
+  } else if (StrCmp(cmd, "export") == 0) {
+    U8 export_src[256], export_dest[256];
+    I64 export_p = ExtractToken(rest, 0, export_src, 256);
+    ExtractToken(rest, export_p, export_dest, 256);
+    HgitCopyRepo(export_src, export_dest);
+    CommPrint(1, "DISPATCH_OK export\n");
+  } else if (StrCmp(cmd, "import") == 0) {
+    U8 import_src[256], import_dest[256];
+    I64 import_p = ExtractToken(rest, 0, import_src, 256);
+    ExtractToken(rest, import_p, import_dest, 256);
+    HgitCopyRepo(import_src, import_dest);
+    CommPrint(1, "DISPATCH_OK import\n");
   } else {
     CommPrint(1, "DISPATCH_ERR unknown_command %s\n", cmd);
   }
