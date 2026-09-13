@@ -31,6 +31,7 @@ verified, probe by probe.
 | Stage-1 daemon has no compile-error capture, silently hangs on a real syntax error | **Resolved** — found via deliberate reproduction, fixed by upgrading to the devkit's stage-2 daemon (`D2`/`_DRun`, `Fs->catch_except`-based `COMPILE_OK`/`COMPILE_FAIL` reporting) before pushing new/changed source; now standing practice | `experiments/31-oplog-in-offer/`, `docs/research/01-templeos-holyc.md` |
 | A real, previously-undocumented 33-character path-length ceiling (`FileWrite`/`FileRead` silently no-op past it) | **Resolved architecturally** — `Meta.HC` consolidates every per-repo tool-state concern into one combined file, immune to the ceiling scaling with path names; every real command now runs on it | `docs/adr/0003-path-length-ceiling.md`, `experiments/36` through `44` |
 | Large unpaced pushes over the injection channel can silently drop bytes under host memory pressure | **Resolved** — `experiments/01-temple-repl/paced_push.py` sends in small paced chunks; standard practice for any push over ~10KB | `experiments/34-hgit-paths/` |
+| `hgit offer *` against a directory holding many dozens of pre-existing files causes a real kernel-level GPF, not a graceful error | **Open, unresolved** — root cause not isolated (candidate: a fixed-size buffer somewhere in `WorkDir.HC`/`Offer.HC`/`Index.HC`); worked around by naming one file explicitly, not fixed | `docs/research/failed-approaches.md`'s 2026-09-13 entry, `experiments/55-reconciledoc/` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -543,6 +544,58 @@ With this, both of the brief's M3 headline features — stable entity
 identity and the typed relation vocabulary, now including entity-
 scoping — are designed, implemented, wired into real commands, and
 verified on real TempleOS.
+
+## M4 — executable DolDoc reconciliation (started)
+
+With M3's identity and relation vocabulary complete, M4 begins: the
+brief's other headline feature, an actual DolDoc-rendered
+reconciliation view, not just the plain history view M2 already built.
+
+**First step done**: `experiments/54-doldoc-widgets/` tested the two
+widget types doc 02 flagged as untested from HolyC-generated output —
+`$LK$` (link) and `$TR$` (tree). Result: **`$LK$` genuinely renders as
+a real clickable/underlined link** written via plain `FileWrite`,
+confirmed by screenshot — enough to build real navigation between two
+conflicting commits' entries in a reconciliation view. `$TR$`'s real
+argument grammar is **still unresolved** (the guessed syntax rendered
+as plain text, not a tree widget) — left open rather than guessed
+further; nested `$LK$` links can substitute for M4's first slice.
+Also found a real harness quirk: `Ed()` blocks the daemon's command
+loop until its interactive session ends (confirmed, not assumed, via
+`sendkey esc` over the QEMU monitor) — meaning a reconciliation view
+that opens interactively must hand off to a human at the real console
+rather than being driven further by the same automated push channel,
+a real constraint on how M4's "view and act on a reconciliation" step
+gets built and tested going forward.
+
+Not yet done: an actual `hgit`-generated reconciliation document (this
+was a standalone widget probe, not wired into any real command), and
+resolving `$TR$`'s real syntax if a genuine tree rendering turns out to
+be needed rather than nested links.
+
+**A real, wired reconciliation command now exists and is verified**:
+`hgit reconciledoc <repo> <commit_hex> <dest.DD>`
+(`src/hgit-cli/ReconcileDoc.HC`, `experiments/55-reconciledoc/`, PASS)
+builds a real `.DD` document for a commit carrying an ADR 0005/0006
+relation - its own hash/message, then a real `$LK$` link tagged with
+the relation target's full hash, the relation type name, the target
+commit's own message (read back from the same archive), and the scoped
+entity ID if any. Verified three ways: the real dispatcher sequence
+(`init`→`offer`→`correct`→`reconciledoc`, all `DISPATCH_OK`), the raw
+`.DD` bytes read back matching exactly, and the rendered appearance in
+`Ed()` (the link underlined, same as probe 54's finding, now from a
+real command's actual output).
+
+Getting here required recovering from a genuine new risk found along
+the way: `hgit offer *` against a directory holding ~60 accumulated
+files from prior probes caused a real kernel-level General Protection
+fault (not a graceful error), requiring a full VM reboot to recover -
+logged in `docs/research/failed-approaches.md`'s 2026-09-13 entry.
+Root cause not yet isolated (a candidate list of fixed-size buffers is
+flagged, not confirmed); worked around for this probe by naming one
+file explicitly instead of using `*`. **This is a real, open risk**:
+`hgit offer *` at scale is untested and now known-unsafe until
+root-caused - explicitly not glossed over as solved.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

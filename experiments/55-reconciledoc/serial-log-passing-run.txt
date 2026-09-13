@@ -1,0 +1,5 @@
+65:DISPATCH_OK init C:/Home/P55BRepo.hgs
+66:DISPATCH_OK offer
+67:DISPATCH_OK correct
+68:DISPATCH_OK reconciledoc
+69:PASS reconciledoc_e2e

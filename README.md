@@ -57,7 +57,9 @@ packages into one file, loadable with a single `#include`.
   `Meta.HC`, not yet deleted), `Paths.HC` (named paths, backed by
   `Meta.HC`), `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
   (hex string ↔ hash bytes), `HistoryDoc.HC` (`hgit historydoc` — a
-  real, colored, rendered DolDoc history view), `OpLog.HC` (operation
+  real, colored, rendered DolDoc history view), `ReconcileDoc.HC`
+  (`hgit reconciledoc` — a real DolDoc reconciliation view with a live
+  `$LK$` link to a commit's relation target), `OpLog.HC` (operation
   log + undo/redo stack, wired into `Offer.HC`, now backed by
   `Meta.HC`), `Portable.HC` (`hgit export`/`import` — whole-repo copy,
   both files), and `Hgit.HC` — the real entry point (`Hgit(cmdline)`)
@@ -138,6 +140,28 @@ shown/entered as hex, not decimal — a `U64` with its high bit set used
 to print as a negative number, a real issue found and fixed. Both of
 M3's headline features (stable identity, typed relations) are now
 complete and verified on real TempleOS.
+
+**M4 is underway**: `experiments/54-doldoc-widgets/` confirmed a real
+`$LK$` link widget renders correctly (underlined, clickable) from
+HolyC-generated `.DD` output. `hgit reconciledoc <repo> <commit_hex>
+<dest.DD>` (`src/hgit-cli/ReconcileDoc.HC`, `experiments/55-reconciledoc/`)
+now puts that to use for real: given a commit with an ADR 0005/0006
+relation, it builds a document showing the commit, a real `$LK$` link
+to its relation target (tagged with the target's full hash), the
+target's own message, and any entity scope — verified through the real
+dispatcher, by raw-byte content, and by rendered appearance in `Ed()`.
+`$TR$` (tree widget) syntax is still unresolved. Getting here also
+surfaced a real, still-open risk: `hgit offer *` against a directory
+holding dozens of pre-existing files caused a genuine kernel-level GPF
+crash (not a graceful error) — worked around for now by naming a file
+explicitly, not yet root-caused; see
+`docs/research/failed-approaches.md`.
+
+**First real release is cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
+attaches `packaging/HgitAll.HC` — verified downloaded and byte-identical
+to the local build before the release was announced done. Matches
+TempleOS's own convention (no installer/package manager; a program is
+`#include`d as one source file) — see `docs/research/09-packaging-and-releases.md`.
 
 ## Next steps
 

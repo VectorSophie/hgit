@@ -262,6 +262,18 @@ U0 Hgit(U8 *cmdline)
     ExtractToken(rest, hdoc_p, hdoc_dest, 256);
     HgitHistoryDoc(hdoc_repo, hdoc_dest);
     CommPrint(1, "DISPATCH_OK historydoc\n");
+  } else if (StrCmp(cmd, "reconciledoc") == 0) {
+    U8 rdoc_repo[256], rdoc_hex[129], rdoc_dest[256];
+    I64 rdoc_p1 = ExtractToken(rest, 0, rdoc_repo, 256);
+    I64 rdoc_p2 = ExtractToken(rest, rdoc_p1, rdoc_hex, 129);
+    ExtractToken(rest, rdoc_p2, rdoc_dest, 256);
+    U8 rdoc_hash[64];
+    if (!HexToHash(rdoc_hex, rdoc_hash)) {
+      CommPrint(1, "DISPATCH_ERR reconciledoc_bad_hex\n");
+    } else {
+      HgitReconcileDoc(rdoc_repo, rdoc_hash, rdoc_dest);
+      CommPrint(1, "DISPATCH_OK reconciledoc\n");
+    }
   } else if (StrCmp(cmd, "export") == 0) {
     U8 export_src[256], export_dest[256];
     I64 export_p = ExtractToken(rest, 0, export_src, 256);

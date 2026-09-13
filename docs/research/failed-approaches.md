@@ -631,3 +631,45 @@ practice: never use `pi` as a local variable or parameter name
 anywhere in this project** - now documented in
 `docs/research/01-templeos-holyc.md`. Full writeup:
 `experiments/41-meta-paths-current/README.md`.
+
+## 2026-09-13 — `hgit offer *` against ~60 accumulated files caused a real GPF, not a graceful error
+
+**Tried:** Probe 55's first end-to-end `hgit reconciledoc` test
+(`experiments/55-reconciledoc/`) called `hgit offer C:/Home/P55Repo.hgs
+*` against `C:/Home` after ~54 prior probes' leftover files (60+
+entries: repos, sidecar files, test fixtures) had accumulated there in
+this same long-running QEMU session.
+
+**Happened:** A real General Protection fault inside `GetU32LE`
+(`Fault:0x0D General Protection RIP:1SBA2093:&GetU32LE+0x001B`),
+dropping straight into TempleOS's own kernel debugger - not a compile
+error, not one of this project's own clean `DISPATCH_ERR` paths, a
+genuine crash. Unlike probe 54's `Ed()`-blocks-the-daemon finding,
+`sendkey esc` does nothing to a real fault debugger - recovery required
+a full VM reboot (the persistent installed disk meant no reinstall,
+but the entire stage-1→stage-2 daemon bootstrap had to be redone by
+hand).
+
+**Why:** Not fully isolated. Plausible causes, not yet distinguished:
+`WorkDir.HC`'s enumeration buffer, `Offer.HC`'s tree-build path, or
+`Index.HC`'s fixed-size `idx_hashes[64*64]`/`idx_offsets[64]` arrays (a
+hardcoded cap of 64 objects) being overrun by a much larger object
+count than any previous probe's repository ever held - every prior
+`offer` probe used a small, deliberately constructed working directory,
+never one with 60+ pre-existing files.
+
+**Worked instead:** Re-ran the same test with a specific `find_mask`
+naming one real file (`P55BFileA.txt`) instead of `*` - passed cleanly.
+**Not fixed at the root** - `hgit offer *` against a directory holding
+many dozens of files remains untested and now known-unsafe until this
+is root-caused. Flagged as real, unresolved follow-up work, not a
+workaround presented as a fix. Full writeup:
+`experiments/55-reconciledoc/README.md`.
+
+**Bonus harness lesson from the recovery itself:** `qemu-system-x86_64`'s
+HMP monitor `sendkey` command only accepts real key names, not an
+arbitrary string as one argument - `sendkey "some command"` silently
+types nothing. The fix already existed, unused, in
+`experiments/templeos-devkit/scripts/send.py` (maps each character to
+its own `sendkey` call) - re-discovered and used correctly on the
+second attempt.

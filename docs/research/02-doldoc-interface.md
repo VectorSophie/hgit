@@ -53,17 +53,36 @@ views rendered as DolDoc are not a stretch, they're the existing norm.
   with the same `FileWrite` every other hgit command already uses, and
   TempleOS's own `Ed()` (or another doc-aware viewer) renders it live.
 
+## Resolved further (probe 54, `experiments/54-doldoc-widgets/`)
+
+- ~~`$LK$` links... untested from generated output~~ **Resolved**: a
+  `$LK,"tag"$...$LK$` link written via plain `FileWrite` renders as a
+  real underlined link in `Ed()` — confirmed by screenshot, not
+  assumed. This is enough to build a reconciliation view's navigation
+  (jump between two conflicting commits' entries) without needing any
+  new mechanism.
+- `$TR$` (tree widget) syntax is **still unresolved** — the guessed
+  `$TR$<content>$TR$` form rendered as plain indented text, not a real
+  tree widget (no expand/collapse markers). The real argument grammar
+  isn't in the primary sources pulled so far; not a blocker for M4
+  design since nested `$LK$` links can substitute, but the actual
+  widget remains untested. `$LS$` (list) is also still untested.
+- **New real harness finding**: `Ed()` is a blocking/interactive call —
+  pushing it from the daemon stalls the daemon's command loop until the
+  interactive session ends (confirmed via `sendkey esc` over the QEMU
+  monitor, not just assumed dropped). This answers this doc's own
+  "which viewer" question in the negative for automation: `Ed()` is
+  fine for genuine interactive human use but cannot be launched from
+  anything that still expects the daemon/dispatcher to respond
+  afterward without a human closing it first.
+
 ## Unresolved risk
 
-- Only `$FG$`/`$CR$` were tested from real HolyC-generated output.
-  Doc 02's richer widget vocabulary (`$LK$` links, `$TR$` trees, `$LS$`
-  lists — the shapes a real history/reconciliation view actually
-  wants) is still untested from generated output, only read from an
-  existing help file.
-- Whether `Ed()` specifically (vs. some read-only doc-display API) is
-  the right viewer to launch from a real `hgit history` command isn't
-  decided — `Ed()` puts the user in edit mode, which may not be the
-  right UX for a read-oriented history view.
+- `$TR$`'s real syntax (see above) and `$LS$` remain untested from
+  generated output.
+- Whether some other, non-blocking, read-only doc-display API exists
+  (as opposed to `Ed()`) for a reconciliation view that should stay
+  responsive isn't researched yet.
 
 ## Architectural implications so far
 
