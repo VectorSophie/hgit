@@ -71,7 +71,24 @@ views rendered as DolDoc are not a stretch, they're the existing norm.
   $ID,-2$` right after it, not from `$TR$` itself. Verified rendering:
   a real `[+]` collapse marker (starts collapsed, matching the
   reference doc's own description), from plain `FileWrite`-generated
-  output, no special API. `$LS$` (list) is still untested.
+  output, no special API.
+- `$LS$` (list widget) is **resolved** (probe 63,
+  `experiments/63-list-widget/`) — found the same way, via
+  `DolDocOverview.DD.Z`'s own reference to `C:/Demo/DolDoc/Form.HC`.
+  `$LS,D="<define-list-name>"$` is a single self-contained command
+  (like `$TR$`, no closing tag) bound to an `I64` struct field through
+  `DocForm()`'s `format` string mechanism - the option strings come
+  from a separate `DefineLstLoad` call, not `$LS$` itself. Verified it
+  renders as a real widget (a `[]` bracket, not literal text) from
+  plain `FileWrite`-generated output with no `DocForm()` call - but
+  empty, since nothing bound a selected value to it. **Conclusion**:
+  `$LS$` doesn't fit hgit's own DolDoc views the way `$TR$`/`$LK$` did
+  - it's a form-input widget needing `DocForm()`'s interactive
+  struct-binding (likely blocking the daemon the same way `Ed()`
+  does), not a static display element; every hgit document so far is
+  generated once and read, never edited interactively. Deliberately
+  not adopted into any command - real, separate future work if an
+  interactive form ever becomes worth building.
 - **New real harness finding**: `Ed()` is a blocking/interactive call —
   pushing it from the daemon stalls the daemon's command loop until the
   interactive session ends (confirmed via `sendkey esc` over the QEMU
@@ -83,7 +100,6 @@ views rendered as DolDoc are not a stretch, they're the existing norm.
 
 ## Unresolved risk
 
-- `$LS$` (list widget) remains untested from generated output.
 - Whether some other, non-blocking, read-only doc-display API exists
   (as opposed to `Ed()`) for a reconciliation view that should stay
   responsive isn't researched yet.

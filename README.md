@@ -168,7 +168,12 @@ a clean compile. **A real multi-commit view now exists too**:
 shows a real tree node for every commit that carries a relation,
 skipping ordinary offers entirely — verified with a real four-commit
 repo where exactly the one relevant commit appears in the output.
-Getting here also surfaced a real crash — `hgit offer *` against a directory holding
+`$LS$` (the list widget) is also resolved now
+(`experiments/63-list-widget/`), closing doc 02's last tracked DolDoc
+widget question — a real form-input widget bound via `DocForm()`,
+deliberately not adopted into any hgit command since every hgit view
+is a generated, read-only document, not an interactive form. Getting
+here also surfaced a real crash — `hgit offer *` against a directory holding
 dozens of pre-existing files caused a genuine kernel-level GPF (not a
 graceful error) — since **root-caused and fixed**
 (`experiments/56-offer-buffer-guard/`): two unbounded stack buffers in
@@ -194,13 +199,15 @@ five other read-only view commands (`see`/`history`/`status`/
 26-offer/~78-object repo run through all five, no crash; see
 `docs/research/failed-approaches.md`.
 
-**Two real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
-(M0–M3 complete) and [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
-(M4's reconciliation view underway). Each attaches `packaging/HgitAll.HC`
-— verified downloaded and byte-identical to the local build before
-being announced done. Matches TempleOS's own convention (no
-installer/package manager; a program is `#include`d as one source
-file) — see `docs/research/09-packaging-and-releases.md`.
+**Three real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
+(M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
+(M4's reconciliation view underway), and
+[`v0.5.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.5.0)
+(every known fixed-size-buffer overflow found and fixed). Each attaches
+`packaging/HgitAll.HC` — verified downloaded and byte-identical to the
+local build before being announced done. Matches TempleOS's own
+convention (no installer/package manager; a program is `#include`d as
+one source file) — see `docs/research/09-packaging-and-releases.md`.
 
 ## Next steps
 

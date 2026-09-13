@@ -692,6 +692,22 @@ completed correctly (`SEE_COMMIT`/`SEE_RELATION`/`SEE_TREE`,
 crash, no truncation - closing every call site of this bug class this
 project has found so far.
 
+**`$LS$` (list widget) is now resolved too, closing doc 02's last
+tracked DolDoc widget-syntax question**: `experiments/63-list-widget/`
+(PASS) - found via `DolDocOverview.DD.Z`'s own reference to
+`C:/Demo/DolDoc/Form.HC`, real system source. `$LS,D="<name>"$` is a
+single self-contained command (no closing tag, like `$TR$`) bound to
+an `I64` struct field via `DocForm()`'s `format` mechanism - the
+option strings come from a separate `DefineLstLoad` call. Verified it
+renders as a real `[]` widget (not literal text) from plain
+`FileWrite`-generated output, but empty without a `DocForm()`-bound
+value. **Deliberately not adopted into any hgit command**: every hgit
+DolDoc view so far is generated once and read, never edited
+interactively, and `$LS$` is fundamentally a form-input widget needing
+`DocForm()`'s interactive binding (likely blocking the daemon the same
+way `Ed()` does, per probe 54) - a real, separate feature this project
+hasn't built, not a fit for the read-only views built so far.
+
 **Root-caused and fixed**: `experiments/56-offer-buffer-guard/` (PASS)
 confirms it - `Offer.HC`'s `tree_content[2048]`/`blob_tagged[512]`
 stack buffers had no bounds check, overflowing at ~24 small matched
