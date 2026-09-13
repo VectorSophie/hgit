@@ -1,0 +1,19 @@
+DISPATCH_OK init C:/Home/P97Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+P97_SEE_BEGIN
+SEE_COMMIT ts=3980602 parents=2 msg=merge_test_two_parents
+SEE_TREE entries=1
+  entry type=1 id=f0a9b49a4b01ef1f name=P97FileA.txt
+SEE_END
+P97_SEE_END
+P97_CHECK_BEGIN
+CHECK_OK objects=10
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+P97_CHECK_END
+PASS p97_multiparent_test

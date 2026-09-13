@@ -1381,6 +1381,81 @@ clean. With this, every item ADR 0010 ever deferred except
 cross-directory rename/move detection is closed - ADR 0010's own scope
 is now complete.
 
+**Research: Mercurial's obsolescence markers** (`docs/research/04-vcs-comparison.md`,
+real primary sources -
+`wiki.mercurial-scm.org/ChangesetEvolution`,
+`mercurial-scm.org/help/topics/evolution`). With ADR 0010's own
+implementation arc fully closed, picked up the next unblocked item
+from doc 00's own tracked research gaps rather than inventing new
+implementation scope. A marker records a predecessor, its
+successor(s) (zero for a prune, multiple for a split, one covering
+several for a fold), a timestamp, and the acting user; an obsolete
+changeset is hidden, not deleted, and markers propagate over push/pull
+independently of the changesets they describe. Comparison: structurally
+close to hgit's own existing model (non-destructive `undo`/`redo`,
+ADR 0004's entity IDs, `Check.HC`'s own `CHECK_DANGLING` reachability
+report) via a different mechanism - neither ever destroys an object,
+both treat "no longer on real history" as recoverable. One real gap
+surfaced: hgit has no concept matching Mercurial's phases (draft/
+public/secret, the mechanism protecting already-shared history from
+divergent rewrites) - flagged as a future concern only if hgit ever
+grows a real multi-remote push/pull model (`export`/`import`, probe
+45, are whole-repo file copies, not that), not designed now with no
+current evidence it's needed - the same "don't design ahead of
+evidenced need" stance this project already takes toward object-store
+compression and cross-directory rename detection.
+
+**Research: GitButler's virtual branches** (`docs/research/04-vcs-comparison.md`,
+real primary sources - `docs.gitbutler.com/features/virtual-branches/virtual-branches`,
+`docs.gitbutler.com/overview`). A "target branch" is the workspace's
+own production reference (typically `origin/main`); virtual branches
+("lanes") apply simultaneously to ONE working directory (unlike real
+Git's single `HEAD`/index), each with its own staging area - files (or
+hunks) get assigned to different lanes, then each commits
+independently by computing a real, full synthetic tree "as if" only
+that lane's own changes existed. Comparison: a real, structural
+difference from hgit's own model, not just naming - `path new`/`path
+go` (`Paths.HC`) are sequential, one path active at a time, the whole
+working directory committed against it on every `offer`/`offertree`.
+Supporting GitButler-style per-file assignment from one snapshot would
+mean `Offer.HC`/`TreeBuildRecursive` filtering which real on-disk files
+belong to which path per offer - a real, substantial redesign, not a
+small addition, and no current evidence any real hgit workflow needs
+it. Flagged as a real, well-scoped M5-or-later candidate, not designed
+now.
+
+**Research: git's merge-base/three-way merge, plus a real object-model
+prerequisite check** (`docs/research/05-git-internals-and-product-
+practice.md`, `experiments/97-multiparent-commits/`, PASS). hgit
+currently has NO merge command at all - named paths (`Paths.HC`) can
+diverge but never rejoin. Real source
+(`git-scm.com/book/en/v2/Git-Tools-Advanced-Merging`): Git's
+three-way merge compares base/ours/theirs per file - unchanged-from-
+base or changed-on-only-one-side resolves automatically, changed
+differently on both sides is a real conflict, marked with literal
+`<<<<<<<`/`=======`/`>>>>>>>` text, not auto-resolved.
+
+Before designing an actual merge algorithm, checked the one real,
+cheap prerequisite question first (same pattern ADR 0010's own probes
+88/89 used): does hgit's object model already support a real
+multi-parent commit? Answer: **yes, with zero code changes anywhere**
+- `Commit.HC`'s own `CommitEncode`/`CommitParentHash` were never
+hardcoded to one parent, and `Check.HC`'s own reachability and
+referential-integrity passes already loop over every real parent.
+Verified by manually constructing a real 2-parent commit (same direct-
+archive-injection technique probe 92 used) from two genuinely diverged
+paths: `SEE_COMMIT ... parents=2`, `CHECK_REFS_OK`,
+`CHECK_DANGLING_NONE` (the reachability walk followed BOTH parents).
+Full command-surface regression re-run clean.
+
+Real, separate work still needed, not attempted: an actual merge
+ALGORITHM (a real merge-base/lowest-common-ancestor search, and a real
+three-way tree-level merge reusing `Diff.HC`'s own recursive pattern,
+with a conflict representation this project doesn't have yet) - a
+real, well-scoped candidate for a future session now that its one
+prerequisite has real, verified evidence behind it rather than being
+assumed.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

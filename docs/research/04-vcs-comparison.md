@@ -1,8 +1,8 @@
 # VCS comparison
 
-Started (jj + Fossil + Sapling, the closest analogues to hgit's stated
-goals per the product thesis itself); Pijul/Darcs/GitButler/Mercurial/
-Breezy still unstarted.
+Started (jj + Fossil + Sapling + Mercurial + GitButler, the closest
+analogues to hgit's stated goals per the product thesis itself);
+Pijul/Darcs/Breezy still unstarted.
 
 ## Verified documentation — Jujutsu's operation log
 
@@ -45,6 +45,49 @@ checksummed, ASCII-safe) is a good fit for the brief's "small auditable
 native format over maximal ratio" preference, and for RedSea's
 contiguous-file constraint (doc 01) since it's a flat byte stream, not a
 structure needing random-access mutation.
+
+## Verified documentation — Mercurial's obsolescence markers
+
+Source: `wiki.mercurial-scm.org/ChangesetEvolution`,
+`mercurial-scm.org/help/topics/evolution`. An obsolescence marker
+records four things: the predecessor changeset, its potential
+successor(s), a timestamp, and the user who performed the rewrite.
+Successors aren't fixed to exactly one: **zero successors marks a
+prune** (the changeset is just gone, no replacement), **multiple
+successors marks a split** (one changeset became several), and a
+single successor covering multiple predecessors marks a fold. An
+obsolete changeset is neither deleted nor mutated in place - it stays
+in the repository, just hidden from normal view (recoverable, not
+gone), and markers themselves "can be exchanged without any of the
+precursor changesets" over push/pull, so a repo can learn "commit X
+was superseded by Y" without ever holding X's own full content. A real
+constraint the docs are explicit about: **only draft and secret-phase
+changesets can be altered this way - public changesets are immutable**
+once shared, specifically to prevent divergent rewrites of the same
+history across collaborators.
+
+**Comparison to hgit's own model**: structurally close to what hgit
+already has, via a different mechanism. hgit's own non-destructive
+history (ADR-driven: `undo`/`redo`, ADR 0004's rename-preserving entity
+IDs, and `Check.HC`'s own `CHECK_DANGLING` reachability report, probe
+72) already treats "no longer on any real path's own history" as the
+same kind of soft, recoverable state Mercurial calls "hidden" -
+neither approach ever destroys the underlying object. The one real gap
+this comparison surfaces: hgit has no concept matching Mercurial's
+**phases** (draft/public/secret) - nothing currently distinguishes
+"freely rewritable" history from "already shared, should stay
+immutable." This doesn't matter yet, because hgit's own `export`/
+`import` (probe 45) is a whole-repo file copy, not a real distributed
+push/pull with independently-evolving copies of the same repo - the
+scenario phases exist to protect against (two collaborators rewriting
+the same shared history differently) can't currently happen. A real,
+concrete flag for **if** hgit ever grows a real multi-remote
+push/pull model: revisit whether some phase-like distinction becomes
+necessary then, rather than guessing at one now with no evidence it's
+needed - the same "don't design ahead of real, evidenced need" stance
+this project already takes toward, e.g., object-store compression
+(see the Fossil section above) and cross-directory rename detection
+(ADR 0010).
 
 ## Verified documentation — Sapling's undo/absorb model
 
@@ -90,6 +133,45 @@ targets an arbitrary prior commit; the missing piece would be
 *picking* that target automatically from a diff, not the storage
 underneath it).
 
+## Verified documentation — GitButler's virtual branches
+
+Source: `docs.gitbutler.com/features/virtual-branches/virtual-branches`,
+`docs.gitbutler.com/overview`. A **target branch** is the workspace's
+own reference point - "whatever your concept of 'production' is"
+(typically `origin/main`) - and every virtual branch exists relative to
+it. Real Git allows exactly one `HEAD`/one index at a time; GitButler
+instead shows several virtual branches ("lanes") applied to the SAME
+working directory simultaneously, each with its own staging area -
+uncommitted changes across different files (or, per other GitButler
+material, individual hunks) get assigned to different lanes, then each
+lane commits independently. Committing a lane isn't a partial/patch
+commit: GitButler "calculates what that branch would have looked like
+if the changes you dragged onto it were the only things in your
+working directory and commits a file tree that represents that work"
+- a real, full synthetic tree, computed fresh per lane at commit time,
+not a diff-of-a-diff. Merges are guaranteed conflict-free between
+lanes precisely because they all originate from one real working-
+directory snapshot - "you're essentially starting from the merge
+product and extracting branches of work from it."
+
+**Comparison to hgit's own model**: a real, structural difference, not
+just a naming one. hgit's own named paths (`Paths.HC`, `path new`/
+`path go`) are sequential - exactly one path is "current" at a time
+(the same shape real Git branches have: one `HEAD`, switch to work on
+another), and `hgit offer`/`offertree` always commits the WHOLE
+current working directory against whichever path is active. There is
+no mechanism for assigning different uncommitted files (or parts of
+one file) to different paths from a single working-directory snapshot
+the way GitButler's lanes do - that would require hgit's own commit-
+building code (`Offer.HC`/`TreeBuildRecursive`) to filter which real
+on-disk files count as "this path's own change" per offer, a real,
+substantial redesign, not a small addition. No evidence yet that
+hgit's own real usage needs this (every probe and real workflow this
+project has actually built has one clear "what am I working on right
+now" context) - flagged as a real, well-scoped candidate for M5-or-
+later feature work if the brief's own future scope calls for it, not
+designed now.
+
 ## Architectural implications so far
 
 - Adopt jj's operation-log/commit-history separation as designed in the
@@ -111,11 +193,27 @@ underneath it).
 - `absorb`'s auto-target-selection idea is a real candidate for future
   scope beyond M4, not required by anything currently built - flagged,
   not designed.
+- Mercurial's obsolescence markers confirm hgit's own existing
+  reachability/dangling model (probe 72) rather than suggesting a
+  change - both treat "no longer on any real history" as recoverable,
+  not destroyed. The one real gap surfaced (no phase-like distinction
+  between rewritable and already-shared history) is flagged as a
+  future concern IF hgit ever grows real multi-remote push/pull, not
+  designed now - no current evidence it's needed, since `export`/
+  `import` (probe 45) doesn't create independently-evolving copies of
+  the same repo.
+- GitButler's per-file/hunk-to-lane assignment from one working
+  directory is a real, structurally different feature from hgit's own
+  sequential named-path model (one active path at a time, the whole
+  working directory committed against it) - not adopted, no current
+  evidence any real workflow needs simultaneous multi-path assignment;
+  flagged as a real, well-scoped M5-or-later candidate, same treatment
+  as `absorb`'s auto-target-selection above.
 
 ## Not yet done
 
 Pijul/Darcs (patch theory — comparison only, brief explicitly warns
-against adopting without evidence), GitButler (virtual branches),
-Mercurial/Breezy, and Sapling's own "stacks" feature (still unread).
-Lower priority now that the three
-most load-bearing comparisons (operation log, delta format) are done.
+against adopting without evidence), Breezy, and Sapling's own "stacks"
+feature (still unread). Lower priority now that the five most
+load-bearing comparisons (operation log, delta format, undo/absorb,
+obsolescence markers, virtual branches) are done.
