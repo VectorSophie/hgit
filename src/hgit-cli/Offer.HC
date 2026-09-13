@@ -129,6 +129,150 @@ Bool OfferFindFuzzyRename(U8 *rbuf, U8 *old_tree_content, I64 old_tree_content_l
   return FALSE;
 }
 
+// ADR 0010 (experiments/90-recursive-tree-primitive/): a real,
+// standalone, tested recursive tree-building primitive - NOT wired
+// into `HgitOfferWithRelation`'s own live dispatch below (see that
+// ADR's own "what this slice does not do"). Recursively builds a tree
+// object from a real directory (`dir_path`, trailing "/" required):
+// each plain file becomes an OBJ_BLOB entry, each subdirectory
+// (`CDirEntry.attr & 16`, probe 88) becomes a nested OBJ_TREE entry,
+// built depth-first (children stored via ObjectPut before their own
+// parent tree, since a tree's hash needs its full content first -
+// exactly proven possible, with zero object-model changes, in probe
+// 89). Entity-ID/rename continuity (exact name, exact content hash,
+// then fuzzy) is resolved at EACH directory level independently,
+// against whichever old tree matches that same relative directory
+// position in the parent commit - a file moved to a *different*
+// directory is not identity-tracked across that move in this slice
+// (ADR 0010's own explicit scope decision), only renamed/edited
+// within the same directory.
+//
+// `tree_content_out` must be sized generously by the caller (same
+// "no premature fixed-cap tuning" stance as `Offer.HC`'s own
+// `tree_content[2048]` - a real, known limit, not yet hit by anything
+// tested, same as here).
+U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
+                      U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
+                      U8 *old_tree_content, I64 old_tree_content_len,
+                      U8 *tree_content_out, I64 *tree_content_len_out)
+{
+  I64 tlen = 4; // room for entry_count, filled in at the end
+  I64 entry_count = 0;
+
+  U8 mask[256];
+  StrPrint(mask, "%s*", dir_path);
+  CDirEntry *tmpde = FilesFind(mask, 0);
+  CDirEntry *tmpde1 = tmpde;
+  while (tmpde) {
+    I64 name_start = 0, j;
+    for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
+    I64 name_len = j - name_start;
+    Bool is_dot = StrCmp(tmpde->full_name+name_start, ".") == 0;
+    Bool is_dotdot = StrCmp(tmpde->full_name+name_start, "..") == 0;
+
+    if (!is_dot && !is_dotdot) {
+      if (tmpde->attr & 16) {
+        // Subdirectory: resolve the matching OLD subtree at this same
+        // relative position (if any) to pass down as the "old tree"
+        // for the recursive call - the same by-name lookup
+        // TreeFindEntry already does, just for a tree-typed entry.
+        U8 old_sub_type;
+        U8 old_sub_hash[64];
+        U64 old_sub_entity_id;
+        U8 *old_sub_tree_content = NULL;
+        I64 old_sub_tree_content_len = 0;
+        Bool found_old_sub = FALSE;
+        if (old_tree_content != NULL) {
+          found_old_sub = TreeFindEntry(old_tree_content, old_tree_content_len,
+                                        tmpde->full_name+name_start, name_len,
+                                        &old_sub_type, old_sub_hash, &old_sub_entity_id);
+          if (found_old_sub && old_sub_type == OBJ_TREE) {
+            I64 sub_off_rel;
+            if (IndexLookup(idx_hashes, idx_offsets, idx_count, old_sub_hash, &sub_off_rel)) {
+              I64 sub_off = 16 + sub_off_rel;
+              U64 sub_rec_len = GetU64LE(rbuf, sub_off);
+              old_sub_tree_content = rbuf + sub_off + 9;
+              old_sub_tree_content_len = sub_rec_len - 1;
+            }
+          } else {
+            found_old_sub = FALSE; // same name existed but wasn't a
+                                     // tree (e.g. a file replaced by a
+                                     // directory) - no old identity to
+                                     // carry forward.
+          }
+        }
+
+        U8 subdir_path[256];
+        StrPrint(subdir_path, "%s/", tmpde->full_name);
+        U8 child_tree_content[2048];
+        I64 child_tree_content_len;
+        TreeBuildRecursive(subdir_path, archive, alen, rbuf, idx_hashes, idx_offsets, idx_count,
+                           old_sub_tree_content, old_sub_tree_content_len,
+                           child_tree_content, &child_tree_content_len);
+
+        U8 child_tagged[2048];
+        child_tagged[0] = OBJ_TREE;
+        I64 ci;
+        for (ci=0; ci<child_tree_content_len; ci++) child_tagged[1+ci] = child_tree_content[ci];
+        U8 child_hash[64];
+        B2Hash512Any(child_tagged, child_tree_content_len+1, child_hash);
+        ObjectPut(archive, alen, OBJ_TREE, child_tree_content, child_tree_content_len);
+
+        U64 sub_entity_id;
+        if (found_old_sub) sub_entity_id = old_sub_entity_id;
+        else sub_entity_id = GenerateEntityId();
+
+        TreeEncodeEntry(tree_content_out, &tlen, tmpde->full_name+name_start, name_len,
+                        OBJ_TREE, child_hash, sub_entity_id);
+        entry_count++;
+      } else {
+        // Regular file: the same blob-storage + entity-ID logic
+        // HgitOfferWithRelation's own flat loop already uses,
+        // parameterized by THIS directory level's own old tree.
+        I64 fsize;
+        U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+        if (fsize+1 <= 512) {
+          U8 blob_tagged[512];
+          blob_tagged[0] = OBJ_BLOB;
+          I64 bi;
+          for (bi=0; bi<fsize; bi++) blob_tagged[1+bi] = fbuf[bi];
+          U8 blob_hash[64];
+          B2Hash512Any(blob_tagged, fsize+1, blob_hash);
+          ObjectPut(archive, alen, OBJ_BLOB, fbuf, fsize);
+
+          U64 entity_id;
+          Bool found_old = FALSE;
+          if (old_tree_content != NULL) {
+            U8 old_type;
+            U8 old_hash[64];
+            found_old = TreeFindEntry(old_tree_content, old_tree_content_len,
+                                      tmpde->full_name+name_start, name_len,
+                                      &old_type, old_hash, &entity_id);
+            if (!found_old) {
+              found_old = TreeFindEntryByHash(old_tree_content, old_tree_content_len,
+                                              blob_hash, &entity_id);
+            }
+            if (!found_old) {
+              found_old = OfferFindFuzzyRename(rbuf, old_tree_content, old_tree_content_len,
+                                               idx_hashes, idx_offsets, idx_count,
+                                               fbuf, fsize, &entity_id);
+            }
+          }
+          if (!found_old) entity_id = GenerateEntityId();
+
+          TreeEncodeEntry(tree_content_out, &tlen, tmpde->full_name+name_start, name_len,
+                          OBJ_BLOB, blob_hash, entity_id);
+          entry_count++;
+        }
+      }
+    }
+    tmpde = tmpde->next;
+  }
+  DirTreeDel(tmpde1);
+  PutU32LE(tree_content_out, 0, entry_count);
+  *tree_content_len_out = tlen;
+}
+
 U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
                           U64 timestamp, U8 relation_tag, U8 *relation_target,
                           U64 relation_entity_id)

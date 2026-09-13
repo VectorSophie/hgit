@@ -1,0 +1,10 @@
+P88_WALK_BEGIN
+P88_DIR depth=0 name=C:/Home/P88Root/SubA
+P88_DIR depth=1 name=C:/Home/P88Root/SubA/SubAA
+P88_FILE depth=2 name=C:/Home/P88Root/SubA/SubAA/deep.txt size=13
+P88_FILE depth=1 name=C:/Home/P88Root/SubA/a1.txt size=7
+P88_DIR depth=0 name=C:/Home/P88Root/SubB
+P88_FILE depth=1 name=C:/Home/P88Root/SubB/b1.txt size=7
+P88_FILE depth=0 name=C:/Home/P88Root/top.txt size=9
+P88_WALK_END
+PASS p88_recursive_walk_test

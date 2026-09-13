@@ -94,10 +94,13 @@ underneath it).
 
 - Adopt jj's operation-log/commit-history separation as designed in the
   product thesis — this comparison found no reason to deviate.
-- When hgit-core needs delta compression (post-M1, per the milestone
-  plan), prototype Fossil's delta format specifically before inventing a
-  new one — it's simple enough to implement in HolyC without much risk,
-  and self-describing enough to debug by eye.
+- ~~When hgit-core needs delta compression... prototype Fossil's delta
+  format~~ **Done** (ADR 0008, `experiments/68`/`77`/`79`/`80`/`82`/`83`):
+  byte-level mechanics, a real root-cause reliability fix, a real diff
+  algorithm, and a similarity measure all built and verified - wired
+  into `hgit offer`/`status` for fuzzy rename detection (ADR 0009,
+  probes 84/85), not (yet) for object-store compression itself, which
+  remains a separate, undecided question.
 - Sapling's graph/working-copy undo split confirms hgit's own existing
   design rather than suggesting a change - no action needed.
 - Sapling's interactive undo preview (color-coded before/after) is a

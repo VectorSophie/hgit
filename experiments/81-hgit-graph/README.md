@@ -67,6 +67,37 @@ daemon resumed cleanly afterward (`POST_ED` printed, then normal
 (the project's standing full command-surface regression) immediately
 after - all still correct, `PASS p65_head_deletion_regression`.
 
+**Update - real attempt to get an expanded-tree screenshot, not
+successful**: since a collapsed-root-only screenshot doesn't actually
+show the branching structure, real mouse-click expansion was
+attempted, twice, in separate follow-up sessions:
+- Keyboard cursor positioning (`down`/`home`/`space`/`ret` at the
+  `[+]` marker's own row/column) - moved the text cursor correctly but
+  never toggled the node; `ret` at column 1 instead inserted a literal
+  newline into the document (undone by not saving).
+- A disposable snapshot-mode QEMU session with a real
+  `-device usb-tablet` attached (absolute mouse positioning, computed
+  from the marker's real pixel position via a zoomed crop of a real
+  screendump) - `mouse_move`/`mouse_button` at the computed coordinate,
+  and a small grid of nearby coordinates, produced no visible change.
+
+Along the way, an unrelated real bug was found and understood: the
+very first attempt showed a completely blank document pane opening
+the ORIGINAL `P80GraphDemo.DD` (from this probe's own initial run) in
+a fresh snapshot session - initially suspected to be the `usb-tablet`
+device or a rendering regression, but isolated by testing a freshly
+`FileWrite`-generated copy of the *identical* bytes in the same fresh
+session, which rendered correctly. The original file itself was
+stale/bad on the persistent dev disk (root cause not pursued further -
+not a hgit bug, and the workaround, regenerating fresh, is trivial).
+
+Not pursued further after this second real attempt - a genuine, hard
+problem (TempleOS's own click-to-expand semantics for `$TR$` aren't
+something this project's headless automation can currently drive
+reliably), not a quick fix. `README.md` was updated to not show a
+screenshot that only demonstrates one collapsed line - the reformatted
+text structure is the real, complete illustration instead.
+
 `tools/lint-package.sh` clean before pushing - it caught a real
 "duplicate member" collision in this file's own first draft (`doc0`/
 `dlen0` declared in two sibling early-return blocks), fixed by

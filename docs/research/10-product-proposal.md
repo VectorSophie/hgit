@@ -1158,6 +1158,66 @@ and silently corrupts its own result. Logged in
 `docs/research/failed-approaches.md` as a general lesson, not specific
 to this one test.
 
+**Subdirectory support: the primitive question answered, the feature
+itself not attempted**: `experiments/88-recursive-directory-walk/`
+(PASS on the primitive) - hgit's entire object model has been flat/
+single-level only since M0 (`Tree.HC`'s own header comment,
+`FORMAT.md`'s "No recursive-tree test" note); this probe confirms the
+real prerequisite (`FilesFind` is non-recursive, but `CDirEntry.attr &
+16` reliably distinguishes a directory from a file, and a plain
+recursive walker built on both correctly descends a real 3-level
+directory structure with no crash and no HolyC quirk hit). Does **not**
+implement real subdirectory support in `hgit offer`/the object model -
+that needs nested `OBJ_TREE` objects (format surface reserved since
+ADR 0001/0004 but never actually exercised) and every tree-consuming
+command (`Offer.HC`/`Status.HC`/`Diff.HC`/`Check.HC`/`See.HC`/
+`HistoryDoc.HC`/`ReconcileDoc.HC`/`Graph.HC`) updated to recurse - a
+real, substantial, separate feature, honestly scoped rather than
+half-built.
+
+**The other subdirectory-support prerequisite - the object model
+itself - is also now confirmed**: `experiments/89-nested-tree-object-model/`
+(PASS). A real tree entry with `child_type = OBJ_TREE`, pointing at
+another separately-stored tree object, round-trips correctly through
+the exact same `TreeEncodeEntry`/`ObjectPut`/`IndexLookup`/
+`TreeFindEntry` functions every real command already calls - **zero
+code changes needed**, closing `FORMAT.md`'s own long-standing "No
+recursive-tree test" note. Verified: a real two-level object graph (a
+root tree with one blob entry and one nested-tree entry, that nested
+tree holding two of its own blob entries) - the nested entry's type
+and hash both correct, resolving it through the real object index
+returns the exact right content, and calling `TreeFindEntry` again on
+*that* resolved content correctly finds an entry inside the nested
+tree, confirming a caller can walk into one with no new parsing logic.
+Both real prerequisites for subdirectory support (recursive directory
+walking, probe 88; the nested-tree object model, this probe) are now
+confirmed working - wiring either into `Offer.HC`/any tree-consuming
+command remains real, separate, unattempted work.
+
+**ADR 0010: a real recursive tree-building primitive, and a real
+incident along the way**: `docs/adr/0010-subdirectory-support.md` /
+`experiments/90-recursive-tree-primitive/` (PASS). `TreeBuildRecursive`
+(in `Offer.HC`, not wired into its own live dispatch - a deliberate,
+separate CLI-semantics decision per the ADR) recursively builds a real
+tree from a real directory, carrying entity IDs forward (exact name,
+exact hash, fuzzy) independently at each directory level. Verified: a
+real 3-level directory, edited only at its deepest file, correctly
+carries every entity ID forward - at both nested-tree levels and every
+untouched file - while the edited file's own content hash genuinely
+changes. **A real incident**: the test's first version fed a headerless
+synthetic archive into offset math that assumes the real `.hgs`
+16-byte-header convention, hanging the shared dev daemon (used
+concurrently by a peer session) in what was almost certainly a real
+infinite loop from garbage read 16 bytes off - recovered via a real
+QEMU monitor reset, the standard reboot dance, a full stage-1/stage-2
+re-bootstrap, and a regression re-run confirming the persistent disk's
+entire repo history survived intact. The peer session caught the hang
+independently and moved to its own isolated session without being
+asked - real coordination under a real incident. Fixed in the test
+itself (a real header, not a `TreeBuildRecursive` change), re-verified
+cleanly afterward. Full account in
+`docs/research/failed-approaches.md`.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

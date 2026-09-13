@@ -1,0 +1,13 @@
+P90_BUILD1_ALEN=681 ROOT_LEN=163
+P90_B1_TOP found=1 type=1
+P90_B1_SUBA found=1 type=2
+P90_B1_A1 found=1 type=1
+P90_B1_SUBAA found=1 type=2
+P90_B1_DEEP found=1 type=1
+P90_B2_TOP_ID_SAME=1
+P90_B2_SUBA_ID_SAME=1
+P90_B2_A1_ID_SAME=1
+P90_B2_SUBAA_ID_SAME=1
+P90_B2_DEEP_ID_SAME=1 (expect 1 - same name, edited content, ADR 0004 by-name carry)
+P90_B2_DEEP_HASH_CHANGED=1 (expect 1 - content really did change)
+PASS p90_recursive_tree_test

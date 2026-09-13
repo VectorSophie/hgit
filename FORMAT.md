@@ -169,8 +169,16 @@ half; author/identity itself is still not invented.
 
 - **No merge commits tested** — the format's `parent_count` supports
   more than 1, but only 0 and 1 have been exercised.
-- **No recursive-tree test** — the format supports a tree entry pointing
-  at another tree, but no test has built one yet.
+- ~~No recursive-tree test~~ **The object model itself is now verified**
+  (`experiments/89-nested-tree-object-model/`): a real tree entry with
+  `child_type = OBJ_TREE`, pointing at another real, separately-stored
+  tree object, round-trips correctly through the exact same
+  `TreeEncodeEntry`/`ObjectPut`/`IndexLookup`/`TreeFindEntry` functions
+  every real command already uses — no code changes were needed. No
+  real hgit command builds or consumes one yet, though
+  (`hgit offer`'s own `FilesFind` usage is still flat/single-level —
+  see `experiments/88-recursive-directory-walk/` for the separate,
+  real primitive that would be needed for that).
 - **Index is linear-search, not a hash table yet.** `src/hgit-core/Index.HC`
   (`IndexBuild`/`IndexLookup`, `experiments/12-index/`) now answers
   "where is the object with this hash" — verified by fully dereferencing

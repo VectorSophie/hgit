@@ -117,20 +117,18 @@ hgit history graph
 real parent); `feature`'s own unique commit nests a further level
 under `offer_two` — exactly its fork point, not guessed.
 
-<p align="center">
-  <img src="experiments/81-hgit-graph/evidence/rendered-graph-collapsed.png" alt="hgit graph rendered in Ed(), collapsed" width="380">
-</p>
-
-That's the real document open in TempleOS's own editor (`Ed()`) —
-shown **collapsed**, which is DolDoc's own default for every `$TR$`
-tree (confirmed from real shipped TempleOS docs, probe 57), not a
-limitation specific to hgit. Expanding it takes one real click at a
-real console; this project's own headless QEMU test harness drives
-everything through scripted keyboard/serial injection, and hasn't
-built a reliable way to simulate that click yet (real mouse-click
-automation was attempted for this exact screenshot and didn't land) —
-so the reformatted text above, not the screenshot, is the actual
-source of truth for what the structure looks like.
+In TempleOS's own editor (`Ed()`), this renders as a real, native,
+**collapsible** `$TR$` tree — collapsed by default (confirmed from
+real shipped TempleOS docs, probe 57; that's DolDoc's own convention,
+not an hgit limitation), one real click away from expanded. No
+screenshot here: this project's headless QEMU test harness drives
+everything through scripted keyboard/serial injection, and a real
+mouse click on a collapsed tree node turned out to be a genuinely hard
+thing to automate reliably (tried keyboard cursor positioning, and
+absolute-positioning mouse clicks via a real `usb-tablet` device across
+several attempts — none of them toggled the node). Rather than publish
+a screenshot that only shows one collapsed line and calling it "the
+graph," the reformatted structure above is the real, complete picture.
 
 ## How hgit differs from Git
 

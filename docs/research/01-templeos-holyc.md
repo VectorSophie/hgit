@@ -403,6 +403,26 @@ A genuinely new capability for this project: any future HolyC-quirk
 investigation can read the actual compiler source that produces the
 behavior, instead of pure black-box test bisection.
 
+## Confirmed: `FilesFind` is non-recursive; `CDirEntry.attr & 16` tells a directory from a file
+
+`FilesFind("<dir>*", 0)` lists a directory's own immediate entries
+only - a subdirectory appears as one entry (size 0), not its contents
+(confirmed directly, `experiments/88-recursive-directory-walk/`: a
+real file placed inside a subdirectory never showed up in a wildcard
+scan of the parent). `CDirEntry` has a real, working `attr` field -
+`attr & 16` is set for a directory, `0` for a plain file (confirmed
+directly, not assumed from a DOS-attribute-bit-convention guess;
+`file_attr`, a first guess at the field name, does not exist - a real
+"Invalid member" compile error). A real recursive walker built on
+these two primitives (plain function recursion, skipping `.`/`..`)
+correctly descends a 3-level real directory structure with no HolyC
+quirk hit and no crash - the real, confirmed prerequisite for ever
+lifting hgit's own current "flat, single-level tree only" limitation
+(`Tree.HC`'s own header comment), though actually building that
+support (nested `OBJ_TREE` objects, every tree-consuming command
+updated to recurse) remains real, separate, unattempted work - see
+that probe's own README.
+
 ## Architectural implications so far
 
 - Treat `hgit` as being invoked two ways that may need different code

@@ -1284,3 +1284,66 @@ exactly `#include "::/Doc/Comm"; CommInit8n1(1,115200);` then
 `I64 sz;U8 *b=FileRead("C:/Home/HgitAll.HC",&sz);ExePutS(b);` before
 any real hgit command - not the plain `#include` `INSTALL.md`
 previously documented. Fixed there and in `packaging/bundle/hgit-launch.py`.
+
+## 2026-09-13 — A test bug hung the shared dev daemon: a headerless in-memory archive fed into `+16`-offset code
+
+**Context:** Testing `TreeBuildRecursive` (ADR 0010, probe 90) - a new
+recursive tree-building primitive, standalone, not wired into
+`Offer.HC`'s own dispatch. The test built two synthetic in-memory
+archives (no real `.hgs` file, no `FileRead`) to check entity-ID
+continuity across a second, edited build.
+
+**Happened:** The test's first half printed correctly
+(`P90_B1_DEEP found=1 type=1`), then the shared main dev daemon
+(`experiments/01-temple-repl/build/com2.sock`, used by this project's
+entire history of probes *and* a peer Claude session working
+concurrently) stopped responding entirely - no further output, no
+`COMPILE_OK`/`COMPILE_FAIL` for anything pushed afterward, including
+from the other session. A real, disruptive incident, not a local test
+failure.
+
+**Why:** `TreeBuildRecursive`'s own internal offset math
+(`I64 sub_off = 16 + sub_off_rel;`) matches every real command's own
+convention - a real `.hgs` file has a 16-byte header before its object
+section, and `IndexLookup`'s returned offsets are always relative to
+*that* object section, so every real caller adds 16 back to get an
+absolute position. The test's own synthetic archive had **no** header
+- objects started at byte 0 - so `IndexBuild`/`IndexLookup` on it
+(called directly on the raw buffer, not `buf+16`) returned offsets
+relative to position 0, and `TreeBuildRecursive`'s own `+16` then read
+16 bytes into the wrong place on the *second* (old-tree-aware) build.
+Whatever garbage landed there was interpreted as a record length,
+almost certainly driving a copy or scan loop into a huge or corrupted
+bound - a real, reproducible infinite loop, not a hang in `HolyC`
+itself or in `TreeBuildRecursive`'s own logic.
+
+**Worked instead:** gave the test's own synthetic archives a real
+16-byte header (`HgsWriteHeader`) and called `IndexBuild`/`IndexLookup`
+on `archive+16`/`alen-16`, matching the exact convention every real
+command already uses - not a change to `TreeBuildRecursive` itself,
+which was already correct for its one real intended use (a real
+on-disk repo's own `rbuf`). Re-verified on a fresh minimal check first
+(no old tree, lower risk), then the full test - both completed cleanly
+with no hang, all real output correct
+(`experiments/90-recursive-tree-primitive/`).
+
+**Recovery**: the shared daemon was recovered with a real QEMU monitor
+`system_reset`, the standard reboot dance (select Drive C, dismiss
+"Take Tour?"), a full stage-1→stage-2 re-bootstrap (`build/daemon_v2.hc`,
+the already-fixed 512KB-buffer version), the full package reloaded, and
+the standing regression (`experiments/65-head-deletion/test_driver.hc`)
+re-run clean - confirming the persistent disk's own real repo state
+(every `.hgs`/working file from every prior probe this session)
+survived completely intact, since it only ever persists via real
+`FileWrite`, never daemon memory. A peer session sharing the same
+daemon caught the hang independently and moved to its own isolated
+session rather than touching the shared one - real, effective
+coordination under a real incident, not just after the fact.
+
+**Standing lesson**: any test building a synthetic in-memory archive
+(not from a real `FileRead`'d `.hgs` file) must give it a real 16-byte
+header and call `IndexBuild` on `buf+16`/`len-16` - the same "+16"
+convention every real command's own `rbuf` usage already follows.
+Skipping the header to save a few bytes in a throwaway test buffer is
+a real, reproducible way to feed garbage into offset math that assumes
+it's there.
