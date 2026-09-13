@@ -43,7 +43,7 @@ verified, probe by probe.
 | No command discoverability - `DISPATCH_ERR unknown_command` said what was wrong but never what to try, no full command listing existed short of reading `Hgit.HC`'s own source | **Resolved** — `hgit help` (also a bare/empty command, also a new `DISPATCH_HINT` line after `unknown_command`) prints every real command with its literal argument shape. Writing it surfaced a real mismatch between an initial guess and the dispatcher's actual `correct`/`revert`/`reconcile` argument order, corrected against the real code before finalizing | `experiments/73-hgit-help/` |
 | No version string embedded in the packaged file (doc 09's own flagged gap) | **Resolved** — `hgit version` (and `hgit help`'s own first line) prints `HGIT_VERSION`, bumped by hand alongside each real release tag | `experiments/74-hgit-version/`, `docs/research/09-packaging-and-releases.md` |
 | No install instructions doc existed beyond `tools/build-package.sh`'s own description (doc 09's own flagged gap) | **Resolved** — `INSTALL.md` built around the one transport this project has verified end-to-end (COM2 serial injection). A real attempt to also verify a CD-ROM-based path (`experiments/75-cd-media-attempt/`) did not conclusively work - a real, dated dead end, honestly logged rather than hidden | `INSTALL.md`, `experiments/75-cd-media-attempt/`, `docs/research/failed-approaches.md` |
-| ADR 0008's Fossil.HC caller-shape-sensitivity bug had no further investigation lead (no disassembly access) | **Narrowed further, not solved** — TempleOS's own compiler source is readable at runtime (`D:/Compiler/*.HC.Z`, `FileRead` transparently decompresses); a real, named optimizer stage (`OptPass012`'s documented constant-folding/NOP-elimination pass) matches the bug's exact trigger. A genuinely new debugging capability for future HolyC-quirk work generally, not just this one bug | `experiments/76-compiler-source-access/`, `docs/adr/0008-fossil-delta-format-prototype.md` |
+| ADR 0008's Fossil.HC caller-shape-sensitivity bug had no further investigation lead (no disassembly access) | **RESOLVED** — real root cause found and fixed: a raw byte cast to `(U64)` doesn't reliably zero-extend once composed with other `(U64)`-cast byte reads in one shifted-OR expression, leaking garbage above bit 7 (why it varied by caller shape); explicit `& 0xFF` masking after each cast fixes it, verified against independently-computed ground truth across every previously-failing reproduction. `Canon.HC`'s `GetU32LE`/`GetU64LE` checked directly and confirmed unaffected (each composes bytes in a structurally different, safe way). `Fossil.HC` still not wired into the build — not for reliability now, but because it has no real diff algorithm yet, so no compression value | `experiments/76-compiler-source-access/`, `experiments/79-fossil-checksum-isolation/`, `experiments/80-fossil-checksum-root-cause/`, `docs/adr/0008-fossil-delta-format-prototype.md` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -1005,6 +1005,30 @@ functions. It does **not** reproduce calling `FossilChecksum` directly
 from the shape-sensitive caller, only through the
 `FossilDeltaMakeTrivial` nesting layer. Real, additional narrowing,
 still not a fix - see `docs/adr/0008-fossil-delta-format-prototype.md`.
+
+**ADR 0008's Fossil.HC bug: RESOLVED**: `experiments/80-fossil-checksum-root-cause/`
+- the real root cause, finally. `FossilChecksum`'s original word
+composition cast three of four bytes to `(U64)` and shifted/OR'd them
+together in one expression; a raw `(U64)` cast doesn't reliably
+zero-extend once composed this way with other such casts - garbage
+above bit 7 (left over from whatever previously occupied that
+register/stack slot, hence the caller-shape sensitivity) leaks into
+the sum. Verified against an independently-computed ground-truth
+checksum (Python, byte-for-byte, for a real 28-byte string): the
+unmasked version returned a *different wrong value in every single
+caller shape tested, including the supposedly-passing ones* (they'd
+only ever agreed with *each other*, never with the true value); explicit
+`& 0xFF` masking after each cast, before shifting, matches the ground
+truth exactly, every time. Re-ran every one of probe 68's original
+nine reproductions plus probe 77's three - all now correct. `Canon.HC`'s
+`GetU32LE`/`GetU64LE` (foundational to every hash/length/offset in
+hgit's own object format) were checked directly against known values
+and confirmed unaffected - each happens to compose bytes in a
+structurally different, safe way, now understood rather than just
+observed to work. Regression (probe 65's full command-surface test)
+re-run clean. `Fossil.HC` still isn't wired into `tools/build-package.sh`
+- not for reliability anymore, but because it has no real diff
+algorithm yet and provides no compression value on its own.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

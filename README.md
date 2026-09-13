@@ -353,10 +353,11 @@ and [`v0.8.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.8.0)
 (exact-content rename detection), [`v0.10.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.10.0)
 (status surfaces detected renames), [`v0.11.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.11.0)
 (check detects dangling/unreachable objects), [`v0.12.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.12.0)
-(hgit help), and
-[`v0.13.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.13.0)
+(hgit help), [`v0.13.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.13.0)
 (hgit version - the first release tag whose own `HGIT_VERSION` string
-matches it exactly). Each attaches
+matches it exactly), and
+[`v0.14.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.14.0)
+(hgit logo + real project branding). Each attaches
 `packaging/HgitAll.HC` — verified downloaded and byte-identical to the
 local build before being announced done. Matches TempleOS's own
 convention (no installer/package manager; a program is `#include`d as

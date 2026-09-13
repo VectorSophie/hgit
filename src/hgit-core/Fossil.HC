@@ -98,26 +98,42 @@ I64 FossilGetInt(U8 *buf, I64 pos, I64 *value_out)
 // big-endian words and sum them with natural U32 (mod 2^32)
 // wraparound; 1-3 trailing bytes are zero-padded at the low end
 // (matches delta.c's own trailing-byte handling, confirmed from
-// source rather than assumed). Every raw byte read is cast to
-// `(U64)`, never `(I64)` - see the file header's quirk note - then
-// composed into a U64 accumulator (Canon.HC's own GetU32LE
-// convention), masked to 32 bits before returning.
+// source rather than assumed).
+//
+// ROOT CAUSE FOUND AND FIXED (probe 80, experiments/80-fossil-checksum-root-cause/,
+// closing ADR 0008's long-open caller-shape-sensitivity mystery): a
+// raw byte cast to `(U64)` does NOT reliably zero-extend to a clean
+// 64-bit value once the result is shifted left and OR'd/summed with
+// other similarly-cast values in the same expression - stray garbage
+// in the upper bits (left over from whatever previously occupied that
+// register/stack slot, which is why this varied by caller shape)
+// leaks into the final sum. A single-byte print (the original quirk
+// verification, probe 68) never exposed this, because one clean byte
+// value printed in isolation looks correct even with garbage above
+// bit 7 - it only corrupts a *composed* multi-byte expression like
+// this one. Fix: explicitly mask each cast byte with `& 0xFF` before
+// shifting - verified against an independently-computed ground-truth
+// checksum (Python, byte-for-byte) for a real 28-byte string: every
+// per-word value and the final sum now match exactly, where every
+// previous version (masked or not at the trailer-comparison level,
+// heap or stack buffers, any caller shape) had produced a different
+// wrong value.
 U32 FossilChecksum(U8 *data, I64 len)
 {
   U64 sum = 0;
   I64 pos = 0;
   while (pos + 4 <= len) {
-    U64 word = (data[pos](U64) << 24) | (data[pos+1](U64) << 16) |
-               (data[pos+2](U64) << 8) | data[pos+3](U64);
+    U64 word = ((data[pos](U64) & 0xFF) << 24) | ((data[pos+1](U64) & 0xFF) << 16) |
+               ((data[pos+2](U64) & 0xFF) << 8) | (data[pos+3](U64) & 0xFF);
     sum += word;
     pos += 4;
   }
   I64 remaining = len - pos;
   if (remaining > 0) {
     U64 tail_word = 0;
-    if (remaining >= 1) tail_word |= data[pos](U64) << 24;
-    if (remaining >= 2) tail_word |= data[pos+1](U64) << 16;
-    if (remaining >= 3) tail_word |= data[pos+2](U64) << 8;
+    if (remaining >= 1) tail_word |= (data[pos](U64) & 0xFF) << 24;
+    if (remaining >= 2) tail_word |= (data[pos+1](U64) & 0xFF) << 16;
+    if (remaining >= 3) tail_word |= (data[pos+2](U64) & 0xFF) << 8;
     sum += tail_word;
   }
   return sum & 0xFFFFFFFF;

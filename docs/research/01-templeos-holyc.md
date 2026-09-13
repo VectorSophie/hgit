@@ -164,22 +164,32 @@ cast a raw byte/array read to `(U64)`, never `(I64)`, even if the
 result will immediately be used as I64 - a clean `(U64)` value
 composes safely into I64 arithmetic/comparisons afterward.
 
-**Open, unresolved (probe 68)**: a real function call
-(`FossilDeltaApply`) was found to return a different result depending
-on code elsewhere in the *caller*, after the call. Nine separate
-reproductions narrowed this well past "any extra local" (ruled out:
-local-variable count, type, an unused-variable effect, name collision
-with an internal variable, and "any extra function call site") down to
-one specific, reliably reproducible trigger: calling `FossilChecksum`
-again (on the same content) later in the same function, and using its
-result, flips an *already-computed-and-printed* earlier
-`FossilDeltaApply` result from failure to success - even though that
-second call is textually after the point where the affected value was
-already printed, ruling out a runtime execution-order explanation.
-This points at a compile-time code-generation interaction specific to
-this JIT, not yet understood well enough to state as a general rule.
-Flagged here as a real, live, narrowed-but-unsolved question about this
-compiler's behavior, not resolved.
+**RESOLVED (probes 68, 77, 79, 80)**: a real function call
+(`FossilDeltaApply`) was originally found to return a different result
+depending on code elsewhere in the *caller*, after the call - nine
+separate reproductions (probe 68) then three more (probe 77) narrowed
+this well past "any extra local," "any extra function call," or a
+mixed-signedness comparison. **The real root cause (probe 80,
+`experiments/80-fossil-checksum-root-cause/`)**: a raw byte cast to
+`(U64)` does not reliably zero-extend once its result is shifted and
+composed with *other* `(U64)`-cast byte reads in the same expression -
+e.g. `(data[pos](U64) << 24) | (data[pos+1](U64) << 16) | ...`. Stray
+garbage bits above bit 7 (left over from whatever previously occupied
+that register/stack slot - hence the caller-shape sensitivity) leak
+into the result. A single isolated `(U64)`-cast byte read (probe 68's
+own original verification) never exposed this, because one clean value
+printed alone looks correct even with garbage above bit 7 - it only
+corrupts a *composed multi-cast* expression. **Standing rule,
+refined**: casting one raw byte to `(U64)` is safe in isolation or when
+combined with at most one other such cast in an expression (confirmed
+safe: `Canon.HC`'s `GetU32LE`, which casts only its highest byte this
+way, the other three uncast); composing **multiple** explicit
+`(U64)`-cast byte reads together in one shifted-OR expression is
+**not** safe - explicitly mask each with `& 0xFF` immediately after
+the cast, before shifting, to force a clean value. Verified against an
+independently computed ground-truth checksum: the unmasked version
+never matched (a different wrong value in every caller shape tested);
+the masked version matched exactly, every time.
 
 ## Facts confirmed in source (via `experiments/templeos-devkit`, ZealOS fork — close enough to stock HolyC to be informative, flagged where TempleOS-specific)
 

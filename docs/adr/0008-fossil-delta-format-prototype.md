@@ -2,14 +2,22 @@
 
 ## Status
 
-**Prototyped, partially verified - NOT adopted into any real command
-yet.** `src/hgit-core/Fossil.HC` (`experiments/68-fossil-delta-format/`)
+**Byte-level mechanics prototyped AND verified reliable - still not
+adopted into any real command, for a different reason now.**
+`src/hgit-core/Fossil.HC` (`experiments/68-fossil-delta-format/`)
 implements the format's byte-level mechanics (base-64 integer
-encode/decode, checksum, three-part delta structure) and confirms them
-correct in a controlled, minimal test. A real, unresolved reliability
-issue was found and left open (see "What would justify revisiting
-this" below) - this ADR records a real research/prototyping step, not
-a decision to actually use this format in hgit's object storage yet.
+encode/decode, checksum, three-part delta structure), and the long-open
+"caller-shape-sensitivity" reliability gap (probes 68/77/79) is now
+**resolved** - a real root cause found and fixed in probe 80
+(`experiments/80-fossil-checksum-root-cause/`): a raw byte cast to
+`(U64)` does not reliably zero-extend once composed with other such
+casts in one shifted-OR expression; explicitly masking each with
+`& 0xFF` fixes it, verified against independently-computed ground
+truth across every previously-failing reproduction. `Fossil.HC` still
+isn't wired into `tools/build-package.sh` - not because of reliability
+anymore, but because `FossilDeltaMakeTrivial` has no real diff
+algorithm yet and provides no compression value on its own; see
+"Decision" below.
 
 ## Context
 
@@ -61,63 +69,77 @@ Two genuinely new things, beyond what any prior probe had found:
 See `experiments/68-fossil-delta-format/README.md` for the full,
 honest account of each, in the order found.
 
-## What was NOT resolved - a real, open reliability gap
+## What was NOT resolved for a long time - a real, open reliability gap (now closed, see below)
 
 The identical `FossilDeltaApply` call, with identical arguments, was
 found to pass or fail depending on code **elsewhere in the calling
 function, after the call**. Narrowed by extensive further bisection
 (see `experiments/68-fossil-delta-format/README.md` for all nine
-reproductions): not local-variable count, not type, not an unused-
+original reproductions, then `experiments/77-fossil-checksum-isolation/`'s
+three more): not local-variable count, not type, not an unused-
 variable effect, not a name collision, not "any extra function call" -
 specifically, calling `FossilChecksum` again (on the same content) and
-using its result reliably flips an *already-printed* earlier
-`FossilDeltaApply` result from failure to success. Since that extra
-call is textually after the point where the affected value was
-already computed and printed, this cannot be a runtime execution-order
-effect - it points at a compile-time code-generation interaction
-specific to this JIT compiler, not a logic bug in `Fossil.HC` itself.
-Not pursued to a final root cause (no disassembly access). **Not
-fixed, not glossed over.**
+using its result reliably flipped an *already-printed* earlier
+`FossilDeltaApply` result from failure to success.
+
+**RESOLVED (probe 80, `experiments/80-fossil-checksum-root-cause/`)**:
+the real root cause is a genuine HolyC compiler quirk, now understood
+precisely - a raw byte cast to `(U64)` does not reliably zero-extend
+once its result is shifted and composed with *other* `(U64)`-cast byte
+reads in the same expression (as `FossilChecksum`'s original word-
+composition did, casting three of four bytes this way). Garbage bits
+above bit 7 - left over from whatever previously occupied that
+register/stack slot, which is exactly why this varied with caller
+shape - leak into the sum. Explicitly masking each cast byte with
+`& 0xFF` before shifting fixes it: verified against an independently
+computed ground-truth checksum (Python, byte-for-byte, for a real
+28-byte string) - every previous version, in every caller shape,
+produced a *different wrong value*; the fixed version matches exactly,
+in every previously-failing reproduction re-run. `Canon.HC`'s own
+`GetU32LE`/`GetU64LE` were checked directly and confirmed unaffected -
+each happens to compose its bytes in a structurally different, safe
+way (only one explicit `(U64)` cast in `GetU32LE`'s case; a per-byte
+loop rather than one composed expression in `GetU64LE`'s), not by
+outcome-blind luck once understood, but a real asymmetry now
+explained rather than just observed to work.
 
 ## Decision
 
-Given the above, this ADR records the prototype as **built and
-partially verified, not adopted**: `Fossil.HC` is not added to
-`tools/build-package.sh` and is not called from any real hgit command.
-The byte-level format understanding gained here (and the two new HolyC
-quirks found) are real, durable value from this probe even though the
-format itself isn't ready to use - the research question doc 04 raised
-("does Fossil's delta format work in HolyC at all") is answered
-"yes, for the algorithm itself, with an unresolved reliability
-question about how it behaves inside a real caller."
+`Fossil.HC`'s reliability question is closed - the checksum is
+correct, verified against ground truth, across every caller shape
+tested. It is still **not** added to `tools/build-package.sh` and is
+not called from any real hgit command, but now for a different, much
+more mundane reason: `FossilDeltaMakeTrivial` remains a one-literal-
+segment encoder with no real diff algorithm, so it provides no
+compression value on its own yet, and no real hgit command currently
+needs delta compression at all. Adopting it into the build now would
+add real dependency-graph weight for zero functional benefit. The
+byte-level format understanding gained across probes 68/77/79/80 (and
+the HolyC quirks found, including this one) are real, durable value -
+the research question doc 04 raised ("does Fossil's delta format work
+in HolyC at all") is now answered "yes, verified reliable, pending a
+real diff algorithm before it's actually useful."
 
 ## What would justify revisiting this
 
-- Root-causing the caller-stack-shape sensitivity found above - without
-  that, this format cannot be trusted inside a real command's own
-  (necessarily larger, more local-variable-heavy) functions.
-  **Update (probe 76, `experiments/76-compiler-source-access/`)**:
-  this is no longer a fully black-box question - TempleOS ships its
-  own compiler source, readable via `FileRead` (`.Z` files transparently
-  decompressed), at `D:/Compiler/`. `OptPass012.HC`'s own documented
-  Pass#1&2 ("constant expressions are simplified, eliminated opcodes
-  are set to NOP") is a real, named optimizer stage whose known
-  failure mode matches this bug's exact trigger (a later use of a
-  value changing whether an earlier computation of it gets folded
-  away). Not traced to a full root cause yet - a concrete next step
-  with real source to read, not an unexplained black box anymore.
+- ~~Root-causing the caller-stack-shape sensitivity~~ **RESOLVED**
+  (probe 80, `experiments/80-fossil-checksum-root-cause/`) - see
+  "Decision" above. This section's own history, left in place rather
+  than deleted, as the honest record of how the investigation actually
+  went: **Update (probe 76, `experiments/76-compiler-source-access/`)**:
+  TempleOS ships its own compiler source, readable via `FileRead`
+  (`.Z` files transparently decompressed), at `D:/Compiler/` - a real
+  optimizer stage (`OptPass012.HC`'s documented constant-folding/NOP-
+  elimination pass) looked like a plausible match at the time.
   **Update (probe 77, `experiments/79-fossil-checksum-isolation/`)**:
-  three more real hypotheses tested and ruled out (mixed-signedness
-  comparison; stack-buffer overlap via heap allocation; an
-  intermediate return-value local). A real new fact found: the bug is
-  in the *encoder*, not the decoder - `FossilDeltaMakeTrivial`'s own
-  call to `FossilChecksum` already returns the wrong value, confirmed
-  by instrumenting both functions and comparing their printed
-  checksums directly. Also: it does **not** reproduce calling
-  `FossilChecksum` directly from the shape-sensitive caller - only
-  through the `FossilDeltaMakeTrivial` nesting layer specifically.
-  Real, additional narrowing, still not a fix.
-- A real diff/longest-common-substring algorithm, once the above is
-  resolved - `FossilDeltaMakeTrivial`'s one-literal-segment approach
-  has no compression value by itself; the actual benefit only comes
-  from real copy segments referencing the source.
+  three more hypotheses ruled out; found the bug lived in the encoder,
+  not the decoder. **In the end, the actual root cause turned out to
+  be simpler than the optimizer-pass theory**: a raw-byte-`(U64)`-cast
+  composition bug, not anything in `OptPass012` specifically - the
+  compiler-source lead from probe 76 was a real, useful capability
+  found along the way, just not the piece that ended up mattering for
+  this specific bug.
+- A real diff/longest-common-substring algorithm - `FossilDeltaMakeTrivial`'s
+  one-literal-segment approach has no compression value by itself; the
+  actual benefit only comes from real copy segments referencing the
+  source. This is the real remaining item now.
