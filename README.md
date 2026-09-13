@@ -102,28 +102,35 @@ renders the whole commit history as a real, native DolDoc tree — the
 same collapsible `$TR$` widget TempleOS itself ships, not an ASCII
 approximation. The trunk is whichever path came first; every other
 path attaches as its own nested branch at the exact commit it forked
-from.
-
-<p align="center">
-  <img src="experiments/81-hgit-graph/evidence/rendered-graph-collapsed.png" alt="hgit graph rendered in Ed()" width="380">
-</p>
-
-That screenshot is the real output of the sequence above, open in
-TempleOS's own editor (`Ed()`) — collapsed by default, matching every
-other `$TR$` tree this project has ever rendered (probe 57's own
-finding). Reformatted for readability, the raw document underneath is:
+from. Reformatted for readability, the document produced by the
+sequence above looks like this:
 
 ```
 hgit history graph
 
-[+] 468bbd6656 offer_one
-      0c6b94e6ba offer_two
-        [feature] b0598745e9 offer_on_feature
+468bbd6656 offer_one
+  0c6b94e6ba offer_two
+    [feature] b0598745e9 offer_on_feature
 ```
 
 `offer_one` is the root; `offer_two` nests one level under it (its
 real parent); `feature`'s own unique commit nests a further level
 under `offer_two` — exactly its fork point, not guessed.
+
+<p align="center">
+  <img src="experiments/81-hgit-graph/evidence/rendered-graph-collapsed.png" alt="hgit graph rendered in Ed(), collapsed" width="380">
+</p>
+
+That's the real document open in TempleOS's own editor (`Ed()`) —
+shown **collapsed**, which is DolDoc's own default for every `$TR$`
+tree (confirmed from real shipped TempleOS docs, probe 57), not a
+limitation specific to hgit. Expanding it takes one real click at a
+real console; this project's own headless QEMU test harness drives
+everything through scripted keyboard/serial injection, and hasn't
+built a reliable way to simulate that click yet (real mouse-click
+automation was attempted for this exact screenshot and didn't land) —
+so the reformatted text above, not the screenshot, is the actual
+source of truth for what the structure looks like.
 
 ## How hgit differs from Git
 

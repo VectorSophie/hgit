@@ -115,10 +115,15 @@ do").
   legitimately had duplicate-content files under different names
   before one of them was renamed.
 - ~~Does not surface the rename to the user in any command's own
-  output~~ **Now done for `status`** (probe 71): `hgit status` reports
-  `STATUS_RENAMED <old> -> <new>`. `hgit history`/`hgit reconciledoc`
-  still don't surface a rename the same way - extending the idea to a
-  commit-vs-commit history view remains separate, real follow-up work.
+  output~~ **Done** (probe 71): `hgit status` reports
+  `STATUS_RENAMED <old> -> <new>`. **Also done, a different way**
+  (probe 86, `experiments/86-hgit-diff/`): a new `hgit diff <repo>
+  <commit_hex>` command shows a commit's own changes vs. its parent
+  (`DIFF_RENAMED <old> -> <new>`, plus `DIFF_MODIFIED`/`DIFF_NEW`/
+  `DIFF_DELETED`) - `hgit history`'s own per-line output still doesn't
+  inline a summary of what changed, a deliberate scoping choice (a new
+  command is a smaller, safer change than reworking `history`'s
+  established format), not an oversight.
 
 ## Costs
 

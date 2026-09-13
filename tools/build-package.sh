@@ -44,6 +44,7 @@ cat \
   src/hgit-cli/ReconcileDoc.HC \
   src/hgit-cli/Graph.HC \
   src/hgit-cli/See.HC \
+  src/hgit-cli/Diff.HC \
   src/hgit-cli/OpLog.HC \
   src/hgit-cli/Portable.HC \
   src/hgit-cli/Offer.HC \

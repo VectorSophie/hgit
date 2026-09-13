@@ -176,6 +176,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD offer <repo_path> <find_mask> <message>\n");
   CommPrint(1, "HELP_CMD history <repo_path>\n");
   CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");
+  CommPrint(1, "HELP_CMD diff <repo_path> <commit_hex>\n");
   CommPrint(1, "HELP_CMD check <repo_path>\n");
   CommPrint(1, "HELP_CMD historydoc <repo_path> <dest.DD>\n");
   CommPrint(1, "HELP_CMD reconciledoc <repo_path> <commit_hex> <dest.DD>\n");
@@ -249,6 +250,15 @@ U0 Hgit(U8 *cmdline)
     Bool see_ok = HexToHash(see_hex, see_hash);
     if (!see_ok) { CommPrint(1, "DISPATCH_ERR bad_hash %s\n", see_hex); return; }
     HgitSee(see_repo_path, see_hash);
+  } else if (StrCmp(cmd, "diff") == 0) {
+    U8 diff_repo_path[256], diff_hex[129];
+    I64 diff_p = 0;
+    diff_p = ExtractToken(rest, diff_p, diff_repo_path, 256);
+    diff_p = ExtractToken(rest, diff_p, diff_hex, 129);
+    U8 diff_hash[64];
+    Bool diff_ok = HexToHash(diff_hex, diff_hash);
+    if (!diff_ok) { CommPrint(1, "DISPATCH_ERR bad_hash %s\n", diff_hex); return; }
+    HgitDiff(diff_repo_path, diff_hash);
   } else if (StrCmp(cmd, "offer") == 0) {
     U8 offer_repo_path[256], offer_find_mask[256];
     I64 offer_p = 0;
