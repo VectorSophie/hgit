@@ -2475,9 +2475,15 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   Bool *new_matched = MAlloc(disk_count + 1);
   // ADR 0009 addendum (experiments/85-status-fuzzy-rename/): a fuzzy
   // rename check needs each candidate's real CONTENT, not just its
-  // hash - one 512-byte slot each, matching the same per-file size cap
-  // this loop already enforces below (STATUS_TOO_LARGE_TO_CHECK), so
-  // every candidate that reaches this buffering step already fits.
+  // hash - one 512-byte slot each. Probe 108 (experiments/108-status-large-file-support/):
+  // this fixed per-slot stride is still real (a jagged/variable-offset
+  // layout would be a bigger structural change than this probe scopes
+  // to), so a candidate whose own content doesn't fit in one slot
+  // simply isn't buffered for FUZZY matching - `new_content_lens[ni]`
+  // is set to 0 for it (safe: `FossilSimilarityPercent` against a
+  // zero-length target never matches), not skipped entirely - it still
+  // gets a real hash (for exact-match rename detection) and a real
+  // NEW/MODIFIED/UNCHANGED classification, unlike before this probe.
   U8 *new_contents = MAlloc(disk_count*512 + 512);
   I64 *new_content_lens = MAlloc(disk_count*8 + 8);
   I64 new_count = 0;
@@ -2492,50 +2498,53 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
     I64 name_len = j - name_start;
 
-    // Real bug found and fixed (experiments/67-historydoc-buffer-guard/),
-    // same class as probe 56's own Offer.HC finding: `tagged[512]` had
-    // no bound against a matched file's real size - a file over 511
-    // bytes overflows it. Guarded the same way: skip with a clear
-    // message instead of corrupting memory.
-    if (fsize+1 > 512) {
-      CommPrint(1, "STATUS_TOO_LARGE_TO_CHECK ");
-      for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
-      CommPrint(1, "\n");
-    } else {
-      U8 tagged[512];
-      tagged[0] = OBJ_BLOB;
-      I64 i;
-      for (i=0; i<fsize; i++) tagged[1+i] = fbuf[i];
-      U8 file_hash[64];
-      B2Hash512Any(tagged, fsize+1, file_hash);
+    // Probe 108: was a fixed `tagged[512]` stack buffer (a file over
+    // 511 bytes overflowed it - guarded before this probe by skipping
+    // the whole file with `STATUS_TOO_LARGE_TO_CHECK`, reporting
+    // nothing else about it at all). `MAlloc`'d at the file's own real
+    // size instead, same fix as probes 105-107's own version - a large
+    // file now gets a real hash and a real NEW/MODIFIED/UNCHANGED
+    // classification; only fuzzy-rename buffering (below) keeps a
+    // real, separate, smaller size limit (`new_contents`'s own fixed
+    // per-slot stride).
+    U8 *tagged = MAlloc(fsize+1);
+    tagged[0] = OBJ_BLOB;
+    I64 i;
+    for (i=0; i<fsize; i++) tagged[1+i] = fbuf[i];
+    U8 file_hash[64];
+    B2Hash512Any(tagged, fsize+1, file_hash);
+    Free(tagged);
 
-      U8 tree_type;
-      U8 tree_entry_hash[64];
-      U64 tree_entity_id;
-      Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
-                                    tmpde->full_name+name_start, name_len,
-                                    &tree_type, tree_entry_hash, &tree_entity_id);
-      if (!in_tree) {
-        // Buffered, not printed - a possible rename source. Names over
-        // 254 chars are truncated to fit the fixed 256-byte slot; this
-        // repo's own 33-char path ceiling (ADR 0003) means a real name
-        // this project has to handle never gets close to that anyway.
-        I64 cap = name_len; if (cap > 254) cap = 254;
-        for (i=0; i<cap; i++) new_names[new_count*256+i] = tmpde->full_name[name_start+i];
-        new_names[new_count*256+cap] = 0;
-        for (i=0; i<64; i++) new_hashes[new_count*64+i] = file_hash[i];
+    U8 tree_type;
+    U8 tree_entry_hash[64];
+    U64 tree_entity_id;
+    Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
+                                  tmpde->full_name+name_start, name_len,
+                                  &tree_type, tree_entry_hash, &tree_entity_id);
+    if (!in_tree) {
+      // Buffered, not printed - a possible rename source. Names over
+      // 254 chars are truncated to fit the fixed 256-byte slot; this
+      // repo's own 33-char path ceiling (ADR 0003) means a real name
+      // this project has to handle never gets close to that anyway.
+      I64 cap = name_len; if (cap > 254) cap = 254;
+      for (i=0; i<cap; i++) new_names[new_count*256+i] = tmpde->full_name[name_start+i];
+      new_names[new_count*256+cap] = 0;
+      for (i=0; i<64; i++) new_hashes[new_count*64+i] = file_hash[i];
+      if (fsize+1 <= 512) {
         for (i=0; i<fsize; i++) new_contents[new_count*512+i] = fbuf[i];
         new_content_lens[new_count] = fsize;
-        new_matched[new_count] = FALSE;
-        new_count++;
       } else {
-        Bool same = TRUE;
-        for (i=0; i<64; i++) if (file_hash[i] != tree_entry_hash[i]) same = FALSE;
-        if (same) CommPrint(1, "STATUS_UNCHANGED ");
-        else CommPrint(1, "STATUS_MODIFIED ");
-        for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
-        CommPrint(1, "\n");
+        new_content_lens[new_count] = 0; // too large to buffer for fuzzy matching - see comment above
       }
+      new_matched[new_count] = FALSE;
+      new_count++;
+    } else {
+      Bool same = TRUE;
+      for (i=0; i<64; i++) if (file_hash[i] != tree_entry_hash[i]) same = FALSE;
+      if (same) CommPrint(1, "STATUS_UNCHANGED ");
+      else CommPrint(1, "STATUS_MODIFIED ");
+      for (j=name_start; tmpde->full_name[j]; j++) CommPrint(1, "%c", tmpde->full_name[j]);
+      CommPrint(1, "\n");
     }
     tmpde = tmpde->next;
   }
@@ -2768,14 +2777,20 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
       } else {
         I64 fsize;
         U8 *fbuf = FileRead(tmpde->full_name, &fsize);
-        if (fsize+1 > 512) {
-          CommPrint(1, "STATUS_TOO_LARGE_TO_CHECK %s\n", full_name);
-        } else {
-          U8 tagged[512];
+        {
+          // Probe 108 (experiments/108-status-large-file-support/):
+          // was `if (fsize+1 > 512) STATUS_TOO_LARGE_TO_CHECK` guarding
+          // a fixed `tagged[512]` stack buffer - `MAlloc`'d at the
+          // file's own real size instead, same fix as the flat `hgit
+          // status` version above. Only fuzzy-rename buffering below
+          // keeps a real, separate size limit (`new_contents`'s own
+          // fixed per-slot stride).
+          U8 *tagged = MAlloc(fsize+1);
           tagged[0] = OBJ_BLOB;
           for (i=0; i<fsize; i++) tagged[1+i] = fbuf[i];
           U8 file_hash[64];
           B2Hash512Any(tagged, fsize+1, file_hash);
+          Free(tagged);
 
           U8 tree_type;
           U8 tree_entry_hash[64];
@@ -2797,8 +2812,12 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
             for (i=0; i<cap; i++) new_names[new_count*256+i] = full_name[i];
             new_names[new_count*256+cap] = 0;
             for (i=0; i<64; i++) new_hashes[new_count*64+i] = file_hash[i];
-            for (i=0; i<fsize; i++) new_contents[new_count*512+i] = fbuf[i];
-            new_content_lens[new_count] = fsize;
+            if (fsize+1 <= 512) {
+              for (i=0; i<fsize; i++) new_contents[new_count*512+i] = fbuf[i];
+              new_content_lens[new_count] = fsize;
+            } else {
+              new_content_lens[new_count] = 0; // too large to buffer for fuzzy matching
+            }
             new_matched[new_count] = FALSE;
             new_count++;
           }
@@ -6290,7 +6309,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.7.3"
+#define HGIT_VERSION "1.7.4"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
