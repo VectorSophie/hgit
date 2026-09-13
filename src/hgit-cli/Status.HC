@@ -25,7 +25,7 @@
 // "C:/Home/OfferFile*") - not derived automatically here.
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC, Index.HC, Head.HC, WorkDir.HC (the whole
+// Tree.HC, Commit.HC, Index.HC, WorkDir.HC (the whole
 // hgit-core object layer plus the CLI pieces built so far).
 //
 // Both tree-entry walks (TreeFindEntry's new signature, and the manual

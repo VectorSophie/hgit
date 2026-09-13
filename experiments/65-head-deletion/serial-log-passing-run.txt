@@ -1,0 +1,17 @@
+10:DISPATCH_OK init C:/Home/P65Repo.hgs
+11:DISPATCH_OK offer
+12:DISPATCH_OK offer
+13:DISPATCH_OK undo
+14:DISPATCH_OK redo
+15:DISPATCH_OK path_new feature
+16:DISPATCH_OK path_go feature
+19:HISTORY_END shown=2
+20:STATUS_UNCHANGED P65FileA.txt
+21:STATUS_END
+22:CHECK_OK objects=6
+23:DISPATCH_OK historydoc
+24:DISPATCH_OK path_go main
+25:SEE_COMMIT ts=271764 parents=1 msg=offer_two
+26:SEE_TREE entries=1
+28:SEE_END
+29:PASS p65_head_deletion_regression

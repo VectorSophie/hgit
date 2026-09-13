@@ -1,0 +1,16 @@
+11:DISPATCH_OK offer
+111:DISPATCH_OK offer
+128:DISPATCH_OK offer
+202:DISPATCH_OK offer
+303:DISPATCH_OK init C:/Home/P64Repo.hgs
+304:DISPATCH_OK offer
+305:CHECK_OK objects=3
+306:CHECK_OK objects=78
+307:PASS p64_check_command
+311:DISPATCH_OK offer
+312:CHECK_FAIL objects=3 ok=2 corrupt=1
+313:PASS p64b_check_detects_corruption
+324:DISPATCH_OK offer
+325:CHECK_OK objects=6
+326:CHECK_OK objects=78
+327:PASS p64_check_command

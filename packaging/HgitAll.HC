@@ -947,6 +947,23 @@ Bool IndexLookup(U8 *index_hashes, I64 *index_offsets, I64 count,
 // Paths.HC) even though it matches Paths.HC's own HGIT_MAX_PATH_NAME.
 #define META_MAX_PATH_NAME 64
 
+// Real bug found and fixed (experiments/66-meta-dynamic-buffer/): every
+// write function below used to rebuild the whole metadata file into a
+// fixed `U8 new_buf[16384]` stack buffer before writing it back - the
+// exact same class of bug ADR 0007 fixed in Offer.HC's `archive`, but
+// worse here: it did NOT crash. A real 150-offer stress test grew this
+// file past 16384 bytes (~144 bytes/offer - one HEAD record replace
+// plus one oplog append) with zero error or crash, and silently lost
+// data instead: only 115 of 150 real operation-log entries survived,
+// and HEAD silently stopped advancing partway through, both without
+// any error signal at all. `new_buf` is now `MAlloc`'d from the
+// existing file's real size (already known from `FileRead`) plus this
+// headroom for the one new record being written, freed on every exit
+// path. A repo that behaves this way (writes silently stop taking
+// effect, no error) is a much worse failure mode than probes 55/60/61's
+// own crashes - a crash is at least visible.
+#define META_BUF_HEADROOM 1024
+
 U0 MetaPath(U8 *repo_path, U8 *out_path)
 {
   I64 i = 0;
@@ -1065,11 +1082,12 @@ U0 MetaWriteHead(U8 *repo_path, U8 *name, U8 *hash)
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
-  U8 new_buf[16384]; // fixed cap for now - same style as OpLog.HC
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len;
   MetaSpliceOut(buf, total_old, name, META_TAG_HEAD, new_buf, &new_len);
   MetaAppendRecord(new_buf, &new_len, name, META_TAG_HEAD, hash, 64);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // TRUE if `name` is "main" (always exists, never stored) or has a
@@ -1098,7 +1116,7 @@ U0 MetaPathDeclare(U8 *repo_path, U8 *name)
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len = 0;
   I64 i;
   for (i=0; i<total_old; i++) new_buf[i] = buf[i];
@@ -1106,6 +1124,7 @@ U0 MetaPathDeclare(U8 *repo_path, U8 *name)
   U8 no_payload[1];
   MetaAppendRecord(new_buf, &new_len, name, META_TAG_PATH_DECLARED, no_payload, 0);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // Un-declares `name` (removes its META_TAG_PATH_DECLARED record, if
@@ -1122,10 +1141,11 @@ U0 MetaPathUndeclare(U8 *repo_path, U8 *name)
   I64 size;
   U8 *buf = FileRead(meta_path, &size);
   if (buf == NULL) return;
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
   MetaSpliceOut(buf, size, name, META_TAG_PATH_DECLARED, new_buf, &new_len);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // Prints every path name, "main" first, then each META_TAG_PATH_DECLARED
@@ -1190,11 +1210,12 @@ U0 MetaCurrentSet(U8 *repo_path, U8 *name)
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len;
   MetaSpliceOut(buf, total_old, "", META_TAG_CURRENT, new_buf, &new_len);
   MetaAppendRecord(new_buf, &new_len, "", META_TAG_CURRENT, name, StrLen(name));
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // --- Operation log (probe 42) ---
@@ -1277,12 +1298,13 @@ U0 MetaOpLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 tim
   for (bi=0; bi<64; bi++) payload[8+bi] = prev_head[bi];
   for (bi=0; bi<64; bi++) payload[72+bi] = new_head[bi];
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len = 0;
   for (bi=0; bi<total_old; bi++) new_buf[bi] = buf[bi];
   new_len = total_old;
   MetaAppendRecord(new_buf, &new_len, name, META_TAG_OPLOG, payload, 136);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // Pops the most recently appended operation-log entry for path `name`:
@@ -1296,12 +1318,12 @@ Bool MetaOpLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_o
   U8 *buf = FileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
   U8 payload[136];
   I64 payload_len;
   Bool found = MetaSpliceOutLast(buf, size, name, META_TAG_OPLOG, new_buf, &new_len, payload, &payload_len);
-  if (!found) return FALSE;
+  if (!found) { Free(new_buf); return FALSE; }
 
   *timestamp_out = GetU64LE(payload, 0);
   I64 bi;
@@ -1309,6 +1331,7 @@ Bool MetaOpLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_o
   for (bi=0; bi<64; bi++) new_head_out[bi] = payload[72+bi];
 
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
   return TRUE;
 }
 
@@ -1405,12 +1428,13 @@ U0 MetaRedoLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 t
   for (bi=0; bi<64; bi++) payload[8+bi] = prev_head[bi];
   for (bi=0; bi<64; bi++) payload[72+bi] = new_head[bi];
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len = 0;
   for (bi=0; bi<total_old; bi++) new_buf[bi] = buf[bi];
   new_len = total_old;
   MetaAppendRecord(new_buf, &new_len, name, META_TAG_REDOLOG, payload, 136);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 Bool MetaRedoLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_out, U64 *timestamp_out)
@@ -1421,12 +1445,12 @@ Bool MetaRedoLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head
   U8 *buf = FileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
   U8 payload[136];
   I64 payload_len;
   Bool found = MetaSpliceOutLast(buf, size, name, META_TAG_REDOLOG, new_buf, &new_len, payload, &payload_len);
-  if (!found) return FALSE;
+  if (!found) { Free(new_buf); return FALSE; }
 
   *timestamp_out = GetU64LE(payload, 0);
   I64 bi;
@@ -1434,6 +1458,7 @@ Bool MetaRedoLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head
   for (bi=0; bi<64; bi++) new_head_out[bi] = payload[72+bi];
 
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
   return TRUE;
 }
 
@@ -1446,10 +1471,11 @@ U0 MetaRedoLogClear(U8 *repo_path, U8 *name)
   I64 size;
   U8 *buf = FileRead(meta_path, &size);
   if (buf == NULL) return;
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
   MetaSpliceOut(buf, size, name, META_TAG_REDOLOG, new_buf, &new_len);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 // Init.HC — `hgit init`: create a new, empty repository.
 //
@@ -1478,58 +1504,46 @@ Bool HgitInit(U8 *path)
   FileWrite(path, header, 16);
   return TRUE;
 }
-// Head.HC — the "current offering" pointer: hgit's minimal ref/HEAD
-// equivalent, unblocking `status`/`offer`/`history` against a real
-// prior commit rather than only the empty-repo case (probe 16).
+// Check.HC — `hgit check`: verify every object in a repo's own
+// archive really hashes to what it claims to.
 //
-// Deliberately minimal for M1: ONE pointer per repository, no named
-// paths/branches yet (the brief's `hgit path` commands are explicitly
-// M2 work - "paths" - not built here; a single implicit path is enough
-// to make `offer`/`history` meaningful). Stored as a sidecar file next
-// to the repo (`<repo_path>.head`, exactly 64 bytes: the latest
-// commit's hash) rather than inside the `.HGS` file itself - the .HGS
-// header's own reserved field is only 2 bytes, nowhere near enough for
-// a 64-byte hash, and keeping it as a separate small file means it can
-// use plain FileWrite/FileRead with no changes to the archive format.
+// The original brief's command list included a "shrine check" - a
+// repo-integrity verification command - that was never wired in as
+// M1's command surface grew (`init`/`status`/`offer`/`history`/`see`,
+// then M2/M3/M4's own additions). `Archive.HC`'s `ArchiveVerify`
+// (built and verified in M0, `experiments/05-tiny-archive/`) already
+// does exactly this work - recompute each stored record's hash and
+// compare - and its record shape (`[U64 length][data][64-byte hash]`)
+// is identical to what `Hgs.HC`'s `HgsPut`/`Object.HC`'s `ObjectPut`
+// actually write for every real object in a real `.hgs` file (the
+// type tag is just the first byte of `data`, transparent to
+// `ArchiveVerify`'s own hash recomputation). So this is a thin wrapper
+// over already-tested M0 code, not new hashing/verification logic.
 //
-// Verified (experiments/17-head-pointer/): absent on a fresh repo
-// (correctly reports "no offerings yet" via HeadRead returning FALSE,
-// same NULL-means-absent convention as HgitInit/HgitStatus), settable,
-// and independently re-settable to a second value (confirms it's a
-// real mutable pointer, not a write-once accident).
-//
-// Depends only on kernel FileRead/FileWrite - no hgit-core dependency,
-// since it doesn't touch the .HGS format itself.
+// Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC.
 
-U0 HeadPath(U8 *repo_path, U8 *out_path)
+U0 HgitCheck(U8 *repo_path)
 {
-  I64 i = 0;
-  while (repo_path[i]) { out_path[i] = repo_path[i]; i++; }
-  out_path[i++]='.'; out_path[i++]='h'; out_path[i++]='e';
-  out_path[i++]='a'; out_path[i++]='d'; out_path[i]=0;
-}
+  I64 rsize;
+  U8 *rbuf = FileRead(repo_path, &rsize);
+  if (rbuf == NULL) { CommPrint(1, "CHECK_ERR not_a_repository\n"); return; }
+  U16 rver;
+  U64 rcount;
+  Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
+  if (!hok) { CommPrint(1, "CHECK_ERR bad_header\n"); return; }
 
-// Returns TRUE and fills hash_out (64 bytes) if the repo has a current
-// offering; FALSE (hash_out untouched) if it doesn't yet.
-Bool HeadRead(U8 *repo_path, U8 *hash_out)
-{
-  U8 hp[256];
-  HeadPath(repo_path, hp);
-  I64 size;
-  U8 *buf = FileRead(hp, &size);
-  if (buf == NULL || size != 64) return FALSE;
-  I64 i;
-  for (i=0; i<64; i++) hash_out[i] = buf[i];
-  return TRUE;
-}
+  I64 total, ok;
+  ArchiveVerify(rbuf+16, rsize-16, &total, &ok);
 
-// Sets the repo's current offering to `hash` (64 bytes), overwriting
-// any previous value.
-U0 HeadWrite(U8 *repo_path, U8 *hash)
-{
-  U8 hp[256];
-  HeadPath(repo_path, hp);
-  FileWrite(hp, hash, 64);
+  if (total != rcount) {
+    CommPrint(1, "CHECK_WARN object_count_mismatch header=%d scanned=%d\n",
+              rcount, total);
+  }
+  if (ok == total) {
+    CommPrint(1, "CHECK_OK objects=%d\n", total);
+  } else {
+    CommPrint(1, "CHECK_FAIL objects=%d ok=%d corrupt=%d\n", total, ok, total-ok);
+  }
 }
 // Paths.HC — named paths (hgit's branch equivalent), per the brief's
 // `hgit path list/new/go/close` vocabulary.
@@ -1729,7 +1743,7 @@ U0 WorkDirList()
 // "C:/Home/OfferFile*") - not derived automatically here.
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC, Index.HC, Head.HC, WorkDir.HC (the whole
+// Tree.HC, Commit.HC, Index.HC, WorkDir.HC (the whole
 // hgit-core object layer plus the CLI pieces built so far).
 //
 // Both tree-entry walks (TreeFindEntry's new signature, and the manual
@@ -1870,7 +1884,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 // probe read back correctly across the QEMU reboot boundary.
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
-// Index.HC, Head.HC.
+// Index.HC.
 
 U0 HgitHistory(U8 *repo_path)
 {
@@ -2734,7 +2748,7 @@ U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
 // files" (no self-exclusion logic yet).
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC (the whole hgit-core object layer), Head.HC,
+// Tree.HC, Commit.HC (the whole hgit-core object layer),
 // Index.HC, and OpLog.HC. Every offer now logs its own HEAD
 // before/after transition via OpLogAppend before moving HEAD, so
 // `hgit undo` (OpLogUndo) can revert it - wired in and verified in
@@ -3036,7 +3050,7 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
 // failed-approaches.md's corrected entry.
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC, Index.HC, Init.HC, Head.HC, WorkDir.HC,
+// Tree.HC, Commit.HC, Index.HC, Init.HC, WorkDir.HC,
 // Status.HC, History.HC, See.HC, Hex.HC, Offer.HC.
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
@@ -3137,6 +3151,10 @@ U0 Hgit(U8 *cmdline)
     p = ExtractToken(rest, p, find_mask, 256);
     p = ExtractToken(rest, p, dir_prefix, 256);
     HgitStatus(repo_path, find_mask, dir_prefix);
+  } else if (StrCmp(cmd, "check") == 0) {
+    U8 check_repo_path[256];
+    ExtractToken(rest, 0, check_repo_path, 256);
+    HgitCheck(check_repo_path);
   } else if (StrCmp(cmd, "history") == 0) {
     U8 hist_repo_path[256];
     ExtractToken(rest, 0, hist_repo_path, 256);

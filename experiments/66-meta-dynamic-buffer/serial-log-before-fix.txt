@@ -1,0 +1,13 @@
+DISPATCH_OK init C:/Home/P66Repo.hgs
+BEFORE_OFFER i=0 meta_size=0
+... (144 bytes/offer growth, steady) ...
+BEFORE_OFFER i=140 meta_size=16516
+... (all 150 offers still report DISPATCH_OK - no crash, no error) ...
+PASS p66_meta_bisection_done
+
+--- verification (test_driver_verify.hc), BEFORE the fix ---
+FINAL_META_SIZE=16516
+OPLOG_COUNT=115 (expect 150)          <- 35 real operations silently lost
+HEAD_READ_OK=1
+SEE_COMMIT ts=833559 parents=1 msg=offer_number_113   <- HEAD stuck 36 offers behind reality
+PASS p66b_verify_done

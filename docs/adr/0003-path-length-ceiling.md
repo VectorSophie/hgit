@@ -14,8 +14,12 @@ identically under the new backing store, plus the concrete payoff: a
 path name the old per-path-sidecar scheme would have rejected now
 succeeds. The old `.head.<name>`/`.paths`/`.currentpath`/`.oplog*`/
 `.redolog*` sidecar files are no longer written or read by any real
-command. `Head.HC` itself remains in the codebase, unused by real
-commands, not deleted — a separate decision, not made here.
+command. `Head.HC` itself was deleted in `experiments/65-head-deletion/`
+(PASS) — confirmed zero real callers by grep, then verified on a truly
+fresh QEMU boot (the rebuilt package with `Head.HC` absent was the
+first and only source that session ever compiled) against a real
+end-to-end regression covering every command family that could
+plausibly have depended on it.
 
 ## Context
 

@@ -35,6 +35,7 @@ verified, probe by probe.
 | A repo that simply accumulates ~13+ ordinary offers/corrections (no wildcards, no large files) eventually crosses `Offer.HC`'s `archive[8192]` in-memory copy buffer and causes a real kernel-level GPF | **Fully resolved** — probe 60 first guarded it (clean refusal instead of a crash); ADR 0007/probe 61 then lifted the ceiling entirely (`archive` is now `MAlloc`'d from the repo's real size, freed after use) — verified with 30 corrections growing a repo to 30,808 bytes, no crash, no refusal | `docs/adr/0007-dynamic-archive-buffer.md`, `experiments/60-archive-buffer-guard/`, `experiments/61-dynamic-archive/` |
 | `Offer.HC`'s own `old_idx_hashes[64*64]`/`old_idx_offsets[64]` (ADR 0004's parent-tree lookup) is a hardcoded 64-*object*-in-the-whole-repo cap, unrelated to `archive` | **Resolved** — found only once ADR 0007's own fix lifted the `archive` ceiling and let real growth reach this next fixed buffer (~21 offers, ~3 objects/offer); fixed the same way, `MAlloc`'d from the repo's own exact object count (`rcount`, already known from the `.HGS` header) | `experiments/61-dynamic-archive/` |
 | The same `idx_hashes[64*64]`/`idx_offsets[64]` pattern also existed in `History.HC`, `HistoryDoc.HC`, `Status.HC`, `See.HC`, and `ReconcileDoc.HC` (twice) | **Resolved** — all six call sites now `MAlloc` from the repo's real object count, same as `Offer.HC`; verified with a real 26-offer/~78-object repo against all five affected commands (`see`/`history`/`status`/`historydoc`/`reconcileoverview`), all correct, no crash | `experiments/62-index-buffer-sweep/` |
+| **`Meta.HC`'s own nine `new_buf[16384]` fixed rebuild buffers silently lost data past ~114 real offers — no crash, no error signal at all** | **Resolved — a more severe bug class than every prior crash-based one** — a real 150-offer stress test found `DISPATCH_OK` reported for every single call while 35 of 150 real operation-log entries were silently never recorded and `HEAD` silently stopped advancing 36 offers before the true latest commit; fixed by `MAlloc`-ing all nine from the file's real size, verified growing cleanly past 37,966 bytes with full data-integrity accounting (`OPLOG_COUNT` exactly matching total real operations, `HEAD` correctly resolving to the true last commit) | `experiments/66-meta-dynamic-buffer/` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -707,6 +708,56 @@ interactively, and `$LS$` is fundamentally a form-input widget needing
 `DocForm()`'s interactive binding (likely blocking the daemon the same
 way `Ed()` does, per probe 54) - a real, separate feature this project
 hasn't built, not a fit for the read-only views built so far.
+
+**`hgit check` now exists too, closing a real gap**:
+`experiments/64-hgit-check/` (PASS) - the original brief's command
+list included a "shrine check" (repo-integrity verification) that
+never got wired into the command surface as M1-M4 grew around it.
+`src/hgit-cli/Check.HC` is a thin wrapper over M0's own already-tested
+`Archive.HC` `ArchiveVerify` (its record shape is identical to what
+every real object actually stores, so no new hashing logic). Verified
+both the success case (a small repo and the real 78-object repo from
+probe 62 both report `CHECK_OK`) and a deliberately-induced failure
+case (one byte flipped inside a real repo's object section correctly
+reports `CHECK_FAIL objects=3 ok=2 corrupt=1`, not a false pass or a
+crash).
+
+**`Head.HC` is deleted** (`experiments/65-head-deletion/`, PASS) -
+closing a decision every earlier commit touching it deferred as
+"separate, not made here" since ADR 0003's own implementation retired
+it from real code paths. Confirmed zero real callers by grep first,
+then verified on a truly fresh QEMU boot (the rebuilt package was the
+first and only source compiled that session) against a real
+end-to-end regression covering `init`/`offer`/`undo`/`redo`/
+`path new`/`path go`/`history`/`status`/`check`/`historydoc`/`see` -
+all correct, nothing broke.
+
+**A more severe bug class found and fixed in `Meta.HC` itself**:
+`experiments/66-meta-dynamic-buffer/` (PASS). Auditing `Meta.HC` - the
+shared metadata layer underneath every real command - after closing
+out probes 60-62's own buffer sweep found the identical fixed-buffer
+pattern in nine of its own functions
+(`MetaWriteHead`/`MetaPathDeclare`/`MetaPathUndeclare`/
+`MetaCurrentSet`/`MetaOpLogAppend`/`MetaOpLogPopLast`/
+`MetaRedoLogAppend`/`MetaRedoLogPopLast`/`MetaRedoLogClear`, each with
+its own `U8 new_buf[16384]`). A real 150-offer stress test, logging
+the metadata file's own real size every 10 offers (same bisection
+technique as probes 60/61), found something worse than any prior
+crash: **every single one of the 150 offers reported `DISPATCH_OK`**,
+while the file silently stopped growing correctly past ~114 offers -
+independent verification confirmed 35 of 150 real operation-log
+entries were silently never recorded and `HEAD` silently stopped
+advancing, 36 offers behind the true latest commit, with zero error
+signal anywhere. Fixed the same way as ADR 0007 (all nine `MAlloc`'d
+from the file's real size), verified on a truly fresh boot: the same
+already-past-the-old-ceiling repo grew cleanly to 37,966 bytes across
+another 150 offers, with full data-integrity accounting this time
+(`OPLOG_COUNT` exactly matching the true total across both runs,
+`HEAD` correctly resolving to the real last commit). Flagged
+explicitly as a standing lesson: `DISPATCH_OK` alone was never proof
+the underlying write actually persisted correctly at scale - this is
+the first confirmed *silent* failure from this bug class, after four
+prior *loud* (crash-based) ones.
 
 **Root-caused and fixed**: `experiments/56-offer-buffer-guard/` (PASS)
 confirms it - `Offer.HC`'s `tree_content[2048]`/`blob_tagged[512]`

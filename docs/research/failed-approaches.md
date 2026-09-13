@@ -817,3 +817,49 @@ exists, unfixed, in five other call sites (`History.HC`,
 `HistoryDoc.HC`, `Status.HC`, `See.HC`, `ReconcileDoc.HC` twice) -
 confirmed by code inspection, not yet independently hit by a crash in
 any of them. Full writeup: `experiments/61-dynamic-archive/README.md`.
+
+## 2026-09-13 — Meta.HC's own fixed rebuild buffers silently lost data, with zero error signal
+
+**Tried:** Auditing `Meta.HC` (the shared combined-metadata-file layer
+every real command runs on, ADR 0003) after probes 60-62 closed out an
+identical fixed-buffer bug class in `Offer.HC`/`See.HC`/`History.HC`/
+etc. Found the same `read-whole-file, rebuild-in-a-fixed-buffer,
+write-whole-file` pattern in nine of `Meta.HC`'s own functions, each
+with its own `U8 new_buf[16384]`. Ran a real 150-offer stress test,
+logging the file's own real size every 10 offers to bisect precisely
+(`experiments/66-meta-dynamic-buffer/`).
+
+**Happened:** Growth was steady (~144 bytes/offer) and crossed 16384
+bytes around offer 114 - and **every single one of the 150 offers
+still reported `DISPATCH_OK`**. No crash, no error, no visible
+symptom at all - the opposite of every prior fixed-buffer bug this
+project found (probes 55/56/60/61, all real kernel GPFs).
+
+**Why:** A follow-up script independently counted real operation-log
+entries (`MetaOpLogCount`) and checked `HEAD` directly, rather than
+trusting the all-`DISPATCH_OK` output: `OPLOG_COUNT=115` (35 of 150
+real operations silently never recorded) and `HEAD` pointed at
+`offer_number_113`, 36 offers behind the true latest commit. The fixed
+16384-byte buffer was silently truncating/dropping writes past its own
+capacity while `FileWrite` itself reported no error - a materially
+worse failure mode than a crash, since a user would see every command
+succeed and have no way to know a third of their real history was
+gone until they happened to independently check a count or notice
+`HEAD` looked stale.
+
+**Worked instead:** Same fix as ADR 0007: all nine `new_buf[16384]`
+arrays are now `MAlloc`'d from the metadata file's real size (already
+known from `FileRead`) plus a small headroom, freed on every exit path.
+Verified on a truly fresh boot: the same already-past-the-old-ceiling
+repo (left over from the pre-fix run) grew cleanly through another 150
+offers to 37,966 bytes, with full data-integrity accounting this time
+(`OPLOG_COUNT=265`, exactly 115 + 150 - zero further loss; `HEAD`
+correctly resolving to the real last commit, `offer_number_149`).
+Full writeup: `experiments/66-meta-dynamic-buffer/README.md`.
+
+**Standing lesson, worth repeating**: a command reporting
+`DISPATCH_OK` is not, by itself, proof its effect was correctly
+persisted at scale - this project's own crash-based bugs (loud, easy
+to notice) had made that easy to forget. Real corpus-scale testing,
+checking the actual persisted state independently rather than trusting
+a success code, is the only way this class of bug surfaces.

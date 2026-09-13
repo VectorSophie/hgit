@@ -52,9 +52,10 @@ packages into one file, loadable with a single `#include`.
   `Meta.HC` (ADR 0003's combined per-repo metadata file — HEAD, path
   list/current-path, and operation-log storage in one file, immune to
   the real 33-char path-length ceiling; `Paths.HC` now runs on it).
-- `src/hgit-cli/` — the command surface: `Init.HC`, `WorkDir.HC`,
-  `Head.HC` (now unused by real commands — retired in favor of
-  `Meta.HC`, not yet deleted), `Paths.HC` (named paths, backed by
+- `src/hgit-cli/` — the command surface: `Init.HC`, `Check.HC`
+  (`hgit check` — repo integrity verification, a thin wrapper over
+  M0's own `Archive.HC` `ArchiveVerify`), `WorkDir.HC`,
+  `Paths.HC` (named paths, backed by
   `Meta.HC`), `Offer.HC`, `Status.HC`, `History.HC`, `See.HC`, `Hex.HC`
   (hex string ↔ hash bytes), `HistoryDoc.HC` (`hgit historydoc` — a
   real, colored, rendered DolDoc history view), `ReconcileDoc.HC`
@@ -172,8 +173,25 @@ repo where exactly the one relevant commit appears in the output.
 (`experiments/63-list-widget/`), closing doc 02's last tracked DolDoc
 widget question — a real form-input widget bound via `DocForm()`,
 deliberately not adopted into any hgit command since every hgit view
-is a generated, read-only document, not an interactive form. Getting
-here also surfaced a real crash — `hgit offer *` against a directory holding
+is a generated, read-only document, not an interactive form.
+`hgit check <repo>` also now exists — the original brief's "shrine
+check" (repo integrity verification), a thin wrapper over M0's own
+`ArchiveVerify` — verified against a real repo and against a
+deliberately corrupted one (correctly reports `CHECK_FAIL`, not a
+false pass). `Head.HC` (unused since ADR 0003, previously left
+undeleted as "a separate decision") is now actually deleted — confirmed
+zero real callers, then verified on a truly fresh QEMU boot with a
+full command-surface regression, nothing broke
+(`experiments/65-head-deletion/`). **A more severe bug class was then
+found and fixed in `Meta.HC` itself** — the shared metadata layer
+underneath every real command had the same fixed-buffer pattern in
+nine of its own functions, but unlike every prior crash-based bug this
+one produced **zero error signal**: a real 150-offer stress test
+reported `DISPATCH_OK` for every single call while silently losing 35
+of 150 real operation-log entries and leaving `HEAD` stuck 36 offers
+behind the true latest commit. Fixed the same way (`MAlloc`'d from the
+file's real size); verified with full data-integrity accounting after
+the fix (`experiments/66-meta-dynamic-buffer/`). Getting here also surfaced a real crash — `hgit offer *` against a directory holding
 dozens of pre-existing files caused a genuine kernel-level GPF (not a
 graceful error) — since **root-caused and fixed**
 (`experiments/56-offer-buffer-guard/`): two unbounded stack buffers in

@@ -14,7 +14,7 @@
 // probe read back correctly across the QEMU reboot boundary.
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Commit.HC,
-// Index.HC, Head.HC.
+// Index.HC.
 
 U0 HgitHistory(U8 *repo_path)
 {

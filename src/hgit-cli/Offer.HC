@@ -22,7 +22,7 @@
 // files" (no self-exclusion logic yet).
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC (the whole hgit-core object layer), Head.HC,
+// Tree.HC, Commit.HC (the whole hgit-core object layer),
 // Index.HC, and OpLog.HC. Every offer now logs its own HEAD
 // before/after transition via OpLogAppend before moving HEAD, so
 // `hgit undo` (OpLogUndo) can revert it - wired in and verified in

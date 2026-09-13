@@ -59,7 +59,7 @@
 // failed-approaches.md's corrected entry.
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Tree.HC, Commit.HC, Index.HC, Init.HC, Head.HC, WorkDir.HC,
+// Tree.HC, Commit.HC, Index.HC, Init.HC, WorkDir.HC,
 // Status.HC, History.HC, See.HC, Hex.HC, Offer.HC.
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
@@ -160,6 +160,10 @@ U0 Hgit(U8 *cmdline)
     p = ExtractToken(rest, p, find_mask, 256);
     p = ExtractToken(rest, p, dir_prefix, 256);
     HgitStatus(repo_path, find_mask, dir_prefix);
+  } else if (StrCmp(cmd, "check") == 0) {
+    U8 check_repo_path[256];
+    ExtractToken(rest, 0, check_repo_path, 256);
+    HgitCheck(check_repo_path);
   } else if (StrCmp(cmd, "history") == 0) {
     U8 hist_repo_path[256];
     ExtractToken(rest, 0, hist_repo_path, 256);

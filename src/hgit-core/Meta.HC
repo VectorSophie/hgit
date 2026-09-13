@@ -62,6 +62,23 @@
 // Paths.HC) even though it matches Paths.HC's own HGIT_MAX_PATH_NAME.
 #define META_MAX_PATH_NAME 64
 
+// Real bug found and fixed (experiments/66-meta-dynamic-buffer/): every
+// write function below used to rebuild the whole metadata file into a
+// fixed `U8 new_buf[16384]` stack buffer before writing it back - the
+// exact same class of bug ADR 0007 fixed in Offer.HC's `archive`, but
+// worse here: it did NOT crash. A real 150-offer stress test grew this
+// file past 16384 bytes (~144 bytes/offer - one HEAD record replace
+// plus one oplog append) with zero error or crash, and silently lost
+// data instead: only 115 of 150 real operation-log entries survived,
+// and HEAD silently stopped advancing partway through, both without
+// any error signal at all. `new_buf` is now `MAlloc`'d from the
+// existing file's real size (already known from `FileRead`) plus this
+// headroom for the one new record being written, freed on every exit
+// path. A repo that behaves this way (writes silently stop taking
+// effect, no error) is a much worse failure mode than probes 55/60/61's
+// own crashes - a crash is at least visible.
+#define META_BUF_HEADROOM 1024
+
 U0 MetaPath(U8 *repo_path, U8 *out_path)
 {
   I64 i = 0;
@@ -180,11 +197,12 @@ U0 MetaWriteHead(U8 *repo_path, U8 *name, U8 *hash)
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
-  U8 new_buf[16384]; // fixed cap for now - same style as OpLog.HC
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len;
   MetaSpliceOut(buf, total_old, name, META_TAG_HEAD, new_buf, &new_len);
   MetaAppendRecord(new_buf, &new_len, name, META_TAG_HEAD, hash, 64);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // TRUE if `name` is "main" (always exists, never stored) or has a
@@ -213,7 +231,7 @@ U0 MetaPathDeclare(U8 *repo_path, U8 *name)
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len = 0;
   I64 i;
   for (i=0; i<total_old; i++) new_buf[i] = buf[i];
@@ -221,6 +239,7 @@ U0 MetaPathDeclare(U8 *repo_path, U8 *name)
   U8 no_payload[1];
   MetaAppendRecord(new_buf, &new_len, name, META_TAG_PATH_DECLARED, no_payload, 0);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // Un-declares `name` (removes its META_TAG_PATH_DECLARED record, if
@@ -237,10 +256,11 @@ U0 MetaPathUndeclare(U8 *repo_path, U8 *name)
   I64 size;
   U8 *buf = FileRead(meta_path, &size);
   if (buf == NULL) return;
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
   MetaSpliceOut(buf, size, name, META_TAG_PATH_DECLARED, new_buf, &new_len);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // Prints every path name, "main" first, then each META_TAG_PATH_DECLARED
@@ -305,11 +325,12 @@ U0 MetaCurrentSet(U8 *repo_path, U8 *name)
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len;
   MetaSpliceOut(buf, total_old, "", META_TAG_CURRENT, new_buf, &new_len);
   MetaAppendRecord(new_buf, &new_len, "", META_TAG_CURRENT, name, StrLen(name));
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // --- Operation log (probe 42) ---
@@ -392,12 +413,13 @@ U0 MetaOpLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 tim
   for (bi=0; bi<64; bi++) payload[8+bi] = prev_head[bi];
   for (bi=0; bi<64; bi++) payload[72+bi] = new_head[bi];
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len = 0;
   for (bi=0; bi<total_old; bi++) new_buf[bi] = buf[bi];
   new_len = total_old;
   MetaAppendRecord(new_buf, &new_len, name, META_TAG_OPLOG, payload, 136);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 // Pops the most recently appended operation-log entry for path `name`:
@@ -411,12 +433,12 @@ Bool MetaOpLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_o
   U8 *buf = FileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
   U8 payload[136];
   I64 payload_len;
   Bool found = MetaSpliceOutLast(buf, size, name, META_TAG_OPLOG, new_buf, &new_len, payload, &payload_len);
-  if (!found) return FALSE;
+  if (!found) { Free(new_buf); return FALSE; }
 
   *timestamp_out = GetU64LE(payload, 0);
   I64 bi;
@@ -424,6 +446,7 @@ Bool MetaOpLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_o
   for (bi=0; bi<64; bi++) new_head_out[bi] = payload[72+bi];
 
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
   return TRUE;
 }
 
@@ -520,12 +543,13 @@ U0 MetaRedoLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 t
   for (bi=0; bi<64; bi++) payload[8+bi] = prev_head[bi];
   for (bi=0; bi<64; bi++) payload[72+bi] = new_head[bi];
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
   I64 new_len = 0;
   for (bi=0; bi<total_old; bi++) new_buf[bi] = buf[bi];
   new_len = total_old;
   MetaAppendRecord(new_buf, &new_len, name, META_TAG_REDOLOG, payload, 136);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
 
 Bool MetaRedoLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_out, U64 *timestamp_out)
@@ -536,12 +560,12 @@ Bool MetaRedoLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head
   U8 *buf = FileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
   U8 payload[136];
   I64 payload_len;
   Bool found = MetaSpliceOutLast(buf, size, name, META_TAG_REDOLOG, new_buf, &new_len, payload, &payload_len);
-  if (!found) return FALSE;
+  if (!found) { Free(new_buf); return FALSE; }
 
   *timestamp_out = GetU64LE(payload, 0);
   I64 bi;
@@ -549,6 +573,7 @@ Bool MetaRedoLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head
   for (bi=0; bi<64; bi++) new_head_out[bi] = payload[72+bi];
 
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
   return TRUE;
 }
 
@@ -561,8 +586,9 @@ U0 MetaRedoLogClear(U8 *repo_path, U8 *name)
   I64 size;
   U8 *buf = FileRead(meta_path, &size);
   if (buf == NULL) return;
-  U8 new_buf[16384];
+  U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
   MetaSpliceOut(buf, size, name, META_TAG_REDOLOG, new_buf, &new_len);
   FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
 }
