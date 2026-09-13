@@ -257,7 +257,25 @@ five other read-only view commands (`see`/`history`/`status`/
 26-offer/~78-object repo run through all five, no crash; see
 `docs/research/failed-approaches.md`.
 
-**Six real releases are cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
+**Exact-content rename detection now closes a gap ADR 0004 explicitly
+deferred**: a renamed file (same content, new name) used to get a
+fresh entity ID, indistinguishable from delete+create
+(`docs/adr/0009-rename-detection.md`,
+`experiments/70-rename-detection/`). `Tree.HC` gains
+`TreeFindEntryByHash` — the content-addressed counterpart to the
+existing by-name `TreeFindEntry` — and `Offer.HC` tries it whenever a
+by-name lookup against the parent tree fails, carrying the old entity
+ID forward on a content-hash match instead of generating a fresh one.
+Verified with a real rename (identical entity ID `bed2cffaf4e6391c`
+carried across two `hgit see` calls) and a real negative case (a
+genuinely different file correctly gets a fresh ID, `661281709c60602e`,
+despite an old entry existing under another name — exercising the real
+code path without a false positive). Exact-content matching only, the
+same scope as Git's own 100%-similarity rename detection — a fuzzy/
+partial-similarity heuristic still needs a reliable diff algorithm ADR
+0008's Fossil prototype isn't yet.
+
+**Real releases are cut regularly**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
 (M4's reconciliation view underway),
 [`v0.5.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.5.0)
@@ -267,7 +285,9 @@ five other read-only view commands (`see`/`history`/`status`/
 [`v0.7.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.7.0)
 (two more buffer fixes, real VCS research, a Fossil delta prototype),
 and [`v0.8.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.8.0)
-(referential integrity checking, host-side lint tooling). Each attaches
+(referential integrity checking, host-side lint tooling), and
+[`v0.9.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.9.0)
+(exact-content rename detection). Each attaches
 `packaging/HgitAll.HC` — verified downloaded and byte-identical to the
 local build before being announced done. Matches TempleOS's own
 convention (no installer/package manager; a program is `#include`d as

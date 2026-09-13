@@ -37,6 +37,7 @@ verified, probe by probe.
 | The same `idx_hashes[64*64]`/`idx_offsets[64]` pattern also existed in `History.HC`, `HistoryDoc.HC`, `Status.HC`, `See.HC`, and `ReconcileDoc.HC` (twice) | **Resolved** — all six call sites now `MAlloc` from the repo's real object count, same as `Offer.HC`; verified with a real 26-offer/~78-object repo against all five affected commands (`see`/`history`/`status`/`historydoc`/`reconcileoverview`), all correct, no crash | `experiments/62-index-buffer-sweep/` |
 | **`Meta.HC`'s own nine `new_buf[16384]` fixed rebuild buffers silently lost data past ~114 real offers — no crash, no error signal at all** | **Resolved — a more severe bug class than every prior crash-based one** — a real 150-offer stress test found `DISPATCH_OK` reported for every single call while 35 of 150 real operation-log entries were silently never recorded and `HEAD` silently stopped advancing 36 offers before the true latest commit; fixed by `MAlloc`-ing all nine from the file's real size, verified growing cleanly past 37,966 bytes with full data-integrity accounting (`OPLOG_COUNT` exactly matching total real operations, `HEAD` correctly resolving to the true last commit) | `experiments/66-meta-dynamic-buffer/` |
 | `HistoryDoc.HC`'s `doc[8192]` (no bound against a repo's real commit count) and `Status.HC`'s `tagged[512]` (no bound against a matched file's real size, same class probe 56 fixed in `Offer.HC`) | **Resolved** — found by proactively auditing every remaining fixed-size buffer after probes 60-62/66 closed out `Offer.HC`/`Index.HC`-call-site/`Meta.HC`'s own instances. `historydoc` reproduced a real GPF against the actual ~300-commit repo probe 66 built; fixed with the same truncation-guard pattern `HgitReconcileOverview` already used. `status` fixed the same way probe 56 fixed `Offer.HC` (`STATUS_TOO_LARGE_TO_CHECK`, skip instead of overflow). Both verified against real reproductions plus a normal-case regression | `experiments/67-historydoc-buffer-guard/` |
+| ADR 0004's entity IDs don't survive a rename (a renamed file, same content/different name, got a fresh ID indistinguishable from delete+create) | **Resolved for the exact-content case** — `Tree.HC`'s `TreeFindEntryByHash` lets `Offer.HC` carry the old entity ID forward when a name lookup fails but a content-hash lookup on the parent tree succeeds; verified with a real rename (identical entity ID carried across two `hgit see` calls) and a real negative case (genuinely different content correctly gets a fresh ID despite an old entry existing under another name). Fuzzy/partial-similarity rename detection remains out of scope, pending a reliable diff algorithm | `docs/adr/0009-rename-detection.md`, `experiments/70-rename-detection/` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -836,6 +837,25 @@ with a 512KB buffer, confirmed the identical package then compiles
 cleanly. Also fixed a real build-order bug (`Check.HC` needed
 `Hex.HC`'s `HashToHex` but was ordered before it in
 `tools/build-package.sh`).
+
+**Exact-content rename detection closes an ADR 0004 gap**:
+`docs/adr/0009-rename-detection.md` / `experiments/70-rename-detection/`
+(PASS) - `Tree.HC` gains `TreeFindEntryByHash` (the content-addressed
+counterpart to the existing by-name `TreeFindEntry`); `Offer.HC`'s
+per-file loop tries it after a by-name lookup against the parent tree
+fails, carrying the old entity ID forward on a hash match instead of
+generating a fresh one. Verified with a positive case (identical
+entity ID `bed2cffaf4e6391c` carried from `P70Original.txt` to a
+renamed `P70Renamed.txt`, confirmed by exact string comparison of two
+`hgit see` outputs) and a negative case (a genuinely different file,
+`P70BFileB.txt`, correctly gets a fresh ID `661281709c60602e` despite
+an old entry existing under a different name - exercising the real
+code path without a false positive). Exact-content matching only, same
+scope as Git's own 100%-similarity rename detection; a fuzzy/partial-
+similarity heuristic still needs a reliable diff algorithm ADR 0008's
+Fossil prototype isn't yet. Regression (probe 65's full command-surface
+test) re-run clean afterward; `tools/lint-package.sh` clean before
+every push.
 
 ## Estimated line counts (very rough, will move once real code exists)
 
