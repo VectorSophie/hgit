@@ -3592,6 +3592,44 @@ U0 HgitOfferRelatedCmd(U8 *rest, U8 relation_tag, U8 *cmd_name)
   CommPrint(1, "DISPATCH_OK %s\n", cmd_name);
 }
 
+// `hgit help` (also `hgit` with an empty/blank string - no command at
+// all): a real, discoverable command listing, closing a real
+// "modern CLI" gap this project otherwise had - `DISPATCH_ERR
+// unknown_command` told you what was wrong but never what to try
+// instead. One line per real command below, name plus its literal
+// argument shape (matching exactly what `Hgit`'s own dispatcher below
+// parses for it) - kept in sync by hand, same as every other piece of
+// this file's own dispatch table; nothing here is generated.
+U0 HgitHelp()
+{
+  CommPrint(1, "HELP_BEGIN\n");
+  CommPrint(1, "HELP_CMD init <repo_path>\n");
+  CommPrint(1, "HELP_CMD status <repo_path> <find_mask> <dir_prefix>\n");
+  CommPrint(1, "HELP_CMD offer <repo_path> <find_mask> <message>\n");
+  CommPrint(1, "HELP_CMD history <repo_path>\n");
+  CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");
+  CommPrint(1, "HELP_CMD check <repo_path>\n");
+  CommPrint(1, "HELP_CMD historydoc <repo_path> <dest.DD>\n");
+  CommPrint(1, "HELP_CMD reconciledoc <repo_path> <commit_hex> <dest.DD>\n");
+  CommPrint(1, "HELP_CMD reconcileoverview <repo_path> <dest.DD>\n");
+  CommPrint(1, "HELP_CMD correct <repo_path> <target_hex> <entity_hex> <find_mask> <message>\n");
+  CommPrint(1, "HELP_CMD revert <repo_path> <target_hex> <entity_hex> <find_mask> <message>\n");
+  CommPrint(1, "HELP_CMD reconcile <repo_path> <target_hex> <entity_hex> <find_mask> <message>\n");
+  CommPrint(1, "HELP_CMD   (entity_hex: 0000000000000000 for none, ADR 0006)\n");
+  CommPrint(1, "HELP_CMD undo <repo_path>\n");
+  CommPrint(1, "HELP_CMD redo <repo_path>\n");
+  CommPrint(1, "HELP_CMD operation history <repo_path>\n");
+  CommPrint(1, "HELP_CMD operation restore <repo_path> <op_index>\n");
+  CommPrint(1, "HELP_CMD path list <repo_path>\n");
+  CommPrint(1, "HELP_CMD path new <repo_path> <name>\n");
+  CommPrint(1, "HELP_CMD path go <repo_path> <name>\n");
+  CommPrint(1, "HELP_CMD path close <repo_path> <name>\n");
+  CommPrint(1, "HELP_CMD export <src_repo_path> <dest_repo_path>\n");
+  CommPrint(1, "HELP_CMD import <src_repo_path> <dest_repo_path>\n");
+  CommPrint(1, "HELP_CMD help\n");
+  CommPrint(1, "HELP_END\n");
+}
+
 U0 Hgit(U8 *cmdline)
 {
   I64 i = 0;
@@ -3604,7 +3642,9 @@ U0 Hgit(U8 *cmdline)
   U8 *rest = cmdline + i;
   while (*rest == ' ') rest++;
 
-  if (StrCmp(cmd, "init") == 0) {
+  if (StrCmp(cmd, "") == 0 || StrCmp(cmd, "help") == 0) {
+    HgitHelp();
+  } else if (StrCmp(cmd, "init") == 0) {
     U8 init_path[256];
     ExtractToken(rest, 0, init_path, 256);
     Bool ok = HgitInit(init_path);
@@ -3755,5 +3795,6 @@ U0 Hgit(U8 *cmdline)
     CommPrint(1, "DISPATCH_OK import\n");
   } else {
     CommPrint(1, "DISPATCH_ERR unknown_command %s\n", cmd);
+    CommPrint(1, "DISPATCH_HINT try 'help' for a full command list\n");
   }
 }

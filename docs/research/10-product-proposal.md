@@ -40,6 +40,7 @@ verified, probe by probe.
 | ADR 0004's entity IDs don't survive a rename (a renamed file, same content/different name, got a fresh ID indistinguishable from delete+create) | **Resolved for the exact-content case** — `Tree.HC`'s `TreeFindEntryByHash` lets `Offer.HC` carry the old entity ID forward when a name lookup fails but a content-hash lookup on the parent tree succeeds; verified with a real rename (identical entity ID carried across two `hgit see` calls) and a real negative case (genuinely different content correctly gets a fresh ID despite an old entry existing under another name). Fuzzy/partial-similarity rename detection remains out of scope, pending a reliable diff algorithm | `docs/adr/0009-rename-detection.md`, `experiments/70-rename-detection/` |
 | A detected rename wasn't surfaced in any command's own output (ADR 0009's own deferred item) | **Resolved for `status`** — the same exact-content matching now also runs in `hgit status` (working directory vs. HEAD's tree instead of old-tree vs. new-tree), reporting `STATUS_RENAMED old -> new` in place of separate `STATUS_NEW`/`STATUS_DELETED` lines; verified against a real repo with an unrelated genuinely-new file and an unrelated genuinely-deleted file present too, confirming no false-positive pairing. `hgit history`/`reconciledoc` don't surface it yet | `docs/adr/0009-rename-detection.md`, `experiments/71-status-rename-surfacing/` |
 | `hgit check` skipped `git fsck`'s "dangling"/"unreachable" object categories (only "missing object" referential integrity was built) | **Resolved** — `CheckMarkReachable` walks the real object graph from every declared path's own HEAD (a repo's only real ref concept), reporting anything left unmarked as `CHECK_DANGLING <kind> <hash>`. Verified against a real, naturally-occurring case (`undo` leaves a commit's own unique objects genuinely unreachable, without deleting them — hgit's own non-destructive-history design). A real correctness bug was found and fixed along the way: duplicate-content objects (the store never dedupes) were false-positive-reported dangling until a coalescing pass was added; caught by testing against a long-lived real repo, not a fresh fixture | `experiments/72-check-dangling-objects/` |
+| No command discoverability - `DISPATCH_ERR unknown_command` said what was wrong but never what to try, no full command listing existed short of reading `Hgit.HC`'s own source | **Resolved** — `hgit help` (also a bare/empty command, also a new `DISPATCH_HINT` line after `unknown_command`) prints every real command with its literal argument shape. Writing it surfaced a real mismatch between an initial guess and the dispatcher's actual `correct`/`revert`/`reconcile` argument order, corrected against the real code before finalizing | `experiments/73-hgit-help/` |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -921,6 +922,23 @@ separate bug was found in the test driver itself, not the feature
 sidecar before re-`init`-ing left a stale HEAD pointing at a hash the
 fresh object store no longer had) - both logged in
 `docs/research/failed-approaches.md`.
+
+**`hgit help` now exists**: `experiments/73-hgit-help/` (PASS) - a
+real "modern CLI" gap this project otherwise had (`DISPATCH_ERR
+unknown_command` said what was wrong, never what to try instead, and
+there was no way to see the full command surface short of reading
+`Hgit.HC`'s own source). `HgitHelp()` prints one line per real command
+with its literal argument shape, wired in three ways: `hgit help`, a
+bare/empty command string, and a new `DISPATCH_HINT` line after
+`unknown_command`. Writing the help text surfaced a real mismatch
+between a first guess and the dispatcher's actual code:
+`correct`/`revert`/`reconcile`'s real argument order is `<repo_path>
+<target_hex> <entity_hex> <find_mask> <message>`, not
+`<find_mask> <message> <target_hex>` as first assumed - checked
+against `HgitOfferRelatedCmd`'s real parameter order and several prior
+probes' own test-driver command strings before finalizing the help
+text. Verified on real QEMU; regression (probe 65's full
+command-surface test) re-run clean.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

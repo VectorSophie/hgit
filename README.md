@@ -298,6 +298,14 @@ fixed testing this against a long-lived repo: duplicate-content
 objects (the store never dedupes identical content across offers) were
 false-positive-reported dangling until a coalescing pass was added.
 
+**`hgit help` now exists** (`experiments/73-hgit-help/`), closing a
+real "modern CLI" gap: `hgit help` (also a bare/empty command, also a
+new `DISPATCH_HINT` line after any `unknown_command`) lists every real
+command with its literal argument shape - writing it caught a real
+mismatch between a first guess and `correct`/`revert`/`reconcile`'s
+actual dispatcher argument order, corrected against the real code
+before shipping.
+
 **Real releases are cut regularly**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 (M0–M3 complete), [`v0.4.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.4.0)
 (M4's reconciliation view underway),
@@ -310,9 +318,10 @@ false-positive-reported dangling until a coalescing pass was added.
 and [`v0.8.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.8.0)
 (referential integrity checking, host-side lint tooling),
 [`v0.9.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.9.0)
-(exact-content rename detection), and
-[`v0.10.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.10.0)
-(status surfaces detected renames). Each attaches
+(exact-content rename detection), [`v0.10.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.10.0)
+(status surfaces detected renames), and
+[`v0.11.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.11.0)
+(check detects dangling/unreachable objects). Each attaches
 `packaging/HgitAll.HC` — verified downloaded and byte-identical to the
 local build before being announced done. Matches TempleOS's own
 convention (no installer/package manager; a program is `#include`d as

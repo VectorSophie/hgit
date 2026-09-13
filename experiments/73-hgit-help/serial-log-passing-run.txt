@@ -1,0 +1,61 @@
+P73_HELP_EXPLICIT_BEGIN
+HELP_BEGIN
+HELP_CMD init <repo_path>
+HELP_CMD status <repo_path> <find_mask> <dir_prefix>
+HELP_CMD offer <repo_path> <find_mask> <message>
+HELP_CMD history <repo_path>
+HELP_CMD see <repo_path> <commit_hex>
+HELP_CMD check <repo_path>
+HELP_CMD historydoc <repo_path> <dest.DD>
+HELP_CMD reconciledoc <repo_path> <commit_hex> <dest.DD>
+HELP_CMD reconcileoverview <repo_path> <dest.DD>
+HELP_CMD correct <repo_path> <target_hex> <entity_hex> <find_mask> <message>
+HELP_CMD revert <repo_path> <target_hex> <entity_hex> <find_mask> <message>
+HELP_CMD reconcile <repo_path> <target_hex> <entity_hex> <find_mask> <message>
+HELP_CMD   (entity_hex: 0000000000000000 for none, ADR 0006)
+HELP_CMD undo <repo_path>
+HELP_CMD redo <repo_path>
+HELP_CMD operation history <repo_path>
+HELP_CMD operation restore <repo_path> <op_index>
+HELP_CMD path list <repo_path>
+HELP_CMD path new <repo_path> <name>
+HELP_CMD path go <repo_path> <name>
+HELP_CMD path close <repo_path> <name>
+HELP_CMD export <src_repo_path> <dest_repo_path>
+HELP_CMD import <src_repo_path> <dest_repo_path>
+HELP_CMD help
+HELP_END
+P73_HELP_EXPLICIT_END
+P73_HELP_BARE_BEGIN
+HELP_BEGIN
+HELP_CMD init <repo_path>
+HELP_CMD status <repo_path> <find_mask> <dir_prefix>
+HELP_CMD offer <repo_path> <find_mask> <message>
+HELP_CMD history <repo_path>
+HELP_CMD see <repo_path> <commit_hex>
+HELP_CMD check <repo_path>
+HELP_CMD historydoc <repo_path> <dest.DD>
+HELP_CMD reconciledoc <repo_path> <commit_hex> <dest.DD>
+HELP_CMD reconcileoverview <repo_path> <dest.DD>
+HELP_CMD correct <repo_path> <target_hex> <entity_hex> <find_mask> <message>
+HELP_CMD revert <repo_path> <target_hex> <entity_hex> <find_mask> <message>
+HELP_CMD reconcile <repo_path> <target_hex> <entity_hex> <find_mask> <message>
+HELP_CMD   (entity_hex: 0000000000000000 for none, ADR 0006)
+HELP_CMD undo <repo_path>
+HELP_CMD redo <repo_path>
+HELP_CMD operation history <repo_path>
+HELP_CMD operation restore <repo_path> <op_index>
+HELP_CMD path list <repo_path>
+HELP_CMD path new <repo_path> <name>
+HELP_CMD path go <repo_path> <name>
+HELP_CMD path close <repo_path> <name>
+HELP_CMD export <src_repo_path> <dest_repo_path>
+HELP_CMD import <src_repo_path> <dest_repo_path>
+HELP_CMD help
+HELP_END
+P73_HELP_BARE_END
+P73_UNKNOWN_BEGIN
+DISPATCH_ERR unknown_command notarealcommand
+DISPATCH_HINT try 'help' for a full command list
+P73_UNKNOWN_END
+PASS p73_help_test
