@@ -130,6 +130,20 @@ standard practice for any push over ~10KB:
 `experiments/01-temple-repl/paced_push.py` sends the file in small
 (2KB) chunks with a short delay between each rather than one call.
 
+A third test-harness gotcha, found in probe 58
+(`experiments/58-reconciledoc-tree/`): **redefining a function does not
+retroactively patch an already-compiled caller's call site.** Pushing
+an edited helper function alone reports a clean `COMPILE_OK`, but a
+caller compiled earlier in the same daemon session still calls the
+*old* compiled address - confirmed directly (the caller's real output
+stayed unchanged) rather than assumed, then fixed by re-pushing the
+caller too (with no source changes needed in it), which re-resolves
+its call to the new address. **Standing practice**: after editing any
+function in a long-running daemon session, re-push every
+already-compiled caller of it, not just the function itself - a clean
+compile of the edited file alone is not sufficient evidence the change
+took effect.
+
 ## Facts confirmed in source (via `experiments/templeos-devkit`, ZealOS fork — close enough to stock HolyC to be informative, flagged where TempleOS-specific)
 
 Reading `NOTES.md`/`Daemon.ZC`/`temple-run.py` (see doc 08 for full
@@ -197,6 +211,17 @@ doc-mirror prose:
   (`experiments/templeos-devkit/holyc-parser/tests/corpus/failing/`
   `009-bug-compat-bug-ternary-not-supported.hc`), found and hit
   independently here. Use plain `if`/`else` for conditional assignment.
+- **Confirmed (probe 56, `experiments/56-offer-buffer-guard/`)**: no
+  `continue` keyword — `if (cond) { ...; continue; }` inside a loop
+  fails with `ERROR: Undefined identifier at ";"`, the same message
+  probe 41's `pi` quirk produces for an unrelated reason (both look
+  like a generic parse failure until traced). Not a new discovery
+  either — already in `holyc-parser`'s own bug-compatibility corpus
+  (`007-bug-compat-bug52-continue-keyword.hc`), but the first time this
+  project's own code hit it directly rather than reading about it.
+  Fix: restructure the loop body as `if (skip_cond) {...} else if
+  (skip_cond2) {...} else { <rest of the loop body> }` instead of an
+  early-return-style `continue`.
 
 ## Facts confirmed in source (the actual `cia-foundation/TempleOS` mirror, cloned and read directly)
 

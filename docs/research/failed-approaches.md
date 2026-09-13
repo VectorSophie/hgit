@@ -673,3 +673,71 @@ types nothing. The fix already existed, unused, in
 `experiments/templeos-devkit/scripts/send.py` (maps each character to
 its own `sendkey` call) - re-discovered and used correctly on the
 second attempt.
+
+## 2026-09-13 — `Offer.HC`'s crash/hang root-caused: two unbounded stack buffers, plus a `continue`-keyword parse error while fixing it
+
+**Tried:** Root-causing the prior entry's `hgit offer *` GPF
+(`experiments/56-offer-buffer-guard/`). Deliberately reproduced the bug
+in isolation twice: 40 tiny files matched by a wildcard, and separately
+one 600-byte file.
+
+**Happened:** The 40-file case did **not** reproduce a GPF - it
+reproduced a silent infinite loop instead (no debugger fault, no
+further daemon output at all, confirmed unresponsive even to an
+unrelated follow-up ping). A genuinely different failure mode from the
+prior entry's crash, from what turned out to be the same root cause.
+
+**Why:** `Offer.HC`'s `tree_content[2048]` and `blob_tagged[512]` stack
+buffers had no bounds check - `tree_content` overflows at ~24 small
+matched files (confirmed by direct arithmetic: ~82 bytes/entry,
+2048/82≈24, matching exactly where the log showed the first skip once
+fixed), `blob_tagged` overflows for any single file over 511 bytes.
+Which one overflows, and what it happens to corrupt on the stack,
+decides crash vs. hang - not a single deterministic bug.
+
+**A second failure hit while writing the fix**: the first attempt used
+`if (bad) { ...; continue; }` to skip an oversized file, which failed
+to compile (`ERROR: Undefined identifier at ";"`) - HolyC has no
+`continue` keyword. Already documented in
+`experiments/templeos-devkit`'s own bug-compatibility corpus
+(`holyc-parser/tests/corpus/failing/007-bug-compat-bug52-continue-keyword.hc`),
+but this project's own code had never hit it directly before.
+
+**Worked instead:** Added an explicit bounds check before building each
+file's blob/tree entry, restructured as `if / else if / else` (no
+`continue`) so an oversized file is skipped with a clear
+`OFFER_SKIP file_too_large`/`OFFER_SKIP tree_full` message instead of
+overflowing anything. Re-verified against both reproductions
+(previously-hanging/untested cases now complete cleanly) and a full
+regression of the prior entry's own end-to-end scenario (no behavior
+change for the normal case). Full writeup:
+`experiments/56-offer-buffer-guard/README.md`.
+
+## 2026-09-13 — Redefining a called function doesn't fix up an already-compiled caller
+
+**Tried:** Upgrading `ReconcileDoc.HC` to real `$TR$`/`$ID$` tree
+formatting (`experiments/58-reconciledoc-tree/`). Pushed the edited
+file alone, got a clean `COMPILE_OK`, then re-ran the real
+`init`→`offer`→`correct`→`reconciledoc` end-to-end test through
+`Hgit(cmdline)`.
+
+**Happened:** The `.DD` output, read back via `FileRead`, was still
+the **old** flat format - not the new tree structure the edited source
+should have produced. Compiling clean did not mean the fix was live.
+
+**Why:** `Hgit.HC`'s dispatcher (which calls `HgitReconcileDoc`) had
+already been compiled earlier in this same long-running daemon
+session, with a direct call instruction pointing at the *old*
+compiled address of `HgitReconcileDoc`. Redefining the callee under
+the same name compiles fresh code and registers a new symbol, but
+doesn't retroactively patch call sites already baked into a
+previously-compiled caller.
+
+**Worked instead:** Re-pushed `Hgit.HC` itself (no source changes
+needed in it) to force it to recompile and re-resolve its call to the
+new address - confirmed by reading the `.DD` bytes back again, this
+time matching the new format. **New standing practice**: after editing
+any function in a long-running daemon session, re-push every
+already-compiled caller of it too, not just the function itself - a
+clean compile of the edited file alone is not sufficient evidence the
+change is live. Full writeup: `experiments/58-reconciledoc-tree/README.md`.

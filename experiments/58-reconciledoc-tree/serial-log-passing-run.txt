@@ -1,0 +1,22 @@
+COMPILE_OK
+D_DONE
+DISPATCH_OK init C:/Home/P58Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK correct
+DISPATCH_OK reconciledoc
+PASS p58_tree_reconciledoc_e2e
+COMPILE_OK
+D_DONE
+DISPATCH_ERR init_failed C:/Home/P58Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK correct
+DISPATCH_OK reconciledoc
+PASS p58_tree_reconciledoc_e2e
+COMPILE_OK
+D_DONE
+DISPATCH_ERR init_failed C:/Home/P58Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK correct
+DISPATCH_OK reconciledoc
+PASS p58_tree_reconciledoc_e2e
+COMPILE_OK

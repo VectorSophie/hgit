@@ -12,7 +12,7 @@ authored before its supporting evidence exists).
 | Doc | Status | Notes |
 |---|---|---|
 | [01-templeos-holyc.md](01-templeos-holyc.md) | ✅ | HolyC lang basics, cmd-line REPL model, reliability philosophy, source mirror structure |
-| [02-doldoc-interface.md](02-doldoc-interface.md) | ✅ | DolDoc format basics, live confirmation from boot probe, `$..$` literal-text and generated-file rendering both confirmed (probe 46); `$LK$` link widget confirmed rendering from generated output too (probe 54) — `$TR$` tree widget syntax still unresolved |
+| [02-doldoc-interface.md](02-doldoc-interface.md) | ✅ | DolDoc format basics, live confirmation from boot probe, `$..$` literal-text and generated-file rendering both confirmed (probe 46); `$LK$` link widget (probe 54) and `$TR$` tree widget (probe 57, resolved from real TempleOS demo source) both confirmed rendering from generated output — `$LS$` list widget still untested |
 | [03-zealos-and-networking.md](03-zealos-and-networking.md) | ✅ | ZealOS lineage/license/activity; networking status still unresolved |
 | [04-vcs-comparison.md](04-vcs-comparison.md) | 🟡 | jj's operation log and Fossil's delta format both read and compared; Sapling/Pijul/GitButler/Mercurial still unfetched |
 | [05-git-internals-and-product-practice.md](05-git-internals-and-product-practice.md) | 🟡 | Object model only; packfiles/refs/merge/gc not yet fetched |

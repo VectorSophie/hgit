@@ -2121,20 +2121,27 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
 //
 // Probe 54 (`experiments/54-doldoc-widgets/`) confirmed `$LK$` renders
 // as a real clickable/underlined link from HolyC-generated output.
-// This puts that to use: given a commit that carries an ADR 0005/0006
+// Probe 57 (`experiments/57-tree-widget/`) then resolved `$TR$`'s real
+// syntax from actual TempleOS demo source
+// (`C:/Demo/DolDoc/TreeDemo.HC`): a single self-contained
+// `$TR,"<label>"$` command (no closing tag), with nesting done via a
+// separate `$ID,+2$ ... $ID,-2$` bracket around the children. This
+// file puts both to use: given a commit that carries an ADR 0005/0006
 // relation (CONTINUES/CORRECTS/REVERTS/RECONCILES, optionally
-// entity-scoped), build a `.DD` document showing that commit and a
-// real `$LK$` link to its relation target, tagged with the target's
-// own hex hash so a human at the real console could act on it.
+// entity-scoped), it builds a real collapsible tree node for the
+// relation (starts collapsed, per `$TR$`'s own documented behavior),
+// with the target's `$LK$` link, the target commit's own message, and
+// any entity scope as that node's nested children.
 //
 // Scoped honestly, matching probe 54's own findings: this does NOT
 // test or implement following the link (that needs a human click or a
 // callback dispatcher neither built nor verified yet - `Ed()` itself
 // was found to block the daemon's command loop, so driving a click
 // through the same automated push channel isn't possible without a
-// human at the console). What's verified is that the link is really
-// there in both the raw bytes and the rendered view - see the probe's
-// own README for exactly what was and wasn't checked.
+// human at the console). What's verified is that the link and the
+// tree node are really there in both the raw bytes and the rendered
+// view - see probe 55's and probe 58's own READMEs for exactly what
+// was and wasn't checked.
 //
 // No function-like macros used here (untested territory in this
 // codebase - every other .HC file only ever uses #define for plain
@@ -2225,11 +2232,18 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
   U8 rel_hex[129];
   HashToHex(rel_target, rel_hex);
 
-  U8 *lbl = "relation: ";
-  for (fi=0; lbl[fi]; fi++) doc[dlen++] = lbl[fi];
+  // One real collapsible tree node (probe 57) for the relation itself
+  // - $TR$'s label is a plain quoted string, so the link and any other
+  // $..$ commands stay OUTSIDE the label, as this node's indented
+  // ($ID,+2$/$ID,-2$) children instead of embedded inside the quotes.
+  U8 *tr_open = "$TR,\"relation: ";
+  for (fi=0; tr_open[fi]; fi++) doc[dlen++] = tr_open[fi];
   for (fi=0; rel_name[fi]; fi++) doc[dlen++] = rel_name[fi];
-  U8 *arrow = " -> $LK,\"";
-  for (fi=0; arrow[fi]; fi++) doc[dlen++] = arrow[fi];
+  U8 *tr_close = "\"$$CR$$ID,+2$";
+  for (fi=0; tr_close[fi]; fi++) doc[dlen++] = tr_close[fi];
+
+  U8 *tgt_lbl = "target: $LK,\"";
+  for (fi=0; tgt_lbl[fi]; fi++) doc[dlen++] = tgt_lbl[fi];
   for (hi=0; hi<128; hi++) doc[dlen++] = rel_hex[hi];
   U8 *lkmid = "\"$";
   for (fi=0; lkmid[fi]; fi++) doc[dlen++] = lkmid[fi];
@@ -2247,7 +2261,7 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
       U8 *tcontent = rbuf + toff + 9;
       U32 tmlen = CommitMessageLen(tcontent);
       U8 *tmsg = CommitMessage(tcontent);
-      U8 *tlbl = "  target message: ";
+      U8 *tlbl = "target message: ";
       for (fi=0; tlbl[fi]; fi++) doc[dlen++] = tlbl[fi];
       for (k=0; k<tmlen; k++) doc[dlen++] = tmsg[k];
       U8 *cr3 = "$CR$";
@@ -2259,12 +2273,15 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
   if (rel_entity_id != 0) {
     U8 ehex[17];
     U64ToHex(rel_entity_id, ehex);
-    U8 *elbl = "  scoped to entity: ";
+    U8 *elbl = "scoped to entity: ";
     for (fi=0; elbl[fi]; fi++) doc[dlen++] = elbl[fi];
     for (hi=0; hi<16; hi++) doc[dlen++] = ehex[hi];
     U8 *cr4 = "$CR$";
     for (fi=0; cr4[fi]; fi++) doc[dlen++] = cr4[fi];
   }
+
+  U8 *id_close = "$ID,-2$";
+  for (fi=0; id_close[fi]; fi++) doc[dlen++] = id_close[fi];
 
   FileWrite(doc_path, doc, dlen);
 }
@@ -2625,6 +2642,20 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   }
 
   // Build blobs + tree from every file matching find_mask.
+  //
+  // Real bug found and fixed (experiments/56-offer-buffer-guard/,
+  // after experiments/55-reconciledoc/'s own GPF and a follow-up hang
+  // reproduced both failure modes from the same root cause): these
+  // three buffers are fixed-size stack arrays with no bounds check
+  // against `find_mask` matching more/bigger files than they can hold
+  // - as few as ~25-40 small matched files overflows `tree_content`
+  // (each entry costs 1+name_len+1+64+8 bytes), and any single file
+  // over 511 bytes overflows `blob_tagged`. The overflow corrupts
+  // whatever's adjacent on the stack, which manifested as either a
+  // silent infinite loop or a real kernel GPF depending on exactly
+  // what got clobbered - not a single deterministic failure. Guarded
+  // below: a file that doesn't fit is skipped with a clear
+  // host-visible message instead of silently overflowing anything.
   U8 tree_content[2048];
   I64 tlen = 4; // leave room for the U32 entry_count, filled in below
   I64 entry_count = 0;
@@ -2634,32 +2665,46 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   while (tmpde) {
     I64 fsize;
     U8 *fbuf = FileRead(tmpde->full_name, &fsize);
-    U8 blob_tagged[512];
-    blob_tagged[0] = OBJ_BLOB;
-    for (i=0; i<fsize; i++) blob_tagged[1+i] = fbuf[i];
-    U8 blob_hash[64];
-    B2Hash512Any(blob_tagged, fsize+1, blob_hash);
-    ObjectPut(archive, &alen, OBJ_BLOB, fbuf, fsize);
 
     // name = just the filename portion, after the last '/'
     I64 name_start = 0, j;
     for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
     I64 name_len = j - name_start;
+    I64 entry_needed = 1 + name_len + 1 + 64 + 8;
 
-    U64 entity_id;
-    Bool found_old = FALSE;
-    if (old_tree_content != NULL) {
-      U8 old_type;
-      U8 old_hash[64];
-      found_old = TreeFindEntry(old_tree_content, old_tree_content_len,
-                                 tmpde->full_name+name_start, name_len,
-                                 &old_type, old_hash, &entity_id);
+    // No `continue` here - confirmed absent from HolyC (matches
+    // experiments/templeos-devkit's own documented bug-compat corpus,
+    // `holyc-parser/tests/corpus/failing/007-bug-compat-bug52-continue-keyword.hc`
+    // - `if (cond) continue;` isn't a keyword there, it parses as an
+    // undefined identifier). Nest the rest of the loop body inside an
+    // `else` instead of early-`continue`-ing past the guards.
+    if (fsize+1 > 512) {
+      CommPrint(1, "OFFER_SKIP file_too_large %s\n", tmpde->full_name);
+    } else if (tlen + entry_needed > 2048) {
+      CommPrint(1, "OFFER_SKIP tree_full %s\n", tmpde->full_name);
+    } else {
+      U8 blob_tagged[512];
+      blob_tagged[0] = OBJ_BLOB;
+      for (i=0; i<fsize; i++) blob_tagged[1+i] = fbuf[i];
+      U8 blob_hash[64];
+      B2Hash512Any(blob_tagged, fsize+1, blob_hash);
+      ObjectPut(archive, &alen, OBJ_BLOB, fbuf, fsize);
+
+      U64 entity_id;
+      Bool found_old = FALSE;
+      if (old_tree_content != NULL) {
+        U8 old_type;
+        U8 old_hash[64];
+        found_old = TreeFindEntry(old_tree_content, old_tree_content_len,
+                                   tmpde->full_name+name_start, name_len,
+                                   &old_type, old_hash, &entity_id);
+      }
+      if (!found_old) entity_id = GenerateEntityId();
+
+      TreeEncodeEntry(tree_content, &tlen, tmpde->full_name+name_start, name_len,
+                       OBJ_BLOB, blob_hash, entity_id);
+      entry_count++;
     }
-    if (!found_old) entity_id = GenerateEntityId();
-
-    TreeEncodeEntry(tree_content, &tlen, tmpde->full_name+name_start, name_len,
-                     OBJ_BLOB, blob_hash, entity_id);
-    entry_count++;
     tmpde = tmpde->next;
   }
   DirTreeDel(tmpde1);

@@ -1,0 +1,23 @@
+77:P56B_ABOUT_TO_OFFER
+78:OFFER_SKIP tree_full C:/Home/P56F024.txt
+79:OFFER_SKIP tree_full C:/Home/P56F025.txt
+80:OFFER_SKIP tree_full C:/Home/P56F026.txt
+81:OFFER_SKIP tree_full C:/Home/P56F027.txt
+82:OFFER_SKIP tree_full C:/Home/P56F028.txt
+83:OFFER_SKIP tree_full C:/Home/P56F029.txt
+84:OFFER_SKIP tree_full C:/Home/P56F030.txt
+85:OFFER_SKIP tree_full C:/Home/P56F031.txt
+86:OFFER_SKIP tree_full C:/Home/P56F032.txt
+87:OFFER_SKIP tree_full C:/Home/P56F033.txt
+88:OFFER_SKIP tree_full C:/Home/P56F034.txt
+89:OFFER_SKIP tree_full C:/Home/P56F035.txt
+90:OFFER_SKIP tree_full C:/Home/P56F036.txt
+91:OFFER_SKIP tree_full C:/Home/P56F037.txt
+92:OFFER_SKIP tree_full C:/Home/P56F038.txt
+93:OFFER_SKIP tree_full C:/Home/P56F039.txt
+94:DISPATCH_OK offer
+95:PASS p56b_many_small_files
+99:OFFER_SKIP file_too_large C:/Home/P56CBig.txt
+100:DISPATCH_OK offer
+101:PASS p56c_large_file_skip
+105:DISPATCH_OK offer

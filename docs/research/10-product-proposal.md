@@ -31,7 +31,7 @@ verified, probe by probe.
 | Stage-1 daemon has no compile-error capture, silently hangs on a real syntax error | **Resolved** — found via deliberate reproduction, fixed by upgrading to the devkit's stage-2 daemon (`D2`/`_DRun`, `Fs->catch_except`-based `COMPILE_OK`/`COMPILE_FAIL` reporting) before pushing new/changed source; now standing practice | `experiments/31-oplog-in-offer/`, `docs/research/01-templeos-holyc.md` |
 | A real, previously-undocumented 33-character path-length ceiling (`FileWrite`/`FileRead` silently no-op past it) | **Resolved architecturally** — `Meta.HC` consolidates every per-repo tool-state concern into one combined file, immune to the ceiling scaling with path names; every real command now runs on it | `docs/adr/0003-path-length-ceiling.md`, `experiments/36` through `44` |
 | Large unpaced pushes over the injection channel can silently drop bytes under host memory pressure | **Resolved** — `experiments/01-temple-repl/paced_push.py` sends in small paced chunks; standard practice for any push over ~10KB | `experiments/34-hgit-paths/` |
-| `hgit offer *` against a directory holding many dozens of pre-existing files causes a real kernel-level GPF, not a graceful error | **Open, unresolved** — root cause not isolated (candidate: a fixed-size buffer somewhere in `WorkDir.HC`/`Offer.HC`/`Index.HC`); worked around by naming one file explicitly, not fixed | `docs/research/failed-approaches.md`'s 2026-09-13 entry, `experiments/55-reconciledoc/` |
+| `hgit offer *` against a directory holding many dozens of pre-existing files causes a real kernel-level GPF, not a graceful error | **Resolved** — root-caused to two unbounded fixed-size stack buffers in `Offer.HC` (`tree_content[2048]`, `blob_tagged[512]`); a file that doesn't fit is now cleanly skipped (`OFFER_SKIP ...`) instead of corrupting memory. Confirmed by reproducing both of the bug's failure modes (a GPF and, separately, a silent infinite loop) before fixing, then re-verifying the fix against both plus a full regression of probe 55's own scenario | `experiments/56-offer-buffer-guard/`, `docs/research/failed-approaches.md`'s 2026-09-13 entries |
 
 ## M0 acceptance criteria (draft, per the brief's own list)
 
@@ -596,6 +596,44 @@ flagged, not confirmed); worked around for this probe by naming one
 file explicitly instead of using `*`. **This is a real, open risk**:
 `hgit offer *` at scale is untested and now known-unsafe until
 root-caused - explicitly not glossed over as solved.
+
+**`$TR$`'s real syntax is now resolved** (`experiments/57-tree-widget/`,
+PASS), closing the item probe 54 left open. Found via real shipped
+TempleOS system source (`C:/Demo/DolDoc/TreeDemo.HC`, located through
+`DolDocOverview.DD.Z`'s own glossary entry for `TR`), not guessed:
+`$TR,"<label>"$` is a single self-contained command (no closing tag,
+unlike `$LK$`), and nesting comes from a separate `$ID,+2$ ...
+$ID,-2$` bracket around the children. Verified rendering: a real `[+]`
+collapse marker from `FileWrite`-generated output. `ReconcileDoc.HC`
+doesn't use this yet (still plain `$LK$` + manual indentation) -
+upgrading it to a real collapsible tree is flagged as real, concrete
+follow-up work, not done in this probe.
+
+**`ReconcileDoc.HC` now uses that real tree node**
+(`experiments/58-reconciledoc-tree/`, PASS) - the relation section is
+now `$TR,"relation: <TYPE>"$` with the link/target-message/entity-scope
+as its real `$ID,+2$/$ID,-2$`-nested children, verified end-to-end
+(`init`→`offer`→`correct`→`reconciledoc`), by raw bytes, and by a real
+`[+]` collapsed rendering in `Ed()`. Found a genuine new harness gotcha
+while verifying it: **redefining a function doesn't retroactively fix
+up an already-compiled caller's call site** - the edited file alone
+compiled clean but the dispatcher kept calling the old compiled
+version until it too was re-pushed (no source change needed in it).
+Now standing practice for this project's long-running daemon sessions,
+documented in `docs/research/01-templeos-holyc.md`.
+
+**Root-caused and fixed**: `experiments/56-offer-buffer-guard/` (PASS)
+confirms it - `Offer.HC`'s `tree_content[2048]`/`blob_tagged[512]`
+stack buffers had no bounds check, overflowing at ~24 small matched
+files or any single file over 511 bytes, corrupting adjacent stack
+memory (a GPF or a silent infinite loop, depending on what got
+clobbered - both reproduced deliberately before fixing). Fixed with an
+early skip (`OFFER_SKIP file_too_large`/`OFFER_SKIP tree_full`)
+instead of a crash; re-verified against both reproductions and a full
+regression of probe 55's own end-to-end scenario. Also hit and fixed a
+real HolyC quirk while writing the fix - no `continue` keyword,
+already documented in `experiments/templeos-devkit`'s own bug-compat
+corpus but not previously hit directly in this project's own code.
 
 ## Estimated line counts (very rough, will move once real code exists)
 

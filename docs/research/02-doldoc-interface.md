@@ -61,12 +61,17 @@ views rendered as DolDoc are not a stretch, they're the existing norm.
   assumed. This is enough to build a reconciliation view's navigation
   (jump between two conflicting commits' entries) without needing any
   new mechanism.
-- `$TR$` (tree widget) syntax is **still unresolved** — the guessed
-  `$TR$<content>$TR$` form rendered as plain indented text, not a real
-  tree widget (no expand/collapse markers). The real argument grammar
-  isn't in the primary sources pulled so far; not a blocker for M4
-  design since nested `$LK$` links can substitute, but the actual
-  widget remains untested. `$LS$` (list) is also still untested.
+- `$TR$` (tree widget) syntax is **resolved** (probe 57,
+  `experiments/57-tree-widget/`) — the guessed `$TR$<content>$TR$` form
+  was wrong on two counts. The real syntax, confirmed from real shipped
+  demo source (`C:/Demo/DolDoc/TreeDemo.HC`, found via
+  `DolDocOverview.DD.Z`'s own glossary entry pointing to it): `$TR,
+  "<label>"$` is a single self-contained command with **no closing
+  tag**; nesting comes from bracketing children with `$ID,+2$ ...
+  $ID,-2$` right after it, not from `$TR$` itself. Verified rendering:
+  a real `[+]` collapse marker (starts collapsed, matching the
+  reference doc's own description), from plain `FileWrite`-generated
+  output, no special API. `$LS$` (list) is still untested.
 - **New real harness finding**: `Ed()` is a blocking/interactive call —
   pushing it from the daemon stalls the daemon's command loop until the
   interactive session ends (confirmed via `sendkey esc` over the QEMU
@@ -78,8 +83,7 @@ views rendered as DolDoc are not a stretch, they're the existing norm.
 
 ## Unresolved risk
 
-- `$TR$`'s real syntax (see above) and `$LS$` remain untested from
-  generated output.
+- `$LS$` (list widget) remains untested from generated output.
 - Whether some other, non-blocking, read-only doc-display API exists
   (as opposed to `Ed()`) for a reconciliation view that should stay
   responsive isn't researched yet.

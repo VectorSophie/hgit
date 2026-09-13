@@ -150,12 +150,24 @@ relation, it builds a document showing the commit, a real `$LK$` link
 to its relation target (tagged with the target's full hash), the
 target's own message, and any entity scope — verified through the real
 dispatcher, by raw-byte content, and by rendered appearance in `Ed()`.
-`$TR$` (tree widget) syntax is still unresolved. Getting here also
-surfaced a real, still-open risk: `hgit offer *` against a directory
-holding dozens of pre-existing files caused a genuine kernel-level GPF
-crash (not a graceful error) — worked around for now by naming a file
-explicitly, not yet root-caused; see
-`docs/research/failed-approaches.md`.
+`$TR$` (tree widget) syntax is also resolved now
+(`experiments/57-tree-widget/`), from real shipped TempleOS demo source
+(`C:/Demo/DolDoc/TreeDemo.HC`): a single self-contained `$TR,"label"$`
+command (no closing tag) plus `$ID,+2$`/`$ID,-2$` for nesting —
+verified rendering a real `[+]` collapse marker. `ReconcileDoc.HC` now
+uses this for real (`experiments/58-reconciledoc-tree/`): a commit's
+relation renders as a real collapsible `[+] relation: <TYPE>` node with
+the link/target-message/entity-scope nested inside. Found a real
+gotcha while verifying it — redefining a function doesn't retroactively
+fix up an already-compiled caller's call site in this long-running
+daemon; the caller (here, `Hgit.HC`) must be re-pushed too, even with
+no source changes, or the change silently doesn't take effect despite
+a clean compile. Getting here also surfaced a real crash — `hgit offer *` against a directory holding
+dozens of pre-existing files caused a genuine kernel-level GPF (not a
+graceful error) — since **root-caused and fixed**
+(`experiments/56-offer-buffer-guard/`): two unbounded stack buffers in
+`Offer.HC` now cleanly skip a file that doesn't fit (`OFFER_SKIP ...`)
+instead of corrupting memory; see `docs/research/failed-approaches.md`.
 
 **First real release is cut**: [`v0.3.0`](https://github.com/VectorSophie/hgit/releases/tag/v0.3.0)
 attaches `packaging/HgitAll.HC` — verified downloaded and byte-identical

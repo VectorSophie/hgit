@@ -1,0 +1,3 @@
+DOC_CONTENT_BEGIN
+$FG,5$hgit reconciliation$FG$$CR$$CR$$FG,2$beb58652a14e$FG$ correcting_offer_one$CR$$CR$$TR,"relation: CORRECTS"$$CR$$ID,+2$target: $LK,"18e03f25206a26fa405f495907f714ba18eafa24f0050f505566a2c5c8cc369344ab676ba43d7dccd8299ba77003d8963007d7f065694fb81f7022d8bd1ebc3a"$18e03f25206a$LK$$CR$target message: offer_one$CR$$ID,-2$
+DOC_CONTENT_END

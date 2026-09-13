@@ -95,6 +95,20 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   }
 
   // Build blobs + tree from every file matching find_mask.
+  //
+  // Real bug found and fixed (experiments/56-offer-buffer-guard/,
+  // after experiments/55-reconciledoc/'s own GPF and a follow-up hang
+  // reproduced both failure modes from the same root cause): these
+  // three buffers are fixed-size stack arrays with no bounds check
+  // against `find_mask` matching more/bigger files than they can hold
+  // - as few as ~25-40 small matched files overflows `tree_content`
+  // (each entry costs 1+name_len+1+64+8 bytes), and any single file
+  // over 511 bytes overflows `blob_tagged`. The overflow corrupts
+  // whatever's adjacent on the stack, which manifested as either a
+  // silent infinite loop or a real kernel GPF depending on exactly
+  // what got clobbered - not a single deterministic failure. Guarded
+  // below: a file that doesn't fit is skipped with a clear
+  // host-visible message instead of silently overflowing anything.
   U8 tree_content[2048];
   I64 tlen = 4; // leave room for the U32 entry_count, filled in below
   I64 entry_count = 0;
@@ -104,32 +118,46 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   while (tmpde) {
     I64 fsize;
     U8 *fbuf = FileRead(tmpde->full_name, &fsize);
-    U8 blob_tagged[512];
-    blob_tagged[0] = OBJ_BLOB;
-    for (i=0; i<fsize; i++) blob_tagged[1+i] = fbuf[i];
-    U8 blob_hash[64];
-    B2Hash512Any(blob_tagged, fsize+1, blob_hash);
-    ObjectPut(archive, &alen, OBJ_BLOB, fbuf, fsize);
 
     // name = just the filename portion, after the last '/'
     I64 name_start = 0, j;
     for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
     I64 name_len = j - name_start;
+    I64 entry_needed = 1 + name_len + 1 + 64 + 8;
 
-    U64 entity_id;
-    Bool found_old = FALSE;
-    if (old_tree_content != NULL) {
-      U8 old_type;
-      U8 old_hash[64];
-      found_old = TreeFindEntry(old_tree_content, old_tree_content_len,
-                                 tmpde->full_name+name_start, name_len,
-                                 &old_type, old_hash, &entity_id);
+    // No `continue` here - confirmed absent from HolyC (matches
+    // experiments/templeos-devkit's own documented bug-compat corpus,
+    // `holyc-parser/tests/corpus/failing/007-bug-compat-bug52-continue-keyword.hc`
+    // - `if (cond) continue;` isn't a keyword there, it parses as an
+    // undefined identifier). Nest the rest of the loop body inside an
+    // `else` instead of early-`continue`-ing past the guards.
+    if (fsize+1 > 512) {
+      CommPrint(1, "OFFER_SKIP file_too_large %s\n", tmpde->full_name);
+    } else if (tlen + entry_needed > 2048) {
+      CommPrint(1, "OFFER_SKIP tree_full %s\n", tmpde->full_name);
+    } else {
+      U8 blob_tagged[512];
+      blob_tagged[0] = OBJ_BLOB;
+      for (i=0; i<fsize; i++) blob_tagged[1+i] = fbuf[i];
+      U8 blob_hash[64];
+      B2Hash512Any(blob_tagged, fsize+1, blob_hash);
+      ObjectPut(archive, &alen, OBJ_BLOB, fbuf, fsize);
+
+      U64 entity_id;
+      Bool found_old = FALSE;
+      if (old_tree_content != NULL) {
+        U8 old_type;
+        U8 old_hash[64];
+        found_old = TreeFindEntry(old_tree_content, old_tree_content_len,
+                                   tmpde->full_name+name_start, name_len,
+                                   &old_type, old_hash, &entity_id);
+      }
+      if (!found_old) entity_id = GenerateEntityId();
+
+      TreeEncodeEntry(tree_content, &tlen, tmpde->full_name+name_start, name_len,
+                       OBJ_BLOB, blob_hash, entity_id);
+      entry_count++;
     }
-    if (!found_old) entity_id = GenerateEntityId();
-
-    TreeEncodeEntry(tree_content, &tlen, tmpde->full_name+name_start, name_len,
-                     OBJ_BLOB, blob_hash, entity_id);
-    entry_count++;
     tmpde = tmpde->next;
   }
   DirTreeDel(tmpde1);
