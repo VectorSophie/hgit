@@ -96,7 +96,61 @@ problem (TempleOS's own click-to-expand semantics for `$TR$` aren't
 something this project's headless automation can currently drive
 reliably), not a quick fix. `README.md` was updated to not show a
 screenshot that only demonstrates one collapsed line - the reformatted
-text structure is the real, complete illustration instead.
+text structure instead.
+
+**Third real attempt - real success, plus a real design finding about
+nested `$TR$` widgets**: rather than guess further at UI automation,
+read TempleOS's own real DolDoc source first (`D:/Adam/DolDoc/`,
+found via `FilesFind` the same way probe 76 found the compiler
+source) - `DocRun.HC.Z`'s `DocEntryRun` is the actual toggle:
+
+```c
+} else if (doc_e->de_flags & DOCEF_CHECK_COLLAPSABLE) {
+  doc_e->de_flags^=DOCEF_CHECKED_COLLAPSED;
+  has_action=TRUE;
+}
+```
+
+reached when `SPACE`/`Enter` is pressed while `doc->cur_entry`
+(an *entry-level* cursor, distinct from the row/column text cursor)
+points at the tree's own `CDocEntry` (`DocChar.HC.Z`'s own key-handling
+code, confirmed by reading it directly). The real missing piece in the
+first two attempts: `Home`/arrow-key row/column navigation moves the
+*text* cursor but doesn't reliably set `cur_entry` to a widget - only
+stepping through characters one at a time with `Right` does (confirmed
+directly: the status bar's own mode indicator changes to `TR` and the
+entry visibly highlights only once `cur_entry` is genuinely on it).
+
+With that understood, `Right`-stepping onto the root node's entry then
+pressing `Space` **worked** - `evidence/rendered-graph-one-level-expanded.png`
+shows the real result: `offer_one` expanded to reveal `offer_two`
+nested one level under it.
+
+Attempting a *second* level of expansion the same way ran into
+`Ed()`-session/autocomplete-popup state issues (not a `$TR$`-specific
+problem) that weren't fully untangled in the time spent. Sidestepped
+by testing whether writing the tree pre-expanded directly in the
+source - `$TR-C,"label"$` instead of `$TR,"label"$` (the `-C` suffix
+confirmed by reading back a real toggled-and-saved file's own bytes) -
+renders already-expanded with no interaction needed. It does
+(`evidence/rendered-graph-fully-expanded-labels-hidden.png`) - but
+reveals a real, structural property of nested `$TR$` widgets, not a
+bug: **expanding a parent node replaces its own label with its
+child's**, cascading all the way down - a fully-expanded 3-level
+nesting renders as `-]-]-] <deepest label>` on one line, not an
+indented multi-line list. TempleOS's own tree widget is a drill-down
+control (closer to a folder icon replacing itself with its contents)
+- not a classic always-visible indented file-tree.
+
+**Real product implication for `Graph.HC` itself, not implemented
+here**: nesting one `$TR$` per *commit* (the current design) doesn't
+visualize well fully expanded, because of the above. A per-*branch*
+`$TR$` (one collapsible node per fork point, wrapping a flat,
+non-widget indented list of that branch's own commits) would avoid
+the label-swallowing entirely and likely render better both collapsed
+and expanded - a real, concrete follow-up, flagged for the project
+owner rather than done unilaterally here, given it changes an already-
+shipped, tested feature's own output shape.
 
 `tools/lint-package.sh` clean before pushing - it caught a real
 "duplicate member" collision in this file's own first draft (`doc0`/

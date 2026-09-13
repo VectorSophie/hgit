@@ -84,7 +84,7 @@
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.3.0"
+#define HGIT_VERSION "1.4.0"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -174,6 +174,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD init <repo_path>\n");
   CommPrint(1, "HELP_CMD status <repo_path> <find_mask> <dir_prefix>\n");
   CommPrint(1, "HELP_CMD offer <repo_path> <find_mask> <message>\n");
+  CommPrint(1, "HELP_CMD offertree <repo_path> <dir_path> <message> (recursive, ADR 0010)\n");
   CommPrint(1, "HELP_CMD history <repo_path>\n");
   CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");
   CommPrint(1, "HELP_CMD diff <repo_path> <commit_hex>\n");
@@ -269,6 +270,19 @@ U0 Hgit(U8 *cmdline)
     U64 offer_ts = cnts.jiffies;
     HgitOffer(offer_repo_path, offer_find_mask, offer_message, offer_mlen, offer_ts);
     CommPrint(1, "DISPATCH_OK offer\n");
+  } else if (StrCmp(cmd, "offertree") == 0) {
+    // ADR 0010's real CLI-semantics decision: a separate command, not
+    // a change to plain `offer` - see Offer.HC's own HgitOfferTree
+    // comment for why.
+    U8 ot_repo_path[256], ot_dir_path[256];
+    I64 ot_p = 0;
+    ot_p = ExtractToken(rest, ot_p, ot_repo_path, 256);
+    ot_p = ExtractToken(rest, ot_p, ot_dir_path, 256);
+    U8 *ot_message = rest + ot_p;
+    I64 ot_mlen = StrLen(ot_message);
+    U64 ot_ts = cnts.jiffies;
+    HgitOfferTree(ot_repo_path, ot_dir_path, ot_message, ot_mlen, ot_ts);
+    CommPrint(1, "DISPATCH_OK offertree\n");
   } else if (StrCmp(cmd, "correct") == 0) {
     HgitOfferRelatedCmd(rest, REL_CORRECTS, "correct");
   } else if (StrCmp(cmd, "revert") == 0) {

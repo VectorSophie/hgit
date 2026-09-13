@@ -1218,6 +1218,33 @@ itself (a real header, not a `TreeBuildRecursive` change), re-verified
 cleanly afterward. Full account in
 `docs/research/failed-approaches.md`.
 
+**ADR 0010's real CLI-semantics decision, made and wired in**:
+`experiments/91-hgit-offertree/` (PASS). Once probe 90's standalone
+primitive proved solid, the decision the ADR deferred (how to expose
+recursive offering without touching `hgit offer`'s own live,
+heavily-relied-on dispatch) was made: a brand-new, separate command,
+`hgit offertree <repo> <dir_path> <message>` (`HgitOfferTree` in
+`Offer.HC`, reusing `HgitOfferWithRelation`'s own conventions with
+`TreeBuildRecursive` replacing the flat `FilesFind` loop). Verified: a
+real nested tree (`SEE_TREE entries=2`, one `OBJ_TREE` subdirectory
+entry, one `OBJ_BLOB` file entry) committed through the real command
+surface; `hgit check` reporting `CHECK_OK objects=5`/`CHECK_REFS_OK`/
+`CHECK_DANGLING_NONE`; a second `offertree` editing only the nested
+file confirming both the subdirectory's own tree-entry ID and the
+file's ID carried forward identically. The existing
+`experiments/65-head-deletion/` full-surface regression re-run clean
+immediately after, confirming zero interference with the existing flat
+`offer` path. A follow-up re-read of `Check.HC` itself (prompted by an
+initial, overly cautious doc claim that it wouldn't recurse into a
+nested tree's own children) found and corrected that claim: both its
+referential-integrity scan and its reachability/dangling walk are
+generic per-object-type, not depth-aware, so a nested `OBJ_TREE`
+record gets the exact same treatment as a top-level one automatically
+- exactly what probe 91's own `CHECK_OK objects=5`/`CHECK_REFS_OK`/
+`CHECK_DANGLING_NONE` already showed in practice. Still a real,
+low-risk follow-up: an adversarial test (deliberately breaking a
+reference inside a nested tree) hasn't been run yet.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

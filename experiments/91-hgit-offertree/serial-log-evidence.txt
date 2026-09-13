@@ -1,0 +1,21 @@
+P91_SEE1_BEGIN
+SEE_COMMIT ts=1028133 parents=0 msg=first_recursive_offer
+SEE_TREE entries=2
+  entry type=2 id=859f9270f5c8bde9 name=SubA
+  entry type=1 id=591254ca6e3e2a39 name=top.txt
+SEE_END
+P91_SEE1_END
+P91_CHECK1_BEGIN
+CHECK_OK objects=5
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+P91_CHECK1_END
+DISPATCH_OK offertree
+P91_SEE2_BEGIN
+SEE_COMMIT ts=1034650 parents=1 msg=second_recursive_offer
+SEE_TREE entries=2
+  entry type=2 id=859f9270f5c8bde9 name=SubA
+  entry type=1 id=591254ca6e3e2a39 name=top.txt
+SEE_END
+P91_SEE2_END
+PASS p91_offertree_test

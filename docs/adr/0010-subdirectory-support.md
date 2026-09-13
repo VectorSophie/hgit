@@ -2,12 +2,16 @@
 
 ## Status
 
-**Decided, not yet implemented.** This ADR exists because probes 88
-and 89 established real evidence for the first time (recursive
-directory walking is buildable; nested `OBJ_TREE` objects round-trip
-correctly through the existing object model, zero code changes) - per
-this project's own standing discipline, no ADR gets written before its
-supporting evidence exists, and this is that evidence.
+**Implemented (first slice).** This ADR exists because probes 88 and
+89 established real evidence for the first time (recursive directory
+walking is buildable; nested `OBJ_TREE` objects round-trip correctly
+through the existing object model, zero code changes) - per this
+project's own standing discipline, no ADR gets written before its
+supporting evidence exists, and this is that evidence. Probe 90 then
+built the standalone primitive, and probe 91 made the real
+CLI-semantics decision (Decision point 2, below) and wired it in: a
+**new, separate command, `hgit offertree`**, not a change to plain
+`hgit offer`.
 
 ## Context
 
@@ -53,22 +57,47 @@ considered"):**
    on-disk nested directory structure, not just synthetic in-memory
    objects (probe 89's own scope) - this is the real gap probe 89
    deliberately left open.
-2. **Not wired into `hgit offer`'s own live dispatch in this slice.**
-   Making `hgit offer <repo> <find_mask> <message>` itself build
-   nested trees is a real, separate CLI-semantics decision (does
-   `find_mask` become recursive by default? does it need a distinct
-   flag or command, given every real offer this project has ever made
-   assumes flat, single-`find_mask`-directory semantics?) - deliberately
-   not decided in this same slice as the primitive itself, to keep the
-   already-substantial primitive independently reviewable and to avoid
-   risking a regression in `Offer.HC`'s own live, heavily-relied-on
-   entity-ID/rename logic before the recursive primitive is itself
-   proven solid.
-3. **`Check.HC` recursion is real, separate follow-up, not this
-   slice.** Referential integrity ought to recurse into a nested
-   tree's own children once real commands can produce one - a real
-   correctness item to close before this feature is wired in for
-   real, not before the primitive itself exists.
+2. **Resolved in probe 91: a new, separate command, `hgit offertree
+   <repo> <dir_path> <message>` - not a change to `hgit offer`'s own
+   live dispatch.** `HgitOfferTree` (`Offer.HC`) reuses
+   `HgitOfferWithRelation`'s own repo-loading/archive-sizing/
+   parent-lookup/commit/HEAD/oplog conventions, substituting
+   `TreeBuildRecursive` for the flat `FilesFind` loop. This keeps
+   `find_mask`'s existing flat semantics completely unchanged for every
+   prior real offering this project has ever made, at zero regression
+   risk - the original concern this decision point raised. Verified
+   end-to-end (probe 91): a real nested tree (`SEE_TREE entries=2`,
+   one `OBJ_TREE` subdirectory entry, one `OBJ_BLOB` file entry),
+   `hgit check` passing at the level `Check.HC` currently verifies, and
+   entity-ID continuity (both the subdirectory's own tree-entry ID and
+   the nested file's ID unchanged) across a second `offertree` call
+   that edited only the nested file. No relation-tag (`correct`/
+   `revert`/`reconcile`) support yet - a real, separate follow-up.
+3. **`Check.HC` already covers nested trees correctly - re-examined
+   after probe 91, not a real gap after all.** This slice's own
+   original draft (and probe 91's first write-up) assumed `Check.HC`
+   would need real, separate work to recurse into a nested tree's own
+   children. Re-reading `Check.HC` itself shows this concern doesn't
+   apply: both its referential-integrity pass (a flat scan over every
+   archive record, generic per-object-type - not a walk that starts at
+   a commit's tree and stops one level down) and its
+   reachability/dangling pass (`CheckMarkReachable`, plainly recursive
+   - it looks up any hash's real stored object type and recurses into
+   ITS children too, with no depth limit) already treat a nested
+   `OBJ_TREE` record exactly like a top-level one, because neither
+   pass is depth-aware in the first place. Probe 91's own real
+   captured evidence confirms this in practice, not just by code
+   reading: `CHECK_OK objects=5` (commit + top-level tree + `top.txt`
+   blob + `SubA`'s own nested tree + `inner.txt` blob), `CHECK_REFS_OK`
+   (the flat scan visited `SubA`'s own tree record and validated its
+   child hash), `CHECK_DANGLING_NONE` (the recursive walk reached
+   `inner.txt`'s blob through `SubA`'s own tree entry - it would show
+   dangling otherwise, since nothing else points at it directly). The
+   adversarial case (deliberately breaking a reference *inside* a
+   nested tree, to directly observe `CHECK_BROKEN_REF`/dangling firing
+   on nested content, rather than just this positive "nothing's wrong"
+   case) hasn't been run yet - a real, low-risk follow-up test, not a
+   code gap.
 
 ## Alternatives considered
 
@@ -97,15 +126,23 @@ considered"):**
 
 ## What this slice does not do
 
-- Wiring into `hgit offer`'s own live dispatch (see Decision point 2).
+- Modifying `hgit offer`'s own live dispatch - `offertree` is a
+  separate command instead (see Decision point 2).
 - Cross-directory rename/move detection (see Decision point 1).
-- `Check.HC`/`Status.HC`/`Diff.HC`/rendering-command awareness of
-  nested trees - all real, separate follow-up work, not decided here.
+- An adversarial test of `Check.HC` against nested trees (deliberately
+  breaking a reference inside one) - the positive case is real,
+  verified evidence (see Decision point 3); the negative case is a
+  real, low-risk follow-up, not run yet.
+- `Status.HC`/`Diff.HC`/rendering-command (`See.HC`/`HistoryDoc.HC`/
+  `ReconcileDoc.HC`/`Graph.HC`) awareness of nested trees.
+- `offertree` relation-tag support (`correct`/`revert`/`reconcile`
+  equivalents) - a plain offering only, matching `HgitOffer`'s own
+  original scope before ADR 0005 added relations.
 
 ## What would justify revisiting this
 
-- The standalone primitive (probe 90) proving solid enough to justify
-  the real `hgit offer` CLI-semantics decision.
 - Real usage showing same-directory-position-only rename tracking is
   too limited (files routinely moved between directories in normal
   workflows).
+- Real usage of `offertree` showing the lack of relation-tag support
+  (`correct`/`revert`/`reconcile`) is a practical blocker.

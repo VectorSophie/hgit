@@ -4653,6 +4653,136 @@ U0 HgitOffer(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_len,
   HgitOfferWithRelation(repo_path, find_mask, message, message_len,
                          timestamp, REL_NONE, NULL, 0);
 }
+
+// ADR 0010's own real CLI-semantics decision, made once probe 90's
+// standalone primitive proved solid: a NEW, separate command
+// (`hgit offertree`), not a change to `hgit offer`/`HgitOfferWithRelation`
+// itself - deliberately, to keep zero regression risk on the existing,
+// heavily-relied-on flat-offer code path (every prior probe and
+// tests/full-regression.hc's own coverage). `dir_path` (trailing "/"
+// required, e.g. "C:/Home/MyProject/") is recursively offered via
+// `TreeBuildRecursive` instead of one flat `FilesFind` pass. No
+// relation-tag support yet (a plain offering only, matching
+// `HgitOffer`'s own scope before ADR 0005 added relations) - a real,
+// separate follow-up if `offertree` needs `correct`/`revert`/
+// `reconcile` too.
+U0 HgitOfferTree(U8 *repo_path, U8 *dir_path, U8 *message, I64 message_len,
+                 U64 timestamp)
+{
+  I64 rsize;
+  U8 *rbuf = FileRead(repo_path, &rsize);
+  U16 rver;
+  U64 rcount;
+  HgsReadHeader(rbuf, &rver, &rcount);
+
+  if (rsize > ARCHIVE_SANITY_MAX) {
+    CommPrint(1, "OFFERTREE_REFUSED archive_absurdly_large size=%d\n", rsize);
+    return;
+  }
+
+  I64 archive_cap = rsize + ARCHIVE_HEADROOM;
+  U8 *archive = MAlloc(archive_cap);
+  I64 alen;
+  I64 i;
+  for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
+  alen = rsize;
+
+  U8 parent_hash[64];
+  Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
+
+  U8 *old_idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *old_idx_offsets = MAlloc((rcount+1)*8);
+  I64 old_idx_count = 0;
+  U8 *old_tree_content = NULL;
+  I64 old_tree_content_len = 0;
+  if (has_parent) {
+    IndexBuild(rbuf+16, rsize-16, old_idx_hashes, old_idx_offsets, &old_idx_count);
+    I64 pc_off_rel;
+    Bool pc_found = IndexLookup(old_idx_hashes, old_idx_offsets, old_idx_count,
+                                 parent_hash, &pc_off_rel);
+    if (pc_found) {
+      I64 pc_off = 16 + pc_off_rel;
+      U8 *pc_content = rbuf + pc_off + 9;
+      U8 *old_tree_hash = CommitTreeHash(pc_content);
+      I64 ot_off_rel;
+      Bool ot_found = IndexLookup(old_idx_hashes, old_idx_offsets, old_idx_count,
+                                   old_tree_hash, &ot_off_rel);
+      if (ot_found) {
+        I64 ot_off = 16 + ot_off_rel;
+        U64 ot_record_len = GetU64LE(rbuf, ot_off);
+        old_tree_content = rbuf + ot_off + 9;
+        old_tree_content_len = ot_record_len - 1;
+      }
+    }
+  }
+
+  // The one real substitution: TreeBuildRecursive replaces
+  // HgitOfferWithRelation's own flat FilesFind loop, recursing into
+  // real subdirectories instead. old_idx_hashes/old_idx_offsets stay
+  // alive through this call (needed for both the exact-hash and fuzzy
+  // rename passes at every directory level), freed right after.
+  U8 tree_content[4096];
+  I64 tree_content_len;
+  TreeBuildRecursive(dir_path, archive, &alen, rbuf, old_idx_hashes, old_idx_offsets, old_idx_count,
+                     old_tree_content, old_tree_content_len,
+                     tree_content, &tree_content_len);
+  Free(old_idx_hashes);
+  Free(old_idx_offsets);
+
+  U8 tree_tagged[4096];
+  tree_tagged[0] = OBJ_TREE;
+  for (i=0; i<tree_content_len; i++) tree_tagged[1+i] = tree_content[i];
+  U8 tree_hash[64];
+  B2Hash512Any(tree_tagged, tree_content_len+1, tree_hash);
+  ObjectPut(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
+
+  U8 commit_content[512];
+  I64 clen = 0;
+  CommitEncode(commit_content, &clen, tree_hash, parent_hash,
+               has_parent, timestamp, message, message_len,
+               REL_NONE, NULL, 0);
+  U8 commit_tagged[512];
+  commit_tagged[0] = OBJ_COMMIT;
+  for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
+  U8 commit_hash[64];
+  B2Hash512Any(commit_tagged, clen+1, commit_hash);
+  ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
+
+  // Object count: unlike the flat loop above (which tracks a simple
+  // per-file entry_count as it goes), TreeBuildRecursive's own
+  // recursion appends a variable, not-known-in-advance number of blob
+  // AND tree objects at arbitrary depth - re-scanning what actually
+  // landed in `archive` via the same IndexBuild every real command
+  // already trusts is simpler and provably correct than threading a
+  // running tally back out through arbitrary recursion depth.
+  // No guessed cap (this project's own hard-won ADR 0007 lesson: a
+  // fixed "surely enough" headroom number is exactly the pattern that
+  // kept causing real crashes) - a real upper bound instead: no object
+  // record is smaller than 73 bytes (8-byte length + 1-byte type +
+  // 0-byte content + 64-byte hash), so `alen` itself bounds how many
+  // objects could possibly fit in it.
+  I64 max_possible_objects = alen/73 + 1;
+  U8 *final_idx_hashes = MAlloc(max_possible_objects*64 + 64);
+  I64 *final_idx_offsets = MAlloc((max_possible_objects+1)*8);
+  I64 final_idx_count;
+  IndexBuild(archive+16, alen-16, final_idx_hashes, final_idx_offsets, &final_idx_count);
+  Free(final_idx_hashes);
+  Free(final_idx_offsets);
+
+  HgsWriteHeader(archive, rver, final_idx_count);
+  FileWrite(repo_path, archive, alen);
+
+  U8 log_prev_head[64];
+  if (has_parent) {
+    for (i=0; i<64; i++) log_prev_head[i] = parent_hash[i];
+  } else {
+    for (i=0; i<64; i++) log_prev_head[i] = 0;
+  }
+  OpLogAppend(repo_path, log_prev_head, commit_hash, timestamp);
+
+  CurrentHeadWrite(repo_path, commit_hash);
+  Free(archive);
+}
 // Logo.HC — `hgit logo`: prints the project logo as ASCII art.
 //
 // The art itself (docs/brand/ascii-hgit2.txt, trimmed to its real
@@ -4782,7 +4912,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.3.0"
+#define HGIT_VERSION "1.4.0"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -4872,6 +5002,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD init <repo_path>\n");
   CommPrint(1, "HELP_CMD status <repo_path> <find_mask> <dir_prefix>\n");
   CommPrint(1, "HELP_CMD offer <repo_path> <find_mask> <message>\n");
+  CommPrint(1, "HELP_CMD offertree <repo_path> <dir_path> <message> (recursive, ADR 0010)\n");
   CommPrint(1, "HELP_CMD history <repo_path>\n");
   CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");
   CommPrint(1, "HELP_CMD diff <repo_path> <commit_hex>\n");
@@ -4967,6 +5098,19 @@ U0 Hgit(U8 *cmdline)
     U64 offer_ts = cnts.jiffies;
     HgitOffer(offer_repo_path, offer_find_mask, offer_message, offer_mlen, offer_ts);
     CommPrint(1, "DISPATCH_OK offer\n");
+  } else if (StrCmp(cmd, "offertree") == 0) {
+    // ADR 0010's real CLI-semantics decision: a separate command, not
+    // a change to plain `offer` - see Offer.HC's own HgitOfferTree
+    // comment for why.
+    U8 ot_repo_path[256], ot_dir_path[256];
+    I64 ot_p = 0;
+    ot_p = ExtractToken(rest, ot_p, ot_repo_path, 256);
+    ot_p = ExtractToken(rest, ot_p, ot_dir_path, 256);
+    U8 *ot_message = rest + ot_p;
+    I64 ot_mlen = StrLen(ot_message);
+    U64 ot_ts = cnts.jiffies;
+    HgitOfferTree(ot_repo_path, ot_dir_path, ot_message, ot_mlen, ot_ts);
+    CommPrint(1, "DISPATCH_OK offertree\n");
   } else if (StrCmp(cmd, "correct") == 0) {
     HgitOfferRelatedCmd(rest, REL_CORRECTS, "correct");
   } else if (StrCmp(cmd, "revert") == 0) {
