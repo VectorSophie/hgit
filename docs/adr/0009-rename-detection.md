@@ -60,11 +60,18 @@ do").
 ## Alternatives considered
 
 - **Fuzzy/similarity-based rename detection** (matching Git's own
-  default `-M50%` behavior): rejected for this slice - needs a real
-  diff/similarity algorithm, which this project doesn't have reliably
-  (ADR 0008's own Fossil prototype has an unresolved reliability gap).
-  Exact-content matching needs no diffing at all - just a hash
-  comparison, already-available machinery.
+  default `-M50%` behavior): rejected for this slice - needed a real
+  diff/similarity algorithm this project didn't have reliably at the
+  time (ADR 0008's own Fossil prototype had an unresolved reliability
+  gap). Exact-content matching needs no diffing at all - just a hash
+  comparison, already-available machinery. **Update**: ADR 0008's
+  reliability gap is now closed and a real similarity measure exists
+  (`FossilSimilarityPercent`, `experiments/83-fossil-similarity/`) -
+  the blocker for this alternative is gone, but wiring it into
+  `Offer.HC`/`Status.HC` (threshold choice, multi-candidate
+  disambiguation, real performance cost of scanning every unmatched
+  entry) is a separate, real decision, not made here or automatically
+  by this update.
 - **Tracking renames via a separate, explicit `hgit rename` command**
   (the user declares the rename, rather than it being inferred):
   rejected as a much bigger UX/workflow question, and inference (when

@@ -13,11 +13,14 @@ encode/decode, checksum, three-part delta structure), and the long-open
 `(U64)` does not reliably zero-extend once composed with other such
 casts in one shifted-OR expression; explicitly masking each with
 `& 0xFF` fixes it, verified against independently-computed ground
-truth across every previously-failing reproduction. `Fossil.HC` still
-isn't wired into `tools/build-package.sh` - not because of reliability
-anymore, but because `FossilDeltaMakeTrivial` has no real diff
-algorithm yet and provides no compression value on its own; see
-"Decision" below.
+truth across every previously-failing reproduction. A real, if
+minimal, diff algorithm now exists too (probe 82,
+`experiments/82-fossil-real-diff/`, `FossilDeltaMakeReal` - single
+longest-match copy segment, ~61% compression verified on a real test
+case). `Fossil.HC` still isn't wired into `tools/build-package.sh` -
+not for reliability or lack of a diff algorithm anymore, but because
+no real hgit command currently stores or needs delta-compressed
+objects; see "Decision" below.
 
 ## Context
 
@@ -107,18 +110,23 @@ explained rather than just observed to work.
 
 `Fossil.HC`'s reliability question is closed - the checksum is
 correct, verified against ground truth, across every caller shape
-tested. It is still **not** added to `tools/build-package.sh` and is
-not called from any real hgit command, but now for a different, much
-more mundane reason: `FossilDeltaMakeTrivial` remains a one-literal-
-segment encoder with no real diff algorithm, so it provides no
-compression value on its own yet, and no real hgit command currently
-needs delta compression at all. Adopting it into the build now would
-add real dependency-graph weight for zero functional benefit. The
-byte-level format understanding gained across probes 68/77/79/80 (and
-the HolyC quirks found, including this one) are real, durable value -
-the research question doc 04 raised ("does Fossil's delta format work
-in HolyC at all") is now answered "yes, verified reliable, pending a
-real diff algorithm before it's actually useful."
+tested - and a real, minimal diff algorithm exists
+(`FossilDeltaMakeReal`, probe 82, real compression verified on a real
+test case). It is still **not** added to `tools/build-package.sh` and
+is not called from any real hgit command, but now for a genuine
+product reason, not a technical gap: no real hgit command currently
+stores or needs delta-compressed objects - the object store is
+append-only, whole-content blobs, and adopting delta compression there
+is a real architectural decision (would every object be delta-encoded
+against a prior version? which ones? at what point in `hgit offer`'s
+own pipeline?) that hasn't been made, not something to bolt on for its
+own sake. The byte-level format understanding gained across probes
+68/77/79/80/82 (and the HolyC quirks found, including probe 80's real
+root cause) are real, durable value - the research question doc 04
+raised ("does Fossil's delta format work in HolyC at all") is now
+answered "yes, verified reliable, with a real working diff algorithm,
+pending a real decision on whether/where hgit's own storage layer
+should use it."
 
 ## What would justify revisiting this
 
@@ -139,7 +147,16 @@ real diff algorithm before it's actually useful."
   compiler-source lead from probe 76 was a real, useful capability
   found along the way, just not the piece that ended up mattering for
   this specific bug.
-- A real diff/longest-common-substring algorithm - `FossilDeltaMakeTrivial`'s
-  one-literal-segment approach has no compression value by itself; the
-  actual benefit only comes from real copy segments referencing the
-  source. This is the real remaining item now.
+- ~~A real diff/longest-common-substring algorithm~~ **Done, a first
+  version** (probe 82, `experiments/82-fossil-real-diff/`):
+  `FossilDeltaMakeReal` finds the single longest matching substring
+  between source and target and encodes `[literal][copy][literal]`
+  when it's worth it, falling back to `FossilDeltaMakeTrivial`'s
+  all-literal shape otherwise. Verified: a real 105-byte target with
+  one small edit compresses to a 41-byte delta (~61% smaller),
+  byte-for-byte round-trip confirmed, plus a real no-shared-content
+  negative case. This is a *first* real diff, not the format's final
+  one - only one copy segment, not true multi-hunk diffing (a target
+  edited in two separate places still only gets one copy segment). A
+  real multi-hunk diff (e.g. a rolling-hash block matcher) remains
+  real future work if that scope is ever needed.

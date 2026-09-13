@@ -171,11 +171,138 @@ U0 FossilDeltaMakeTrivial(U8 *source, I64 source_len, U8 *target, I64 target_len
   *delta_len_out = len;
 }
 
-// Parses and applies a Fossil-format delta against `source` (only
-// used for real copy segments - none exist yet, see above), writing
-// the reconstructed target into `target_out` and its length into
-// *target_len_out. Returns FALSE (nothing trustworthy written) if the
-// delta is malformed or the trailer checksum doesn't match the
+// Below this match length (bytes), a match isn't worth encoding as a
+// copy segment - the segment's own overhead (length digits + '@' +
+// source-offset digits + ',') can exceed what it saves versus just
+// keeping those bytes literal. Not tuned against real data, just a
+// small, defensible floor (Fossil's own real implementation uses a
+// rolling hash over 16-byte blocks for this same reason, at a
+// different scale - not replicated here, see the file's own header
+// note on scope).
+#define FOSSIL_MIN_COPY_LEN 4
+
+// A real (if minimal) diff: finds the single longest matching
+// substring between `source` and `target` (a plain O(source_len *
+// target_len) double scan - fine at this project's own established
+// "no premature optimization" scale, same stance as every linear scan
+// already in Index.HC) and, if it's at least FOSSIL_MIN_COPY_LEN
+// bytes, encodes the delta as [literal prefix][copy segment][literal
+// suffix] instead of `FossilDeltaMakeTrivial`'s always-one-big-literal
+// approach. Falls back to that same all-literal shape if no match
+// meets the threshold (including source_len==0 or target_len==0).
+//
+// ADR 0008 (experiments/82-fossil-real-diff/): this is genuinely a
+// *first* real diff algorithm, not the format's final one - it finds
+// exactly one copy segment (the single longest match), not a real
+// multi-hunk diff. A target edited in two separate, non-adjacent
+// places still only gets ONE copy segment; the other unchanged region
+// stays literal. Real, useful compression for the common
+// single-edit-region case; a real limitation for anything more
+// complex, honestly scoped rather than oversold.
+// Shared by `FossilDeltaMakeReal` and `FossilSimilarityPercent` - the
+// same O(source_len * target_len) longest-match scan, extracted so
+// the similarity measure and the actual encoder can never quietly
+// drift apart (two independent copies of this scan would be a real
+// risk of "the similarity score doesn't match what the encoder would
+// actually produce").
+U0 FossilFindLongestMatch(U8 *source, I64 source_len, U8 *target, I64 target_len,
+                          I64 *best_src_off_out, I64 *best_tgt_off_out, I64 *best_len_out)
+{
+  I64 best_src_off = -1, best_tgt_off = -1, best_len = 0;
+  I64 si, ti;
+  for (si=0; si<source_len; si++) {
+    for (ti=0; ti<target_len; ti++) {
+      I64 match_len = 0;
+      while (si+match_len < source_len && ti+match_len < target_len &&
+             source[si+match_len] == target[ti+match_len]) match_len++;
+      if (match_len > best_len) {
+        best_len = match_len;
+        best_src_off = si;
+        best_tgt_off = ti;
+      }
+    }
+  }
+  *best_src_off_out = best_src_off;
+  *best_tgt_off_out = best_tgt_off;
+  *best_len_out = best_len;
+}
+
+U0 FossilDeltaMakeReal(U8 *source, I64 source_len, U8 *target, I64 target_len,
+                       U8 *delta_out, I64 *delta_len_out)
+{
+  I64 best_src_off, best_tgt_off, best_len;
+  FossilFindLongestMatch(source, source_len, target, target_len,
+                         &best_src_off, &best_tgt_off, &best_len);
+
+  I64 len = 0;
+  FossilPutInt(target_len, delta_out, &len);
+  delta_out[len++] = '\n';
+
+  I64 i;
+  if (best_len >= FOSSIL_MIN_COPY_LEN) {
+    if (best_tgt_off > 0) {
+      FossilPutInt(best_tgt_off, delta_out, &len);
+      delta_out[len++] = ':';
+      for (i=0; i<best_tgt_off; i++) delta_out[len++] = target[i];
+    }
+    FossilPutInt(best_len, delta_out, &len);
+    delta_out[len++] = '@';
+    FossilPutInt(best_src_off, delta_out, &len);
+    delta_out[len++] = ',';
+    I64 suffix_start = best_tgt_off + best_len;
+    I64 suffix_len = target_len - suffix_start;
+    if (suffix_len > 0) {
+      FossilPutInt(suffix_len, delta_out, &len);
+      delta_out[len++] = ':';
+      for (i=0; i<suffix_len; i++) delta_out[len++] = target[suffix_start+i];
+    }
+  } else {
+    // No match worth encoding - same all-literal shape as
+    // FossilDeltaMakeTrivial.
+    FossilPutInt(target_len, delta_out, &len);
+    delta_out[len++] = ':';
+    for (i=0; i<target_len; i++) delta_out[len++] = target[i];
+  }
+
+  U32 sum = FossilChecksum(target, target_len);
+  FossilPutInt((sum(U64) & 0xFFFFFFFF), delta_out, &len);
+  delta_out[len++] = ';';
+
+  *delta_len_out = len;
+}
+
+// A real similarity measure, in whole percent (0-100), between
+// `source` and `target`: the fraction of `target` covered by the
+// single longest match `FossilFindLongestMatch` would find - the same
+// scan `FossilDeltaMakeReal` itself uses to decide whether a copy
+// segment is worth encoding, reused here rather than reimplemented, so
+// this score can never silently diverge from what the real encoder
+// would actually do. Matches git's own real "similarity index" idea
+// (a percentage a rename-detection caller can threshold against, e.g.
+// git's own default `-M50%`) but - like `FossilDeltaMakeReal` itself -
+// only ever measures ONE contiguous match, not true multi-hunk
+// similarity: a file with several separate small edits scattered
+// through it will score lower here than a real multi-hunk diff tool
+// would report, an honest limitation inherited directly from the
+// diff algorithm this reuses. Returns 0 for a zero-length target
+// (nothing to be similar to) rather than dividing by zero.
+I64 FossilSimilarityPercent(U8 *source, I64 source_len, U8 *target, I64 target_len)
+{
+  if (target_len == 0) return 0;
+  I64 best_src_off, best_tgt_off, best_len;
+  FossilFindLongestMatch(source, source_len, target, target_len,
+                         &best_src_off, &best_tgt_off, &best_len);
+  return (best_len * 100) / target_len;
+}
+
+// Parses and applies a Fossil-format delta against `source` (used for
+// real copy segments - `FossilDeltaMakeReal` now produces these; this
+// function's own copy-segment handling was written and parse-tested
+// before that encoder existed, per its own original comment, and
+// needed no changes once a real encoder started emitting them),
+// writing the reconstructed target into `target_out` and its length
+// into *target_len_out. Returns FALSE (nothing trustworthy written)
+// if the delta is malformed or the trailer checksum doesn't match the
 // reconstructed target - the same "verify, don't just trust" pattern
 // this project's own `hgit check`/`ArchiveVerify` already use.
 Bool FossilDeltaApply(U8 *source, I64 source_len, U8 *delta, I64 delta_len,

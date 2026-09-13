@@ -1,0 +1,12 @@
+P81_LENS source=105 target=105
+P81_DELTA_LEN=41 (target_len=105)
+P81_APPLY_OK=1 reconstructed_len=105
+P81_BYTE_MATCH=1
+P81_NEG_APPLY_OK=1 P81_NEG_BYTE_MATCH=1
+PASS p81_real_diff_test
+DISPATCH_OK path_go main
+SEE_COMMIT ts=271764 parents=1 msg=offer_two
+SEE_TREE entries=1
+  entry type=1 id=932d7aa9e3485348 name=P65FileA.txt
+SEE_END
+PASS p65_head_deletion_regression
