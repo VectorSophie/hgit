@@ -24,11 +24,11 @@ history into the current one.
    unchanged-from-base on one side takes the other side's value;
    changed differently on both sides is a real conflict.
 5. **A real, honest first-slice scope limit**: any name where either
-   side's own entry is an `OBJ_TREE` (a subdirectory) is reported as
-   `MERGE_CONFLICT_UNSUPPORTED_NESTED` territory and treated as a
-   conflict too - flat trees only in this slice, matching how
-   `Diff.HC`/`Status.HC` were built flat before recursion was added
-   later (probes 94/95).
+   side's own entry is an `OBJ_TREE` (a subdirectory) is treated as a
+   conflict too, reported with the exact same `MERGE_CONFLICT <name>`
+   tag as any other conflict (no distinct tag exists) - flat trees
+   only in this slice, matching how `Diff.HC`/`Status.HC` were built
+   flat before recursion was added later (probes 94/95).
 6. **No conflict resolution exists yet.** Any real conflict of any
    kind aborts the WHOLE merge with zero side effects - no commit
    created, no HEAD moved - the same non-destructive stance every

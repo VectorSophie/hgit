@@ -1518,8 +1518,52 @@ this time fixed by declaring the shared scratch locals ONCE above the
 loop and reusing them, a cleaner fix than per-branch suffixing when
 the colliding blocks are true siblings under one shared loop.
 
-Real, separate work still needed: nested-tree three-way merging, and
-any real conflict resolution mechanism (today a conflict just aborts).
+Real, separate work still needed at the time: nested-tree three-way
+merging, and any real conflict resolution mechanism (today a conflict
+just aborts).
+
+**ADR 0011 written up, plus `hgit merge` now recurses into nested
+trees**: `docs/adr/0011-merge.md`, `experiments/100-merge-nested-trees/`
+(PASS). Wrote the real ADR probes 97-99 had already earned but not yet
+documented, matching this project's own standing discipline (every
+real, substantial scoping decision gets one, same as ADR 0007/0010).
+While writing it up, found and fixed a real doc-accuracy issue:
+`Merge.HC`'s own header comment and the probe 99 README both claimed a
+distinct `MERGE_CONFLICT_UNSUPPORTED_NESTED` tag for the nested-tree
+case that never actually existed in the code - a nested conflict
+always printed the same generic `MERGE_CONFLICT <name>`. Corrected in
+both places.
+
+Then closed ADR 0011's own first documented follow-up:
+`MergeTreesRecursive` extends the flat per-name three-way decision one
+directory level deeper wherever every side that has a name at all
+agrees it's a real `OBJ_TREE` - the identical logic, not a special
+case, reusing the same generic-per-object-type recursion pattern this
+project already established (`Check.HC`/`See.HC`/`Diff.HC`/
+`Status.HC`). A same-name kind mismatch (tree vs. file) is still a
+real, honest conflict.
+
+**A real bug found by this probe's own test, not by inspection**: the
+first real run of a genuinely nested conflict reported
+`MERGE_CONFLICT SubB/` instead of the real `SubB/z.txt` - two places
+copied the prefixed `full_name` into the conflict buffer using the
+LOCAL entry name's own length instead of `full_name`'s real, full
+length, invisible at the top level (empty prefix, so the two lengths
+coincided) and only exposed by a genuinely nested case. Fixed;
+re-verified correct.
+
+Verified (real QEMU runs): a non-conflicting merge inside a shared
+subdirectory (both sides' own nested edits survive into a real,
+newly-computed nested tree object, `CHECK_OK`), and a real conflict
+inside a shared subdirectory (`MERGE_CONFLICT SubB/z.txt`, the whole
+merge aborting with zero side effects - HEAD provably unchanged,
+object count unaffected). Probe 99's own full four-case flat test and
+the project's full command-surface regression both re-run clean after
+the fix.
+
+Real, separate work still needed: real criss-cross histories with
+ambiguous multiple merge bases, and any real conflict resolution
+mechanism (a conflict at any depth still fully aborts the merge).
 
 ## Estimated line counts (very rough, will move once real code exists)
 

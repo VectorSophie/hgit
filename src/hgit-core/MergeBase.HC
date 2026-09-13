@@ -4,8 +4,8 @@
 // decision" pattern ADR 0010's own probes 90/91 established: probe 97
 // confirmed hgit's object model already supports a real multi-parent
 // (merge) commit with zero code changes; this is the next real,
-// separate, standalone piece a real `hgit merge` command needs -
-// finding where two diverged paths' own histories actually split,
+// separate, standalone piece ADR 0011's own `hgit merge` command needs
+// - finding where two diverged paths' own histories actually split,
 // before any real three-way tree merge can happen. Verified standalone
 // (experiments/98-merge-base/) before any real command wires it in.
 //

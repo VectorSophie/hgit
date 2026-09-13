@@ -1,0 +1,42 @@
+DISPATCH_OK init C:/Home/P100RepoA.hgs
+DISPATCH_OK offertree
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offertree
+DISPATCH_OK path_go main
+DISPATCH_OK offertree
+P100_CASE1_MERGE_BEGIN
+MERGE_OK
+P100_CASE1_MERGE_END
+P100_CASE1_SEE_BEGIN
+SEE_COMMIT ts=7814158 parents=2 msg=merge feature
+SEE_TREE entries=2
+  entry type=2 id=230257349406945f name=SubA
+    entry type=1 id=9d3ef29b33a0d879 name=x.txt
+    entry type=1 id=a5d5719b129b1fc6 name=y.txt
+  entry type=1 id=c26648ae47ad2403 name=top.txt
+SEE_END
+P100_CASE1_SEE_END
+P100_CASE1_CHECK_BEGIN
+CHECK_OK objects=21
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+P100_CASE1_CHECK_END
+DISPATCH_OK init C:/Home/P100RepoB.hgs
+DISPATCH_OK offertree
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offertree
+DISPATCH_OK path_go main
+DISPATCH_OK offertree
+P100_CASE2_MERGE_BEGIN
+MERGE_CONFLICT SubB/z.txt
+MERGE_ABORTED conflicts=1
+P100_CASE2_MERGE_END
+P100_CASE2_HEAD_UNCHANGED=1
+P100_CASE2_CHECK_BEGIN
+CHECK_OK objects=12
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+P100_CASE2_CHECK_END
+PASS p100_merge_nested_test
