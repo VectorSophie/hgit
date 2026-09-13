@@ -4877,13 +4877,13 @@ U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
 // full list: no working-copy diffing (every matching file is re-blobbed
 // on every offer, not just changed ones - no deduplication awareness at
 // this layer, though identical content does still hash-dedupe for free
-// since objects are content-addressed). `archive` and (flat `hgit
-// offer` only, probe 106) each matched file's own blob buffer are now
-// `MAlloc`'d at a real computed size, not fixed stack arrays - only
-// `tree_content[2048]` (an entry-COUNT cap, unrelated to file byte
-// size) remains a real, known, not-yet-hit limit; `offertree`'s own
-// recursive path still has the OLD fixed per-file cap too, a real,
-// separate follow-up (probe 106's own README). `find_mask` also still
+// since objects are content-addressed). `archive` and each matched
+// file's own blob buffer are now `MAlloc`'d at a real computed size,
+// not fixed stack arrays, in BOTH the flat `hgit offer` path (probe
+// 106) and the recursive `offertree` path (probe 107) - only the
+// per-directory-level `tree_content[2048]`/`tree_content[4096]`
+// entry-COUNT caps (unrelated to file byte size) remain real, known,
+// not-yet-hit limits. `find_mask` also still
 // has to be passed in rather than "the whole repo directory minus the
 // repo's own files" (no self-exclusion logic yet).
 //
@@ -4932,12 +4932,13 @@ U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
 // matches the exact size independently confirmed safe via MAlloc in
 // experiments/61-dynamic-archive/.
 //
-// Still used by `HgitOfferTreeWithRelation` (`offertree`), which still
-// has its own separate `blob_tagged[512]` per-file cap, unchanged - a
-// real, deliberately-scoped-out follow-up (see probe 106's own
-// README). `HgitOfferWithRelation` (flat `hgit offer`) no longer uses
-// this fixed constant - see OBJECT_RECORD_OVERHEAD/TREE_COMMIT_HEADROOM
-// below (probe 106).
+// No longer used by either `HgitOfferWithRelation` (flat `hgit offer`,
+// probe 106) or `HgitOfferTreeWithRelation` (`offertree`, probe 107) -
+// both now compute a real capacity from the actual files being
+// offered instead (see OBJECT_RECORD_OVERHEAD/TREE_COMMIT_HEADROOM and
+// TREE_LEVEL_MAX/COMMIT_HEADROOM below). Left defined and documented
+// here as historical record of the worst-case reasoning ADR 0007
+// originally established, not because anything still uses it.
 #define ARCHIVE_HEADROOM 20000
 #define ARCHIVE_SANITY_MAX 1000000000
 
@@ -4961,6 +4962,20 @@ U0 HgitCopyRepo(U8 *src_repo_path, U8 *dest_repo_path)
 // record overhead.
 #define OBJECT_RECORD_OVERHEAD 73
 #define TREE_COMMIT_HEADROOM 3000
+
+// Probe 107 (experiments/107-offertree-large-file-support/):
+// `HgitOfferTreeWithRelation` (`offertree`) needs its own headroom
+// formula, not `TREE_COMMIT_HEADROOM` above - unlike the flat path,
+// it can create MULTIPLE tree objects (one per real subdirectory,
+// `TreeBuildRecursive`'s own recursion), each up to a real per-level
+// entry-content cap. `TREE_LEVEL_MAX` matches the largest per-level
+// buffer actually used (`HgitOfferTreeWithRelation`'s own root-level
+// `tree_content[4096]`; nested nested levels use a smaller
+// `child_tree_content[2048]`, so 4096 is a safe, real upper bound, not
+// a guess) plus that tree's own record overhead, times (subdirectory
+// count + 1 for the root tree itself).
+#define TREE_LEVEL_MAX 4096
+#define COMMIT_HEADROOM 600
 
 // ADR 0009 addendum (experiments/84-fuzzy-rename-detection/): a
 // currently-offered file's content must score at least
@@ -5021,6 +5036,40 @@ Bool OfferFindFuzzyRename(U8 *rbuf, U8 *old_tree_content, I64 old_tree_content_l
     return TRUE;
   }
   return FALSE;
+}
+
+// Probe 107 (experiments/107-offertree-large-file-support/): a real,
+// computed sum of every real file's own size across the WHOLE subtree
+// under dir_path, plus a subdirectory count - mirrors
+// TreeBuildRecursive's own recursion, dot/dotdot skip, and
+// `attr & 16` subdirectory check below, but only sums (never writes
+// to `archive`), so `HgitOfferTreeWithRelation` can size `archive`
+// correctly instead of assuming a fixed per-file/per-tree cap.
+U0 SumTreeFileBytes(U8 *dir_path, I64 *bytes_out, I64 *file_count_out, I64 *subdir_count_out)
+{
+  U8 mask[256];
+  StrPrint(mask, "%s*", dir_path);
+  CDirEntry *tmpde = FilesFind(mask, 0);
+  CDirEntry *tmpde1 = tmpde;
+  while (tmpde) {
+    I64 name_start = 0, j;
+    for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
+    Bool is_dot = StrCmp(tmpde->full_name+name_start, ".") == 0;
+    Bool is_dotdot = StrCmp(tmpde->full_name+name_start, "..") == 0;
+    if (!is_dot && !is_dotdot) {
+      if (tmpde->attr & 16) {
+        *subdir_count_out += 1;
+        U8 subdir_path[256];
+        StrPrint(subdir_path, "%s/", tmpde->full_name);
+        SumTreeFileBytes(subdir_path, bytes_out, file_count_out, subdir_count_out);
+      } else {
+        *bytes_out += tmpde->size;
+        *file_count_out += 1;
+      }
+    }
+    tmpde = tmpde->next;
+  }
+  DirTreeDel(tmpde1);
 }
 
 // ADR 0010 (experiments/90-recursive-tree-primitive/): a real,
@@ -5125,13 +5174,22 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
         // parameterized by THIS directory level's own old tree.
         I64 fsize;
         U8 *fbuf = FileRead(tmpde->full_name, &fsize);
-        if (fsize+1 <= 512) {
-          U8 blob_tagged[512];
+        {
+          // Probe 107: was `if (fsize+1 <= 512)` guarding a fixed
+          // `blob_tagged[512]` stack buffer - a file over 511 bytes
+          // was silently DROPPED here (no message at all, worse than
+          // the flat path's old `OFFER_SKIP`). `MAlloc`'d at the
+          // file's own real size instead, same fix as probe 106's
+          // flat-path version; `archive` itself is now sized by a
+          // real recursive sum (`SumTreeFileBytes`, above) rather than
+          // a fixed headroom, so this no longer risks overflowing it.
+          U8 *blob_tagged = MAlloc(fsize+1);
           blob_tagged[0] = OBJ_BLOB;
           I64 bi;
           for (bi=0; bi<fsize; bi++) blob_tagged[1+bi] = fbuf[bi];
           U8 blob_hash[64];
           B2Hash512Any(blob_tagged, fsize+1, blob_hash);
+          Free(blob_tagged);
           ObjectPut(archive, alen, OBJ_BLOB, fbuf, fsize);
 
           U64 entity_id;
@@ -5449,7 +5507,25 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
     return;
   }
 
-  I64 archive_cap = rsize + ARCHIVE_HEADROOM;
+  // Probe 107: a real, computed capacity (recursive sum of every real
+  // file's own size under dir_path, plus a real subdirectory count for
+  // the tree objects TreeBuildRecursive will create) instead of the
+  // old fixed ARCHIVE_HEADROOM - same fix as probe 106's flat-path
+  // version, extended to cover offertree's own multi-tree-object shape.
+  I64 new_content_bytes = 0;
+  I64 new_file_count = 0;
+  I64 new_subdir_count = 0;
+  SumTreeFileBytes(dir_path, &new_content_bytes, &new_file_count, &new_subdir_count);
+  I64 tree_object_count = new_subdir_count + 1; // +1 for the root tree
+
+  I64 archive_cap = rsize + new_content_bytes
+                   + new_file_count * OBJECT_RECORD_OVERHEAD
+                   + tree_object_count * (TREE_LEVEL_MAX + OBJECT_RECORD_OVERHEAD)
+                   + COMMIT_HEADROOM + OBJECT_RECORD_OVERHEAD;
+  if (archive_cap > ARCHIVE_SANITY_MAX) {
+    CommPrint(1, "OFFERTREE_REFUSED archive_absurdly_large size=%d\n", archive_cap);
+    return;
+  }
   U8 *archive = MAlloc(archive_cap);
   I64 alen;
   I64 i;
@@ -6214,7 +6290,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.7.2"
+#define HGIT_VERSION "1.7.3"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing

@@ -1828,6 +1828,25 @@ oversized file with no message at all (unlike the flat path's old
 `OFFER_SKIP`) - a real, separate, explicitly-flagged follow-up, not
 silently left implicit.
 
+**That follow-up, now closed too.** `experiments/107-offertree-large-file-support/`
+(PASS): `TreeBuildRecursive`'s own `blob_tagged` is now `MAlloc`'d the
+same way, and a new recursive sizing helper (`SumTreeFileBytes`, mirrors
+`TreeBuildRecursive`'s own recursion) sums every real file's size
+across the WHOLE subtree plus a real subdirectory count, so
+`HgitOfferTreeWithRelation`'s `archive_cap` scales correctly with
+however many tree objects a real nested offering creates - not just
+one, unlike the flat path. Verified: a real 6,000-byte file nested
+inside a real subdirectory, previously silently dropped with zero
+error signal, now commits cleanly and round-trips through `hgit
+check` (hash-integrity-verified), including after a real edit to the
+same nested large file (entity-ID continuity intact at depth). A
+real, separate, pre-existing limitation surfaced (not introduced) by
+this test: `hgit statustree` still reports `STATUS_TOO_LARGE_TO_CHECK`
+for the same file - `Status.HC`'s own already-documented separate cap
+(probe 67), untouched here, a real follow-up if content comparison at
+this size is ever needed too. Both the standing regression and the
+full command-surface suite re-run clean.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided
