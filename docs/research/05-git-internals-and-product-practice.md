@@ -62,15 +62,46 @@ honestly documented as following only `CommitParentHash(content, 0)` -
 a real, existing, known limitation for a linear-history view, not a
 new finding.
 
-**Real, separate work still needed, not attempted**: an actual merge
-ALGORITHM - finding a real merge base (the lowest common ancestor in
-the commit DAG, non-trivial once criss-cross histories exist) and a
-real three-way tree-level merge (reusing `Diff.HC`'s own recursive
-tree-walking pattern, extended to three trees with a real conflict
-representation this project doesn't have yet). Both real, well-scoped,
-substantial follow-up work for a future session - the prerequisite
-question this pass answers is only "can the object model represent the
-*result*," not "how is the result computed."
+**The merge-base half is now built and verified**
+(`experiments/98-merge-base/`, PASS): `FindMergeBase` (new file,
+`src/hgit-core/MergeBase.HC`) walks each of two commits' own
+`parent[0]` chains backward (the same convention `History.HC`/
+`HistoryDoc.HC`/`Graph.HC`'s own fork-point search already use),
+collecting one chain's full ancestor set, then finding the first
+commit on the other chain that's already in it. Verified against a
+real, asymmetric fork (one path advanced twice, the other once past
+the same real fork point) - the found base matches the true root
+commit exactly, not a naive "shorter chain" guess; the trivial
+self-merge-base case (a commit's own base with itself) verified too.
+Deliberately scoped the same way ADR 0010 narrows its own first
+slices: correct for the real, common case (`Paths.HC`'s own `PathNew`
+guarantees a single, findable fork point per path), not real
+criss-cross histories with ambiguous multiple lowest common ancestors
+- no evidence yet hgit's real usage needs that.
+
+**A real `hgit merge` command now exists too**
+(`experiments/99-hgit-merge/`, PASS): `Merge.HC`'s `HgitMerge` wires
+`FindMergeBase` into a real three-way tree merge (flat trees only in
+this first slice - any name involving a subdirectory reports a real,
+honest unsupported-conflict rather than being silently skipped or
+guessed at) with the same base/ours/theirs decision described above.
+Trivial cases (already up to date, fast-forward) are detected and
+handled without a merge commit, matching every real VCS's own standard
+behavior. Any real conflict aborts the ENTIRE merge with zero side
+effects - no commit, no HEAD move - since there is no conflict
+resolution mechanism yet. Verified on four real, independent
+scenarios: a real non-conflicting merge (two different files edited on
+each side, both survive into the merged tree, a real `parents=2`
+commit), a real conflict (same file edited differently on both sides -
+aborts cleanly, HEAD provably unchanged, object count unaffected), a
+real fast-forward, and a real already-up-to-date case. Full
+command-surface regression re-run clean.
+
+**Real, separate work still needed, not attempted**: nested-tree
+three-way merging, and any real conflict RESOLUTION mechanism (today a
+conflict just aborts - no partial commit, no conflict-marker blob
+format, no resolve command). Both real, well-scoped, substantial
+follow-up work for a future session.
 
 ## Not yet done
 

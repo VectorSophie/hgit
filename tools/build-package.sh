@@ -33,6 +33,7 @@ cat \
   src/hgit-core/Index.HC \
   src/hgit-core/Meta.HC \
   src/hgit-core/Fossil.HC \
+  src/hgit-core/MergeBase.HC \
   src/hgit-cli/Init.HC \
   src/hgit-cli/Paths.HC \
   src/hgit-cli/WorkDir.HC \
@@ -48,6 +49,7 @@ cat \
   src/hgit-cli/OpLog.HC \
   src/hgit-cli/Portable.HC \
   src/hgit-cli/Offer.HC \
+  src/hgit-cli/Merge.HC \
   src/hgit-cli/Logo.HC \
   src/hgit-cli/Hgit.HC \
   > "$OUT"

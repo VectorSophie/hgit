@@ -1448,13 +1448,78 @@ paths: `SEE_COMMIT ... parents=2`, `CHECK_REFS_OK`,
 `CHECK_DANGLING_NONE` (the reachability walk followed BOTH parents).
 Full command-surface regression re-run clean.
 
-Real, separate work still needed, not attempted: an actual merge
+Real, separate work still needed at the time: an actual merge
 ALGORITHM (a real merge-base/lowest-common-ancestor search, and a real
 three-way tree-level merge reusing `Diff.HC`'s own recursive pattern,
 with a conflict representation this project doesn't have yet) - a
 real, well-scoped candidate for a future session now that its one
 prerequisite has real, verified evidence behind it rather than being
 assumed.
+
+**The merge-base half is now built**: `experiments/98-merge-base/`
+(PASS). `FindMergeBase` (new file, `src/hgit-core/MergeBase.HC`) walks
+each of two commits' own `parent[0]` chains backward (same convention
+`History.HC`/`HistoryDoc.HC`/`Graph.HC`'s own fork-point search
+already use), finding the first commit on one chain that's already an
+ancestor of the other. Verified against a real, asymmetric fork (one
+path advanced twice, the other once, past the same real fork point) -
+the found base matches the true root commit exactly, not a naive
+"shorter chain" guess; the trivial self-merge-base case verified too.
+Scoped the same way ADR 0010 narrows its own first slices: correct for
+the real, common case (`Paths.HC`'s `PathNew` guarantees a single,
+findable fork point per path), not real criss-cross histories with
+ambiguous multiple bases - no evidence yet hgit's real usage needs
+that. Hit and fixed the same "duplicate member" sibling-block
+collision (documented since probe 5, recurring since probe 94) on
+first push - two sibling parent-chain-walking loops each declaring the
+same local names; fixed by suffixing one side's locals, same pattern
+as probe 94. Full command-surface regression re-run clean.
+
+Real, separate work still needed at the time: the actual three-way
+TREE merge (reusing `Diff.HC`'s own recursive pattern, with a conflict
+representation this project doesn't have yet), and wiring
+`FindMergeBase` into any real `hgit merge` command.
+
+**`hgit merge` now exists**: `experiments/99-hgit-merge/` (PASS).
+`Merge.HC`'s `HgitMerge` wires `FindMergeBase` into a real three-way
+tree merge - flat trees only in this first slice (any name involving
+a subdirectory reports a real, honest unsupported-conflict, not
+silently skipped). Trivial cases (already up to date, fast-forward)
+handled without a merge commit, matching every real VCS's own standard
+behavior. Any real conflict aborts the whole merge with zero side
+effects - no conflict resolution mechanism exists yet.
+
+Verified on four real, independent scenarios: a real non-conflicting
+merge (`MERGE_OK`, `parents=2`, both sides' own edits present in the
+merged tree, `CHECK_OK`); a real conflict (`MERGE_CONFLICT`/
+`MERGE_ABORTED`, HEAD provably unchanged by direct hash comparison,
+object count unaffected); a real fast-forward (`MERGE_FASTFORWARD`,
+the moved HEAD verified to exactly equal the other path's own head);
+and already-up-to-date. Full command-surface regression re-run clean.
+
+A real test-design lesson surfaced building the non-conflicting case:
+`hgit offer` replaces its entire tree with whatever `find_mask`
+matches (confirmed by re-reading `Offer.HC`, not assumed - no old-tree
+carry-forward for unmatched names), and switching paths doesn't
+restore working-directory files to that path's own committed state
+(no checkout step exists). The test's first draft used single-file
+masks per offer, silently dropping the other file from later commits
+- a real mistake in the test's own modeling, not a `HgitMerge` bug;
+fixed with a wildcard mask and an explicit restore of the untouched
+file's real content before the other path's own offer.
+
+Two real HolyC gotchas hit and fixed before this compiled: `continue`
+isn't a real keyword (documented since probe 5, confirmed again
+against the exact `holyc-parser` bug-compat corpus entry that predicts
+it) - caught by lint before ever reaching QEMU, fixed by nesting each
+loop's remaining body in a guard instead of an early skip. The
+recurring "duplicate member" sibling-block collision (probes 94/98) -
+this time fixed by declaring the shared scratch locals ONCE above the
+loop and reusing them, a cleaner fix than per-branch suffixing when
+the colliding blocks are true siblings under one shared loop.
+
+Real, separate work still needed: nested-tree three-way merging, and
+any real conflict resolution mechanism (today a conflict just aborts).
 
 ## Estimated line counts (very rough, will move once real code exists)
 

@@ -84,7 +84,7 @@
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.6.0"
+#define HGIT_VERSION "1.7.0"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -208,6 +208,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD status <repo_path> <find_mask> <dir_prefix>\n");
   CommPrint(1, "HELP_CMD offer <repo_path> <find_mask> <message>\n");
   CommPrint(1, "HELP_CMD offertree <repo_path> <dir_path> <message> (recursive, ADR 0010)\n");
+  CommPrint(1, "HELP_CMD merge <repo_path> <other_path_name> (real conflicts abort cleanly, no resolution yet)\n");
   CommPrint(1, "HELP_CMD statustree <repo_path> <dir_path> (recursive status, ADR 0010)\n");
   CommPrint(1, "HELP_CMD history <repo_path>\n");
   CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");
@@ -320,6 +321,16 @@ U0 Hgit(U8 *cmdline)
     U64 ot_ts = cnts.jiffies;
     HgitOfferTree(ot_repo_path, ot_dir_path, ot_message, ot_mlen, ot_ts);
     CommPrint(1, "DISPATCH_OK offertree\n");
+  } else if (StrCmp(cmd, "merge") == 0) {
+    // Probes 97/98's own real next step: brings another declared
+    // path's history into the current one - see Merge.HC's own header
+    // comment for this first slice's real, deliberate scope.
+    U8 merge_repo_path[256], merge_other_path[HGIT_MAX_PATH_NAME];
+    I64 merge_p = 0;
+    merge_p = ExtractToken(rest, merge_p, merge_repo_path, 256);
+    ExtractToken(rest, merge_p, merge_other_path, HGIT_MAX_PATH_NAME);
+    U64 merge_ts = cnts.jiffies;
+    HgitMerge(merge_repo_path, merge_other_path, merge_ts);
   } else if (StrCmp(cmd, "statustree") == 0) {
     // ADR 0010's own last remaining item: a separate command, not a
     // change to plain `status`'s find_mask/dir_prefix semantics - see
