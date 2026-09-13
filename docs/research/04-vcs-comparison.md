@@ -1,8 +1,8 @@
 # VCS comparison
 
-Started (jj + Fossil + Sapling + Mercurial + GitButler + Pijul, the
-closest analogues to hgit's stated goals per the product thesis
-itself); Darcs/Breezy still unstarted.
+Complete: jj + Fossil + Sapling + Mercurial + GitButler + Pijul +
+Darcs + Breezy, the closest analogues to hgit's stated goals per the
+product thesis itself.
 
 ## Verified documentation — Jujutsu's operation log
 
@@ -248,6 +248,50 @@ already noted in `docs/research/05-git-internals-and-product-practice.md`.
 Not designed further here - flagged, matching this project's own
 "don't design ahead of evidenced need" stance.
 
+## Verified documentation — Darcs' patch theory (comparison only, same caution as Pijul)
+
+Source: `pijul.org/faq` (Pijul's own comparison to its predecessor,
+cross-checked against a secondary aggregation of Darcs' own documented
+behavior). Darcs is Pijul's own direct ancestor in spirit - both are
+built on patch commutation - but with a real, load-bearing difference:
+Darcs' theory operates on PATCHES alone (no separate notion of "the
+file/line graph a patch is applied to"), where Pijul's later theory
+adds that generalized-file structure specifically to fix a real,
+documented performance pathology Darcs has: a "conflict fight" - patch
+commutation across genuinely conflicting changes can cost Darcs
+**exponential** time in the number of conflicting patches, in real,
+practical cases, not just a theoretical worst case. Pijul's own FAQ
+states its own real guarantee directly: "Pijul works in time
+logarithmic in the size of history for all non-conflicting patches
+(and almost all conflicting patches), and never exceeds linear time in
+conflicting cases" - a real, structural fix, not an incremental
+optimization of the same approach. Cherry-picking is the other real
+difference worth naming: both Darcs and Pijul preserve a patch's own
+identity through a cherry-pick or rebase (unlike Git, which loses it -
+a cherry-picked commit gets a genuinely new hash), but Pijul's FAQ
+claims cherry-picking specifically "works correctly and can be
+repeated without conflicts" in a way Darcs' own commutation-only model
+doesn't guarantee as cleanly.
+
+**Comparison to hgit's own model**: not adopted, same reasoning as
+Pijul - a from-scratch object-model rewrite, and the brief's own
+caution against adopting patch theory without evidence applies
+identically here. The one real, concrete lesson worth carrying
+forward: Darcs' own real, documented performance pathology
+(exponential-time conflict resolution) is a genuine, cautionary
+example of what can go wrong when a system's own conflict-handling
+model doesn't scale with real conflict COUNT, not just repo size -
+directly relevant context for ADR 0011's own "what would justify
+revisiting this" list, should this project ever move past a total-
+abort-on-conflict stance toward anything resembling automatic
+multi-way conflict commutation. Not a reason to avoid Pijul's own
+conflicts-as-real-state idea (already flagged there) - a reason to
+make sure any future design in that direction is checked against
+real, adversarial conflict counts before trusting it at scale, the
+same "verify against real failure modes, not just the happy path"
+discipline this project already applies everywhere else (ADR 0007's
+own dynamic-buffer lesson, generalized).
+
 ## Architectural implications so far
 
 - Adopt jj's operation-log/commit-history separation as designed in the
@@ -301,11 +345,56 @@ Not designed further here - flagged, matching this project's own
   rewritten, only added to or pointed away from" stance. Flagged as a
   real, well-scoped M5-or-later candidate distinct in kind (not just
   scope) from the others, not designed further here.
+- Darcs' own patch theory isn't adopted, same reasoning as Pijul - but
+  its real, documented "conflict fight" performance pathology
+  (exponential-time conflict resolution as conflict count grows) is a
+  genuine, cautionary data point, added to Pijul's own "what would
+  justify revisiting ADR 0011" flag: any future move toward
+  representing conflicts as real, commutable state should be checked
+  against real, adversarial conflict counts before trusting it, not
+  just proven correct on a happy path.
+
+## Breezy's file-ids vs hgit's entity IDs
+
+Fetched real primary source
+(`breezy-vcs.org/developers/overview.html`, plus
+`breezy-vcs.org` release/format docs) rather than assumed from name
+recognition. Breezy (the maintained fork of Bazaar) assigns every
+tracked file a **persistent file-id**, distinct from its content hash,
+carried forward across commits *and explicitly across renames* - the
+CLI itself is rename-aware and updates the id's associated path
+without creating a new id. This is close in spirit to hgit's own
+`docs/adr/0004-stable-entity-identity.md` (a random per-entry ID
+carried forward by name) - **and checking the actual code
+(`Offer.HC`) and probe 84's own real test output before finalizing
+this comparison (rather than trusting ADR 0004's older "What this
+slice does not do" wording alone) found the two are already closer
+than that wording suggests**: a detected rename, exact-content or
+fuzzy (`docs/adr/0009-rename-detection.md`), already carries the SAME
+entity id forward - probe 84's own driver confirms a renamed-and-
+edited file keeps its pre-rename entity id byte-for-byte. The real,
+narrower difference from Breezy: Breezy's CLI treats rename as an
+explicit, tool-driven operation, while hgit's detection is an
+after-the-fact, same-offer best-match heuristic (ADR 0009's own
+documented "no cross-file disambiguation" limitation) - a real gap in
+robustness, not in whether the two mechanisms are connected at all.
+(This section originally claimed they "never talk to each other" -
+that was wrong, corrected the same day; see
+`docs/research/failed-approaches.md`.)
+
+Breezy's other real, distinguishing pieces (`init-shared-repo`
+stacking/fallback repositories for space sharing across branches, and
+by-reference nested trees for submodule-like composition) don't raise
+a new design question hgit doesn't already have real evidence on -
+hgit's own subdirectory support (ADR 0010) already covers nested
+tree composition within one repo's own object store, and hgit has no
+notion of multiple repos sharing one backing store to begin with
+(`docs/adr/0001-repository-model.md`'s own one-archive-per-repo
+stance).
 
 ## Not yet done
 
-Darcs (patch theory, same family as Pijul — comparison only, brief
-explicitly warns against adopting without evidence) and Breezy. Lower
-priority now that the seven most load-bearing comparisons (operation
-log, delta format, undo/absorb, obsolescence markers, virtual
-branches, patch theory, stacks) are done.
+Nothing scoped. All nine of the comparisons this doc's own scope named
+(operation log, delta format, undo/absorb, obsolescence markers,
+virtual branches, Pijul's and Darcs' own patch theory, stacks, and now
+Breezy's file-ids) are done.

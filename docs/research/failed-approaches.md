@@ -1453,3 +1453,28 @@ is broken. (3) Any daemon re-bootstrap must size stage-1's own
 matching `daemon_v2.hc`'s own bound) - copying `daemon_v2.hc` correctly
 is not enough if the STAGE-1 bootstrap that gets it running still uses
 the smaller original default.
+
+## 2026-09-14 — a wrong claim written into three docs, caught same day
+
+While researching Breezy's file-id design for `docs/research/04-vcs-comparison.md`,
+I compared it against hgit's own ADR 0004 (stable entity identity)
+from memory of ADR 0004's older prose (its "What this slice does not
+do" section, written before ADR 0009's fuzzy-rename fallback existed)
+rather than checking the CURRENT `Offer.HC` code first. I wrote, into
+ADR 0004's own revisit list, doc 04's Breezy section, and a doc 10
+narrative entry, that hgit's entity ids and its rename detector (ADR
+0009) "never talk to each other" - that a detected rename still gets a
+brand-new, unrelated entity id. That claim is **false**: `Offer.HC`'s
+`OfferFindFuzzyRename` (and the earlier exact-hash path) both feed a
+detected rename's OLD entity id forward, not a fresh one - directly
+confirmed by re-reading the real code and by probe 84's own already-
+recorded test output (`P84Renamed.txt` keeps the identical entity id,
+`6c3a916dbd13cb00`, across a rename-with-edit). All three docs
+corrected the same day. Lesson: a comparison note that cites an ADR's
+own older "not yet done" list as current fact needs the same
+against-the-actual-code check this project already applies before
+trusting any other memory-based claim - an ADR's prose can go stale
+exactly the way any other doc can once later work (ADR 0009's own
+probes 83/84) extends what it originally described, and this project's
+own standing "verify before writing it down" discipline applies to its
+own past documents just as much as to new external research.

@@ -1674,6 +1674,82 @@ on the shared daemon (`COMPILE_OK`) and against the full regression,
 per this project's own standing discipline of never skipping real
 verification even for changes that "obviously" can't affect behavior.
 
+**Research: Darcs' patch theory** (`docs/research/04-vcs-comparison.md`,
+real primary source - `pijul.org/faq`). Comparison only, same caution
+as Pijul - Darcs is Pijul's own direct ancestor in spirit (both built
+on patch commutation), but Darcs' theory operates on patches alone,
+where Pijul's later theory adds a generalized-file structure
+specifically to fix a real, documented performance pathology Darcs
+has: a "conflict fight" - patch commutation across genuinely
+conflicting changes can cost Darcs exponential time in the number of
+conflicting patches. Pijul's own FAQ states its real guarantee
+directly: logarithmic time for non-conflicting patches, never worse
+than linear even in conflicting cases. Not adopted (a from-scratch
+rewrite, the brief's own caution applies identically) - added as a
+real, cautionary data point to ADR 0011's own "what would justify
+revisiting this" list alongside Pijul's: any future move toward
+representing conflicts as real, commutable state should be checked
+against real, adversarial conflict counts first, not just assumed safe
+by analogy to Pijul's own fix. Doc 04 now has all eight of its
+originally-scoped comparisons done; only Breezy remains, lowest
+priority.
+
+**ADR 0013: repository integrity check (`hgit check`), written up
+retroactively.** `docs/adr/0013-repository-integrity-check.md`
+documents another real design this project already built and relied
+on - `Check.HC`'s own header comment has said "see the ADR addendum
+below" since probe 72, a dangling internal reference with no actual
+governing ADR behind it until now (the same class of gap ADR 0012
+closed for `Paths.HC`). Documents the real, three-slice incremental
+build: hash integrity (probe 64, a thin wrapper over M0's own
+`ArchiveVerify`), referential integrity (probe 67, a real analogue of
+`git fsck`'s own most common real failure mode), and dangling/
+unreachable detection (probe 72, a real reachability walk from every
+declared path's own HEAD) - each shipped only once the previous slice
+proved solid and a real trigger existed, not built all at once ahead
+of evidence. Also documents a real correctness bug found and fixed
+along the way: an object store with no content dedup (the same file
+re-offered across many probes shares one hash at multiple archive
+positions) caused real false-positive dangling reports until a real
+coalescing pass was added - caught against a real, long-lived repo,
+not a fresh fixture. `Check.HC`'s own header comment now points to
+this ADR instead of a dangling self-reference. Comment-only source
+change, still re-verified on the shared daemon (`COMPILE_OK`) and
+against the full regression.
+
+**Doc 04's VCS comparison research fully closed: Breezy's file-ids.**
+Fetched real primary source (`breezy-vcs.org/developers/overview.html`
+plus its own release/format docs, not assumed from name recognition):
+Breezy assigns every tracked file a persistent file-id, distinct from
+its content hash, and the CLI is itself rename-aware - a rename
+carries the SAME id forward, making the id the actual rename-tracking
+mechanism, not a side effect of one. Compared honestly against hgit's
+own `docs/adr/0004-stable-entity-identity.md`: similar in spirit (a
+persistent id independent of content). **This entry originally went
+on to claim a "previously-undocumented gap" - that hgit's rename
+detector (ADR 0009) never updates entity ids - and that claim was
+wrong**, caught the same day by actually reading `Offer.HC`'s code and
+probe 84's own real test output before letting the comparison stand:
+a detected rename, exact-content or fuzzy, already carries the SAME
+entity id forward (probe 84's driver confirms a renamed-and-edited
+file keeps its pre-rename id byte-for-byte). Corrected in
+`docs/adr/0004-stable-entity-identity.md`, `docs/research/04-vcs-comparison.md`,
+and `docs/research/failed-approaches.md`. The real, narrower
+difference from Breezy that survives: Breezy's CLI treats rename as
+an explicit, tool-driven operation, while hgit's detection is an
+after-the-fact, same-offer best-match heuristic (ADR 0009's own
+documented "no cross-file disambiguation" limitation) - a real gap in
+robustness, not in whether the two mechanisms are connected at all.
+Breezy's other distinguishing pieces
+(shared-repository stacking, by-reference nested trees) don't raise a
+new design question hgit doesn't already have real evidence on (ADR
+0010's own subdirectory support, ADR 0001's own one-archive-per-repo
+stance). This closes doc 04's originally-scoped comparison list
+entirely - all nine comparisons (jj, Fossil, Sapling, Mercurial,
+GitButler, Pijul, Darcs, Breezy, plus Sapling's own separate stacks
+sub-comparison) are now done, doc 04 promoted from 🟡 to ✅ in the
+research index.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

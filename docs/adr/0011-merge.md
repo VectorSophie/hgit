@@ -152,7 +152,12 @@ established incremental-ADR pattern (ADR 0010's own precedent):**
   names a real, concrete alternative shape worth considering then -
   representing an unresolved conflict as real, recoverable, inspectable
   repository state (Pijul's own approach) rather than only Git's
-  file-level conflict-marker model - not designed further here.
+  file-level conflict-marker model - not designed further here. The
+  same doc's own Darcs section adds a real, cautionary data point for
+  that path specifically: Darcs' own documented "conflict fight"
+  (exponential-time conflict resolution as conflict count grows) is a
+  genuine performance pathology this project should check any future
+  design against, not just assume away by analogy to Pijul's own fix.
 - Real usage of criss-cross path histories (a path forking from a
   path that itself forked from `main`, then merging in an order that
   produces genuine ambiguity) - not yet observed in any real workflow

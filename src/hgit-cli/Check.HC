@@ -2,7 +2,8 @@
 // archive really hashes to what it claims to, AND that every hash one
 // object refers to (a commit's tree/parents/relation-target, a tree's
 // own child entries) actually resolves to a real object in the same
-// store.
+// store. Design decisions written up retroactively in
+// `docs/adr/0013-repository-integrity-check.md`.
 //
 // The original brief's command list included a "shrine check" - a
 // repo-integrity verification command - that was never wired in as
@@ -19,13 +20,14 @@
 // This is a real, direct analogue of that check ("missing objects").
 // The "dangling"/"unreachable" categories `git fsck` also reports were
 // left out of that first slice, since they need a real reachability
-// walk from every ref this project hadn't built yet - see the ADR
-// addendum below for that.
+// walk from every ref this project hadn't built yet - see below for
+// that (and `docs/adr/0013-repository-integrity-check.md` for the
+// full, three-slice design history).
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
 // Commit.HC, Tree.HC, Index.HC, Meta.HC.
 //
-// ADR addendum (experiments/72-check-dangling-objects/): the "does no
+// (experiments/72-check-dangling-objects/): the "does no
 // dangling/unreachable analysis" gap this file's own header comment
 // used to flag is now closed too. `CheckMarkReachable` walks the real
 // object graph - every declared path's HEAD (main plus every

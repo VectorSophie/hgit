@@ -126,3 +126,22 @@ yet (same stance ADR 0003 took about its own migration).
 - If 64 bits turns out to be measurably insufficient once real corpus
   benchmarking (doc 06, still not done) provides an actual entry-count
   ceiling to check against.
+- **Update, 2026-09-14 (`docs/research/04-vcs-comparison.md`'s Breezy
+  comparison), corrected same day**: this entry originally claimed
+  hgit's entity id and its rename detector (ADR 0009) "never talk to
+  each other" - that claim was checked against `Offer.HC`'s actual code
+  and probe 84's own real test output and found **wrong**, not a real
+  gap. `OfferFindFuzzyRename`/the exact-hash path both feed the SAME
+  entity id forward on a detected rename (exact-content or fuzzy) -
+  probe 84's own `test_driver.hc` directly confirms a renamed-with-edit
+  file (`P84Renamed.txt`) carries the identical entity id
+  (`6c3a916dbd13cb00`) its pre-rename self had. hgit's design is
+  already closer to Breezy's own file-id-is-the-rename-mechanism
+  approach than this entry first gave it credit for - the real
+  difference from Breezy is narrower than originally stated: Breezy's
+  CLI is explicitly rename-aware as a first-class operation, while
+  hgit's detection is a same-offer, best-match heuristic (ADR 0009's
+  own "no cross-file disambiguation" limitation) rather than a
+  tool-driven rename command - a real but much smaller gap than "never
+  talk to each other" implied. See `docs/research/failed-approaches.md`
+  for the corrected record of this mistake.
