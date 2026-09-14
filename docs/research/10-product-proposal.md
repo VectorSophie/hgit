@@ -1898,6 +1898,39 @@ confirms the real edit was actually adopted. Full command-surface
 suite (including its own existing merge/fast-forward cases) and the
 standing regression both re-run clean.
 
+**`hgit history`/`hgit graph`: verified against a real merge commit,
+stale comments corrected.** `experiments/110-history-graph-with-merge-commits/`
+(PASS): both files' own header comments predated real merge commits
+and had never been re-verified since - `History.HC` said merge commits
+"aren't walked specially yet, since none have been created or tested";
+`Graph.HC` said "no multi-parent commits exist yet". Built a real
+small merge history and ran both commands against it: neither crashes
+or corrupts anything - both already did the same real, honest thing
+before merge commits existed (follow only a commit's first parent when
+walking backward, the same convention `git log --first-parent` names).
+`hgit graph` correctly nests a merged branch's own unique commit under
+its own group; the merge commit itself renders as a plain line on the
+trunk, not a visually connected DAG rejoin - already an honestly
+documented simplification, just with a stale reason. Both header
+comments corrected to state plainly that multi-parent commits are real
+and describe the actual, verified, continuing first-parent-only
+behavior. Comment-only change, rebuilt/linted/pushed to the live
+daemon (`COMPILE_OK`), regression re-run clean.
+
+**`hgit diff` on a real merge commit: verified sane, comment
+corrected.** `experiments/111-diff-on-merge-commit/` (PASS): unlike
+`History.HC`/`Graph.HC`, `Diff.HC`'s own header comment never
+mentioned merge commits at all (predates ADR 0011 entirely). Built the
+same kind of real small merge history and diffed the merge commit
+itself: `DIFF_NEW` correctly reported for the file that only entered
+the tree via the merge's second parent - `Diff.HC` diffs against the
+FIRST parent only, its own pre-existing single-parent behavior applied
+unchanged, matching the same convention `git show`/`git log -p` use by
+default for a merge. A real, coherent result, not a crash or a wrong
+answer - just previously unverified and undocumented. Header comment
+corrected to state this plainly. Comment-only change, rebuilt/linted/
+pushed to the live daemon (`COMPILE_OK`), regression re-run clean.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

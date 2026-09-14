@@ -1,6 +1,16 @@
 // Diff.HC — `hgit diff <repo> <commit_hex>`: show what changed in one
 // commit relative to its own parent's tree (or, for a root commit
-// with no parent, every entry is new).
+// with no parent, every entry is new). For a real merge commit (ADR
+// 0011), "its own parent" means specifically the FIRST parent
+// (`ours` at merge time) - the same convention `git show`/`git log -p`
+// use by default for a merge - not a special case added for merge
+// commits, just this file's own pre-existing single-parent behavior
+// applied unchanged. Confirmed sane against a real merge commit
+// (probe 111, `experiments/111-diff-on-merge-commit/`): a file that
+// only entered the tree via the merge's SECOND parent correctly shows
+// as `DIFF_NEW`, since it wasn't present in the first parent's own
+// tree - not a crash, not a wrong answer, a real and coherent (if
+// partial) view.
 //
 // This is the per-commit counterpart to `hgit status`'s own
 // working-directory-vs-HEAD-tree diff (`Status.HC`) - same

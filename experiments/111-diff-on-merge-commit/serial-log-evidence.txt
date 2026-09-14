@@ -1,0 +1,11 @@
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+MERGE_OK
+P111_DIFF_BEGIN
+DIFF_NEW P111Feat.txt
+DIFF_END
+P111_DIFF_END
+PASS p111_diff_on_merge_commit

@@ -1,0 +1,18 @@
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+MERGE_OK
+P110_HISTORY_BEGIN
+commit ts=27475041 msg=merge feature
+commit ts=27474473 msg=main_commit_2
+commit ts=27471607 msg=root_commit
+HISTORY_END shown=3
+P110_HISTORY_END
+P110_GRAPH_BEGIN
+DISPATCH_OK graph
+P110_GRAPH_END
+P110_GRAPH_DOC_SIZE=223
+P110_DOC_BEGIN
+$FG,5$hgit history graph$FG$$CR$$CR$$TR,"main, 3 commits"$$ID,+2$44e166cb66 root_commit$CR$$TR,"[feature] 1 commits"$$ID,+2$426d2ff7e9 feature_commit$CR$$ID,-2$531492e76d main_commit_2$CR$fbdbe851af merge feature$CR$$ID,-2$
+P110_DOC_END
+PASS p110_history_graph_on_merge

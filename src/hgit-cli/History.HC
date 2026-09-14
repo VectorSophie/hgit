@@ -4,9 +4,18 @@
 // First real consumer of Index.HC's lookup for something other than a
 // single dereference (probe 12's tree-entry case) - here it's walked
 // repeatedly, once per commit, back through the parent chain. Only
-// single-parent chains are followed (CommitParentHash(content, 0)) -
-// merge commits (parent_count > 1) aren't walked specially yet, since
-// none have been created or tested (Commit.HC's own "not yet done").
+// the first parent is ever followed (CommitParentHash(content, 0)) -
+// this predates real merge commits (ADR 0011, probes 97-100), which
+// now genuinely exist; a "first-parent-only" walk past a merge commit
+// is a real, deliberate simplification for a plain sequential log
+// (the same convention `git log --first-parent` names, not a bug),
+// not the original "none have been created or tested" gap this
+// comment used to describe. Confirmed against a real repo containing
+// a real merge commit (probe 110, `experiments/110-history-graph-with-merge-commits/`):
+// a merged-in path's own unique commits (only reachable via the
+// merge's second parent) are honestly absent from this view - `hgit
+// graph` is the command that surfaces them, nested under their own
+// branch.
 //
 // Verified (experiments/19-hgit-history/) against the real two-commit
 // repository `hgit offer` built in the previous session/probe - not a

@@ -3064,9 +3064,18 @@ U0 HgitStatusTree(U8 *repo_path, U8 *dir_path)
 // First real consumer of Index.HC's lookup for something other than a
 // single dereference (probe 12's tree-entry case) - here it's walked
 // repeatedly, once per commit, back through the parent chain. Only
-// single-parent chains are followed (CommitParentHash(content, 0)) -
-// merge commits (parent_count > 1) aren't walked specially yet, since
-// none have been created or tested (Commit.HC's own "not yet done").
+// the first parent is ever followed (CommitParentHash(content, 0)) -
+// this predates real merge commits (ADR 0011, probes 97-100), which
+// now genuinely exist; a "first-parent-only" walk past a merge commit
+// is a real, deliberate simplification for a plain sequential log
+// (the same convention `git log --first-parent` names, not a bug),
+// not the original "none have been created or tested" gap this
+// comment used to describe. Confirmed against a real repo containing
+// a real merge commit (probe 110, `experiments/110-history-graph-with-merge-commits/`):
+// a merged-in path's own unique commits (only reachable via the
+// merge's second parent) are honestly absent from this view - `hgit
+// graph` is the command that surfaces them, nested under their own
+// branch.
 //
 // Verified (experiments/19-hgit-history/) against the real two-commit
 // repository `hgit offer` built in the previous session/probe - not a
@@ -3949,8 +3958,15 @@ U0 HgitReconcileOverview(U8 *repo_path, U8 *doc_path)
 // creation time - Paths.HC's own `PathNew` - so a real, findable fork
 // point always exists on a direct ancestor path) - a real, rendered
 // analogue of `git log --graph --all`, scoped to this project's own
-// actual ref model (named paths, not full branches with merges - no
-// multi-parent commits exist yet, see History.HC's own note).
+// actual ref model (named paths, each rendered as its own branch
+// group by walking backward until a commit already in main's chain is
+// hit - real multi-parent commits DO exist now, ADR 0011, confirmed
+// not to crash or corrupt anything against a real merge-containing
+// repo, probe 110, `experiments/110-history-graph-with-merge-commits/`
+// - but this walk still only ever follows a commit's FIRST parent,
+// same simplification `History.HC`'s own note describes, so a merge
+// commit itself renders as one plain line on its own branch's trunk,
+// not as a real, connected DAG rejoin between two group nodes).
 //
 // ONE `$TR$` widget per BRANCH (main's own trunk, and each other
 // path), not one per commit - a real redesign (probe 81's own
@@ -4398,7 +4414,17 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
 }
 // Diff.HC — `hgit diff <repo> <commit_hex>`: show what changed in one
 // commit relative to its own parent's tree (or, for a root commit
-// with no parent, every entry is new).
+// with no parent, every entry is new). For a real merge commit (ADR
+// 0011), "its own parent" means specifically the FIRST parent
+// (`ours` at merge time) - the same convention `git show`/`git log -p`
+// use by default for a merge - not a special case added for merge
+// commits, just this file's own pre-existing single-parent behavior
+// applied unchanged. Confirmed sane against a real merge commit
+// (probe 111, `experiments/111-diff-on-merge-commit/`): a file that
+// only entered the tree via the merge's SECOND parent correctly shows
+// as `DIFF_NEW`, since it wasn't present in the first parent's own
+// tree - not a crash, not a wrong answer, a real and coherent (if
+// partial) view.
 //
 // This is the per-commit counterpart to `hgit status`'s own
 // working-directory-vs-HEAD-tree diff (`Status.HC`) - same

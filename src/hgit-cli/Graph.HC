@@ -7,8 +7,15 @@
 // creation time - Paths.HC's own `PathNew` - so a real, findable fork
 // point always exists on a direct ancestor path) - a real, rendered
 // analogue of `git log --graph --all`, scoped to this project's own
-// actual ref model (named paths, not full branches with merges - no
-// multi-parent commits exist yet, see History.HC's own note).
+// actual ref model (named paths, each rendered as its own branch
+// group by walking backward until a commit already in main's chain is
+// hit - real multi-parent commits DO exist now, ADR 0011, confirmed
+// not to crash or corrupt anything against a real merge-containing
+// repo, probe 110, `experiments/110-history-graph-with-merge-commits/`
+// - but this walk still only ever follows a commit's FIRST parent,
+// same simplification `History.HC`'s own note describes, so a merge
+// commit itself renders as one plain line on its own branch's trunk,
+// not as a real, connected DAG rejoin between two group nodes).
 //
 // ONE `$TR$` widget per BRANCH (main's own trunk, and each other
 // path), not one per commit - a real redesign (probe 81's own
