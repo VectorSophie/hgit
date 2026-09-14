@@ -2045,6 +2045,60 @@ confirmed to leave the ORIGINAL repo's own HEAD completely unaffected
 - a real, independent copy, not a shared reference. No source change
 needed.
 
+## v1.8.x — the usability series (`docs/ROADMAP-v1.8.md`)
+
+The project owner's own scoped brief for the next real phase: ignore
+rules, minimal attributes/modes, a complete three-way merge, conflicts
+as persistent repository data, and the CLI/DolDoc UX to use all of it.
+Recorded verbatim in `docs/ROADMAP-v1.8.md`; this section logs what
+actually happened, probe by probe, same convention as everything
+above.
+
+**v1.8.0 — ignore rules (ADR 0014).** `docs/adr/0014-ignore-rules.md`
+written first (per the roadmap's own instruction to define the
+grammar before implementing it): a small, deterministic `.hgitignore`
+grammar - NAME (basename glob, any depth), DIR (`build/`, any depth,
+whole subtree), DIR_CONTENTS (`generated/*`, anchored to the real
+repository root, direct children only), negation (last matching line
+wins). `src/hgit-core/Ignore.HC` built and verified standalone first
+(`experiments/117-ignore-primitive/`, PASS) against the roadmap's own
+real example grammar plus a real negation-override case and an
+unsupported-syntax diagnostic - a real HolyC quirk (`pi` colliding
+with TempleOS's own reserved constant) caught by `tools/lint-package.sh`
+before QEMU.
+
+Wired into `offer`/`offertree`/`status`/`statustree`
+(`experiments/118-ignore-wired-into-offer-status/`, PASS): the safety
+property the roadmap named as most important - ignore only ever hides
+discovery of untracked material, never an already-tracked file - is
+enforced structurally (checked before any ignore lookup happens at
+all), not bolted on afterward. `TreeBuildRecursive`/`StatusTreeWalk`
+both gained a real `rel_dir` parameter, threaded through recursion, to
+let DIR_CONTENTS patterns correctly anchor to the true root rather
+than matching at arbitrary depth - confirmed with a real, deliberately
+nested `SubA/generated/` directory that is NOT affected by a
+root-anchored `generated/*` rule.
+
+A real, separate gap found and fixed along the way: a subdirectory
+whose entire content got ignore-filtered away used to leave a
+pointless empty tree entry behind. Git's own real, well-known
+convention (never track an empty directory) is now matched generally
+in `TreeBuildRecursive`, not just for the ignore case.
+
+A real debugging detour, logged honestly: an earlier run of the
+integration probe appeared to show ignore filtering failing, root-
+caused via direct diagnostics to a stale leftover file from an earlier
+run of the SAME probe in this long-lived session (already tracked
+before the ignore rule was even added, correctly protected by the
+safety rule above) - not an implementation bug, a test-cleanup gap,
+fixed by cleaning up every real file the probe creates at the start,
+not just its repo files.
+
+A stable ignore case added to `tests/full-regression.hc` per the
+roadmap's own instruction. README/`docs/ARCHITECTURE.md`/`docs/STATUS.md`
+all updated. No `format_version` bump (ADR 0014's own explicit
+decision - nothing about the persisted object model changed).
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

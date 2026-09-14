@@ -6,27 +6,28 @@ chronological record) or the ADRs in `docs/adr/`. It exists because
 that log is now long enough that "where do things actually stand"
 deserves its own answer, separate from "what happened in what order."
 
-**The next real phase of work is `docs/ROADMAP-v1.8.md`** - the
-project owner's own scoped brief for a v1.8.x "usability series"
-(ignore rules, minimal attributes/modes, a complete three-way merge,
-conflicts as persistent repository data, and the CLI/DolDoc UX to use
-all of it). Adopted, not yet started as of this snapshot - read that
-file before picking a next task once this phase begins.
+**The active phase of work is `docs/ROADMAP-v1.8.md`** - the project
+owner's own scoped brief for a v1.8.x "usability series" (ignore
+rules, minimal attributes/modes, a complete three-way merge, conflicts
+as persistent repository data, and the CLI/DolDoc UX to use all of
+it). v1.8.0 (ignore rules, ADR 0014) is done; read that file before
+picking the next v1.8.x item.
 
 ## The one-paragraph version
 
 hgit is a real, working, TempleOS-native version control tool: content-
 addressed objects, nested-tree subdirectories, multi-parent merge
 commits with a real three-way merge, typed relations, named paths with
-undo/redo, and a DolDoc-rendered reconciliation view - all implemented
-in native HolyC, verified on real (QEMU-hosted) TempleOS, not
-simulated or assumed. 19 tagged releases exist (v0.10.0 through
-v1.7.7), 13 ADRs document real, evidence-backed architectural
-decisions, and 115 numbered probes (`experiments/`) each pair one
-concrete question with a real, captured answer. M0 through M4 are
-functionally complete by their own original acceptance criteria; M5
-was never concretely scoped and remains an open bucket of flagged-but-
-undesigned candidates (see below).
+undo/redo, a DolDoc-rendered reconciliation view, and (as of v1.8.0) a
+real `.hgitignore` mechanism - all implemented in native HolyC,
+verified on real (QEMU-hosted) TempleOS, not simulated or assumed.
+Tagged releases exist from v0.10.0 through v1.8.0, 14 ADRs document
+real, evidence-backed architectural decisions, and 118+ numbered probes
+(`experiments/`) each pair one concrete question with a real, captured
+answer. M0 through M4 are functionally complete by their own original
+acceptance criteria; M5 was never concretely scoped, and its own real
+candidates are being absorbed into the more concretely-scoped v1.8.x
+usability series instead (see `docs/ROADMAP-v1.8.md`).
 
 ## Milestone status
 
@@ -97,6 +98,17 @@ designed or started:
   `format_version` on a breaking change; practice never did, across
   three real breaking changes) found and corrected (v1.7.7) - new
   repos now write version 2, and `hgit check` actually shows it.
+- **Ignore rules** (v1.8.0, ADR 0014): a small, deterministic
+  `.hgitignore` grammar (name/directory/anchored-directory-contents
+  patterns, negation) wired into `offer`/`offertree`/`status`/
+  `statustree`. The one safety property that matters most - ignore
+  only ever hides discovery of untracked material, never an
+  already-tracked file - is enforced structurally (checked before any
+  ignore lookup happens at all), not bolted on. Found and fixed a real
+  related gap along the way: a subdirectory whose entire content got
+  ignore-filtered away used to leave a pointless empty tree entry -
+  now matches Git's own real convention of never tracking an empty
+  directory, generally, not just for the ignore case.
 - **Packaging**: `packaging/HgitAll.HC` is the real release artifact,
   attached to every tagged GitHub Release; `tools/build-package.sh`/
   `tools/lint-package.sh` catch real errors (including HolyC's own

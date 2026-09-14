@@ -32,18 +32,46 @@ way to catch syntax errors and boot-phase-class quirks in HolyC source
 **before** paying the ~1-minute QEMU round-trip cost, which is exactly
 what its own `holyc-lint.py`/linter integration is for in the devkit.
 
-## holyc-lang (from the original brief — still only partially verified)
+## holyc-lang (from the original brief — now actually read, not just the homepage)
 
-Source: `holyc-lang.com` homepage only; the actual repo
-(`github.com/Jamesbarford/holyc-lang`) has not yet been cloned and read.
-Confirmed from the homepage: compiles HolyC to **x86_64 assembly** (AOT,
-not JIT), positioned explicitly for running/testing HolyC outside
-TempleOS, C-interop capable. Still unconfirmed: platform matrix, exact
-HolyC subset, license. Given `holyc-parser`'s corpus-backed evidence is
-now in hand, `holyc-lang` is now the *second* priority for the "can we
-actually run/compile HolyC on the host" question, not the first — worth
-checking primarily for whether it can produce a runnable binary (which
-`holyc-parser`, being parse/lint-only, cannot).
+Source: `github.com/Jamesbarford/holyc-lang`'s own real README (fetched
+2026-09-14, not the marketing homepage this doc previously stopped at).
+Real, confirmed facts:
+
+- **License**: BSD-2-Clause (permissive, no copyleft concern for hgit).
+- **Platforms**: real cross-platform support - Linux (x86_64) and macOS
+  (Intel and M1) directly tested per the README's own words ("tested on
+  amd linux and an intel mac. An M1 mac and fedora linux on an M4 using
+  QEMU"), plus Windows via WSL2. Targets both x86_64 AND AArch64 -
+  genuinely broader host coverage than this project has needed so far.
+- **Produces real, runnable native binaries** - an AOT compiler (uses
+  `clang` internally to assemble/link), plus a real JIT mode (`hcc
+  -jit`). This is the one real capability `holyc-parser` (lint/parse
+  only) cannot offer - a way to actually EXECUTE HolyC on the host,
+  not just catch syntax errors before the QEMU round trip.
+- **Real, active project**: 1.2k stars, 75 forks, 222 commits, ongoing
+  development (19 open issues, 4 open PRs at fetch time) - not
+  abandoned or purely aspirational.
+- **A real, significant caveat this doc didn't know before**:
+  `holyc-lang` is NOT a strict, bug-compatible reimplementation of
+  TempleOS's own real HolyC - it's an extended superset, adding
+  `auto`, `typeof()`, range-based `for`, and a `#link` directive beyond
+  what real TempleOS HolyC has. Its own README admits real rough edges
+  too: "The Compiler is in a working state and most features are
+  implemented. Errors are a bit hit and miss!" This is the opposite
+  design stance from `holyc-parser`'s own explicit `bug-compat-*`
+  corpus (which deliberately REPRODUCES real TempleOS compiler quirks
+  as regression tests) - `holyc-lang` extending the language is a real,
+  useful capability for its own stated goal (host-side HolyC
+  development), but a real, unverified compatibility risk specifically
+  for hgit's own source, which is written against and tested for real
+  TempleOS's own quirks (the `pi` reserved-constant collision, the
+  "duplicate member" sibling-block-scope rule, postfix typecasts,
+  `continue` not being a keyword, and more - all documented in doc 01
+  and this project's own `failed-approaches.md`). No real test has
+  been run to confirm hgit's own actual source compiles correctly (or
+  at all) under `holyc-lang` - a real, separate, not-yet-done
+  experiment, not assumed either way.
 
 ## `holyc-parser` actually adopted into this project's own workflow
 
@@ -107,10 +135,24 @@ the class of errors it does catch.
   keyword check, despite the tool's own docs knowing about it; an
   incomplete built-ins manifest) - it complements QEMU verification,
   it doesn't replace it.
-- License unconfirmed for `holyc-lang` (unlike `holyc-parser`, whose
-  `Unlicense` was checked directly, `holyc-lang`'s own license was
-  never actually confirmed) before depending on it for hgit's own
-  tooling.
+- ~~License unconfirmed for `holyc-lang`~~ **Resolved** (2026-09-14):
+  BSD-2-Clause, confirmed directly from the real repo, not the
+  homepage - permissive, no real concern for hgit's own tooling if
+  ever adopted.
+- **Real, still-open compatibility question**: `holyc-lang` is
+  confirmed to produce real, runnable native binaries (AOT via
+  `clang`, plus a JIT mode) - a real capability `holyc-parser` cannot
+  offer. But it's an extended superset of real TempleOS HolyC (adds
+  `auto`/`typeof()`/range-`for`/`#link`), not a bug-compatible
+  reimplementation the way `holyc-parser`'s own corpus deliberately
+  is - whether hgit's own real source (written and tested against
+  real TempleOS's own specific quirks) actually compiles correctly
+  under it is genuinely unverified, not assumed either way. A real,
+  separate experiment (build hgit's own package under `holyc-lang`,
+  compare behavior against the real QEMU ground truth) would be needed
+  before trusting it for anything beyond exploratory host-side
+  development - not attempted here, no evidence yet that the existing
+  two-tier lint+QEMU workflow has a real gap this would close.
 
 ## Architectural implications so far
 

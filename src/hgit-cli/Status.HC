@@ -128,6 +128,14 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   I64 *new_content_lens = MAlloc(disk_count*8 + 8);
   I64 new_count = 0;
 
+  // ADR 0014 (docs/adr/0014-ignore-rules.md): `.hgitignore` lives
+  // alongside `dir_prefix` - loaded once per call, fresh from disk.
+  U8 ignore_path[256];
+  StrPrint(ignore_path, "%s.hgitignore", dir_prefix);
+  U8 *ign_patterns, *ign_negate, *ign_kind;
+  I64 ign_count;
+  IgnoreLoad(ignore_path, &ign_patterns, &ign_negate, &ign_kind, &ign_count);
+
   CDirEntry *tmpde = FilesFind(find_mask, 0);
   CDirEntry *tmpde1 = tmpde;
   while (tmpde) {
@@ -161,7 +169,15 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
                                   tmpde->full_name+name_start, name_len,
                                   &tree_type, tree_entry_hash, &tree_entity_id);
-    if (!in_tree) {
+    if (!in_tree && IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                              tmpde->full_name+name_start, "")) {
+      // ADR 0014's safety rule already holds structurally here: this
+      // branch is only reached when `!in_tree` (not already tracked),
+      // so an ignored name is simply never treated as NEW at all -
+      // never buffered, never reported. A tracked file matching this
+      // same rule would have taken the `in_tree` branch below instead,
+      // completely unaffected by ignore.
+    } else if (!in_tree) {
       // Buffered, not printed - a possible rename source. Names over
       // 254 chars are truncated to fit the fixed 256-byte slot; this
       // repo's own 33-char path ceiling (ADR 0003) means a real name
@@ -189,6 +205,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     tmpde = tmpde->next;
   }
   DirTreeDel(tmpde1);
+  IgnoreFree(ign_patterns, ign_negate, ign_kind);
 
   // Pass 2: deleted - walk every tree entry, check it still exists on
   // disk. This is the only place hgit-core needs "everything the tree
@@ -331,7 +348,9 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 // rename detection remains ADR 0010's own deliberately deferred item.
 U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
                   U8 *dir_path, U8 *tree_content, I64 tree_content_len,
-                  U8 *prefix)
+                  U8 *prefix,
+                  U8 *ign_patterns, U8 *ign_negate, U8 *ign_kind, I64 ign_count,
+                  U8 *rel_dir)
 {
   U8 mask[256];
   StrPrint(mask, "%s*", dir_path);
@@ -389,6 +408,10 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
         for (spj=0; tmpde->full_name[spj]; spj++) subdir_path[spi++] = tmpde->full_name[spj];
         subdir_path[spi++] = '/'; subdir_path[spi] = 0;
 
+        U8 child_rel_dir[256];
+        if (rel_dir[0] == 0) StrPrint(child_rel_dir, "%s", tmpde->full_name+name_start);
+        else StrPrint(child_rel_dir, "%s/%s", rel_dir, tmpde->full_name+name_start);
+
         if (found && old_type == OBJ_TREE) {
           U8 *sub_tree_content_a = NULL; I64 sub_tree_len_a = 0;
           I64 sub_off_rel_a;
@@ -403,16 +426,22 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
           for (pja=0; full_name[pja]; pja++) sub_prefix_a[pia++] = full_name[pja];
           sub_prefix_a[pia++] = '/'; sub_prefix_a[pia] = 0;
           StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
-                        subdir_path, sub_tree_content_a, sub_tree_len_a, sub_prefix_a);
+                        subdir_path, sub_tree_content_a, sub_tree_len_a, sub_prefix_a,
+                        ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir);
         } else if (found) {
           CommPrint(1, "STATUS_TYPE_CHANGED %s\n", full_name);
+        } else if (IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                              tmpde->full_name+name_start, rel_dir)) {
+          // ADR 0014: not already tracked, and ignored - don't even
+          // recurse, so nothing inside is reported as STATUS_NEW.
         } else {
           U8 sub_prefix_b[256];
           I64 pib = 0, pjb;
           for (pjb=0; full_name[pjb]; pjb++) sub_prefix_b[pib++] = full_name[pjb];
           sub_prefix_b[pib++] = '/'; sub_prefix_b[pib] = 0;
           StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
-                        subdir_path, NULL, 0, sub_prefix_b);
+                        subdir_path, NULL, 0, sub_prefix_b,
+                        ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir);
         }
       } else {
         I64 fsize;
@@ -447,6 +476,10 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
             if (!same_c) CommPrint(1, "STATUS_MODIFIED %s\n", full_name);
           } else if (in_tree) {
             CommPrint(1, "STATUS_TYPE_CHANGED %s\n", full_name);
+          } else if (IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                                tmpde->full_name+name_start, rel_dir)) {
+            // ADR 0014: not already tracked, and ignored - never
+            // reported as STATUS_NEW.
           } else {
             I64 cap = fi; if (cap > 254) cap = 254;
             for (i=0; i<cap; i++) new_names[new_count*256+i] = full_name[i];
@@ -517,8 +550,19 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
           I64 pic = 0, pjc;
           for (pjc=0; full_tname[pjc]; pjc++) sub_prefix_c[pic++] = full_tname[pjc];
           sub_prefix_c[pic++] = '/'; sub_prefix_c[pic] = 0;
+          // The directory itself is confirmed gone from disk (!still_dir),
+          // so no NEW candidate can ever be found inside this recursive
+          // call - ignore rules are structurally moot here, but rel_dir
+          // is still threaded through for signature consistency.
+          U8 tname_str[256];
+          I64 tni; for (tni=0; tni<tname_len && tni<254; tni++) tname_str[tni] = tname[tni];
+          tname_str[tni] = 0;
+          U8 child_rel_dir_c[256];
+          if (rel_dir[0] == 0) StrPrint(child_rel_dir_c, "%s", tname_str);
+          else StrPrint(child_rel_dir_c, "%s/%s", rel_dir, tname_str);
           StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
-                        check_path, sub_content_c, sub_len_c, sub_prefix_c);
+                        check_path, sub_content_c, sub_len_c, sub_prefix_c,
+                        ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir_c);
         }
         // still_dir==TRUE: already handled by the new-tree pass above
         // (found && old_type==OBJ_TREE branch), skip to avoid a
@@ -638,8 +682,18 @@ U0 HgitStatusTree(U8 *repo_path, U8 *dir_path)
   I64 tree_content_len = tree_record_len - 1;
 
   U8 root_prefix[1]; root_prefix[0] = 0;
+
+  // ADR 0014: `.hgitignore` lives at `dir_path` itself.
+  U8 ignore_path[256];
+  StrPrint(ignore_path, "%s.hgitignore", dir_path);
+  U8 *ign_patterns, *ign_negate, *ign_kind;
+  I64 ign_count;
+  IgnoreLoad(ignore_path, &ign_patterns, &ign_negate, &ign_kind, &ign_count);
+
   StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
-                dir_path, tree_content, tree_content_len, root_prefix);
+                dir_path, tree_content, tree_content_len, root_prefix,
+                ign_patterns, ign_negate, ign_kind, ign_count, "");
+  IgnoreFree(ign_patterns, ign_negate, ign_kind);
 
   CommPrint(1, "STATUS_END\n");
   Free(idx_hashes);

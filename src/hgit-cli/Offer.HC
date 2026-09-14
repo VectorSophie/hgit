@@ -235,7 +235,9 @@ U0 SumTreeFileBytes(U8 *dir_path, I64 *bytes_out, I64 *file_count_out, I64 *subd
 U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
                       U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
                       U8 *old_tree_content, I64 old_tree_content_len,
-                      U8 *tree_content_out, I64 *tree_content_len_out)
+                      U8 *tree_content_out, I64 *tree_content_len_out,
+                      U8 *ign_patterns, U8 *ign_negate, U8 *ign_kind, I64 ign_count,
+                      U8 *rel_dir)
 {
   I64 tlen = 4; // room for entry_count, filled in at the end
   I64 entry_count = 0;
@@ -263,10 +265,17 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
         U8 *old_sub_tree_content = NULL;
         I64 old_sub_tree_content_len = 0;
         Bool found_old_sub = FALSE;
+        // ADR 0014's safety rule: this must reflect "was this NAME
+        // tracked at all," independent of the type-mismatch reset
+        // below - a directory that was already tracked (even if its
+        // old entry happened to be a file, a real kind change) must
+        // never be hidden by a later ignore rule.
+        Bool name_was_tracked = FALSE;
         if (old_tree_content != NULL) {
           found_old_sub = TreeFindEntry(old_tree_content, old_tree_content_len,
                                         tmpde->full_name+name_start, name_len,
                                         &old_sub_type, old_sub_hash, &old_sub_entity_id);
+          name_was_tracked = found_old_sub;
           if (found_old_sub && old_sub_type == OBJ_TREE) {
             I64 sub_off_rel;
             if (IndexLookup(idx_hashes, idx_offsets, idx_count, old_sub_hash, &sub_off_rel)) {
@@ -283,36 +292,66 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
           }
         }
 
+        if (!name_was_tracked &&
+            IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                      tmpde->full_name+name_start, rel_dir)) {
+          CommPrint(1, "OFFER_IGNORED %s\n", tmpde->full_name);
+        } else {
         U8 subdir_path[256];
         StrPrint(subdir_path, "%s/", tmpde->full_name);
+        U8 child_rel_dir[256];
+        if (rel_dir[0] == 0) StrPrint(child_rel_dir, "%s", tmpde->full_name+name_start);
+        else StrPrint(child_rel_dir, "%s/%s", rel_dir, tmpde->full_name+name_start);
         U8 child_tree_content[2048];
         I64 child_tree_content_len;
         TreeBuildRecursive(subdir_path, archive, alen, rbuf, idx_hashes, idx_offsets, idx_count,
                            old_sub_tree_content, old_sub_tree_content_len,
-                           child_tree_content, &child_tree_content_len);
+                           child_tree_content, &child_tree_content_len,
+                           ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir);
 
-        U8 child_tagged[2048];
-        child_tagged[0] = OBJ_TREE;
-        I64 ci;
-        for (ci=0; ci<child_tree_content_len; ci++) child_tagged[1+ci] = child_tree_content[ci];
-        U8 child_hash[64];
-        B2Hash512Any(child_tagged, child_tree_content_len+1, child_hash);
-        ObjectPut(archive, alen, OBJ_TREE, child_tree_content, child_tree_content_len);
+        // Real gap surfaced by ADR 0014's own "generated/*" example:
+        // a subdirectory whose entire real content was ignore-filtered
+        // out (or that's simply empty on disk) used to still leave a
+        // pointless empty tree entry behind. Git's own real, well-
+        // known convention is to never track an empty directory at
+        // all - matched here, generally, not just for the ignore
+        // case: a child tree with zero real entries is treated as if
+        // that subdirectory doesn't exist for tree purposes, no
+        // object stored, no entry encoded.
+        if (GetU32LE(child_tree_content, 0) > 0) {
+          U8 child_tagged[2048];
+          child_tagged[0] = OBJ_TREE;
+          I64 ci;
+          for (ci=0; ci<child_tree_content_len; ci++) child_tagged[1+ci] = child_tree_content[ci];
+          U8 child_hash[64];
+          B2Hash512Any(child_tagged, child_tree_content_len+1, child_hash);
+          ObjectPut(archive, alen, OBJ_TREE, child_tree_content, child_tree_content_len);
 
-        U64 sub_entity_id;
-        if (found_old_sub) sub_entity_id = old_sub_entity_id;
-        else sub_entity_id = GenerateEntityId();
+          U64 sub_entity_id;
+          if (found_old_sub) sub_entity_id = old_sub_entity_id;
+          else sub_entity_id = GenerateEntityId();
 
-        TreeEncodeEntry(tree_content_out, &tlen, tmpde->full_name+name_start, name_len,
-                        OBJ_TREE, child_hash, sub_entity_id);
-        entry_count++;
+          TreeEncodeEntry(tree_content_out, &tlen, tmpde->full_name+name_start, name_len,
+                          OBJ_TREE, child_hash, sub_entity_id);
+          entry_count++;
+        }
+        }
       } else {
         // Regular file: the same blob-storage + entity-ID logic
         // HgitOfferWithRelation's own flat loop already uses,
         // parameterized by THIS directory level's own old tree.
         I64 fsize;
         U8 *fbuf = FileRead(tmpde->full_name, &fsize);
-        {
+        U8 file_at_type; U8 file_at_hash[64]; U64 file_at_entity;
+        Bool file_already_tracked = (old_tree_content != NULL) &&
+          TreeFindEntry(old_tree_content, old_tree_content_len,
+                        tmpde->full_name+name_start, name_len,
+                        &file_at_type, file_at_hash, &file_at_entity);
+        if (!file_already_tracked &&
+            IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                      tmpde->full_name+name_start, rel_dir)) {
+          CommPrint(1, "OFFER_IGNORED %s\n", tmpde->full_name);
+        } else {
           // Probe 107: was `if (fsize+1 <= 512)` guarding a fixed
           // `blob_tagged[512]` stack buffer - a file over 511 bytes
           // was silently DROPPED here (no message at all, worse than
@@ -489,6 +528,22 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   I64 tlen = 4; // leave room for the U32 entry_count, filled in below
   I64 entry_count = 0;
 
+  // ADR 0014 (docs/adr/0014-ignore-rules.md): `.hgitignore` lives
+  // alongside `find_mask`'s own directory portion - the same
+  // directory-prefix convention `Status.HC`'s own `dir_prefix`
+  // parameter already uses elsewhere, derived here since this flat
+  // command takes only `find_mask`. Loaded once per call, fresh from
+  // disk (no caching - real filesystem state at the moment of this
+  // offer, matching hgit's own design throughout).
+  U8 ignore_path[256];
+  I64 dp_len = 0, dp_j;
+  for (dp_j=0; find_mask[dp_j]; dp_j++) if (find_mask[dp_j]=='/') dp_len=dp_j+1;
+  for (dp_j=0; dp_j<dp_len; dp_j++) ignore_path[dp_j] = find_mask[dp_j];
+  StrPrint(ignore_path+dp_len, ".hgitignore");
+  U8 *ign_patterns, *ign_negate, *ign_kind;
+  I64 ign_count;
+  IgnoreLoad(ignore_path, &ign_patterns, &ign_negate, &ign_kind, &ign_count);
+
   CDirEntry *tmpde = FilesFind(find_mask, 0);
   CDirEntry *tmpde1 = tmpde;
   while (tmpde) {
@@ -501,13 +556,31 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
     I64 name_len = j - name_start;
     I64 entry_needed = 1 + name_len + 1 + 64 + 8;
 
+    // ADR 0014's own safety rule: ignore rules are only ever
+    // consulted for a name NOT already tracked by this exact name in
+    // the parent tree - an already-tracked file can never be hidden
+    // by adding an ignore rule later. Checked here, structurally,
+    // before any ignore lookup happens at all.
+    Bool already_tracked = FALSE;
+    if (old_tree_content != NULL) {
+      U8 at_type; U8 at_hash[64]; U64 at_entity;
+      already_tracked = TreeFindEntry(old_tree_content, old_tree_content_len,
+                                       tmpde->full_name+name_start, name_len,
+                                       &at_type, at_hash, &at_entity);
+    }
+    Bool skip_ignored = !already_tracked &&
+                         IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                                   tmpde->full_name+name_start, "");
+
     // No `continue` here - confirmed absent from HolyC (matches
     // experiments/templeos-devkit's own documented bug-compat corpus,
     // `holyc-parser/tests/corpus/failing/007-bug-compat-bug52-continue-keyword.hc`
     // - `if (cond) continue;` isn't a keyword there, it parses as an
     // undefined identifier). Nest the rest of the loop body inside an
     // `else` instead of early-`continue`-ing past the guards.
-    if (tlen + entry_needed > 2048) {
+    if (skip_ignored) {
+      CommPrint(1, "OFFER_IGNORED %s\n", tmpde->full_name);
+    } else if (tlen + entry_needed > 2048) {
       CommPrint(1, "OFFER_SKIP tree_full %s\n", tmpde->full_name);
     } else {
       // Probe 106: was a fixed blob_tagged[512] stack buffer (the
@@ -561,6 +634,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   DirTreeDel(tmpde1);
   Free(old_idx_hashes);
   Free(old_idx_offsets);
+  IgnoreFree(ign_patterns, ign_negate, ign_kind);
   PutU32LE(tree_content, 0, entry_count);
 
   I64 tree_content_len = tlen;
@@ -699,6 +773,16 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
     }
   }
 
+  // ADR 0014: `.hgitignore` lives at `dir_path` itself (the recursive
+  // discovery root) - one rule set for the whole tree, `rel_dir`
+  // tracked as "" at this level and grown by `TreeBuildRecursive`'s
+  // own recursion below it.
+  U8 ignore_path[256];
+  StrPrint(ignore_path, "%s.hgitignore", dir_path);
+  U8 *ign_patterns, *ign_negate, *ign_kind;
+  I64 ign_count;
+  IgnoreLoad(ignore_path, &ign_patterns, &ign_negate, &ign_kind, &ign_count);
+
   // The one real substitution: TreeBuildRecursive replaces
   // HgitOfferWithRelation's own flat FilesFind loop, recursing into
   // real subdirectories instead. old_idx_hashes/old_idx_offsets stay
@@ -708,9 +792,11 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   I64 tree_content_len;
   TreeBuildRecursive(dir_path, archive, &alen, rbuf, old_idx_hashes, old_idx_offsets, old_idx_count,
                      old_tree_content, old_tree_content_len,
-                     tree_content, &tree_content_len);
+                     tree_content, &tree_content_len,
+                     ign_patterns, ign_negate, ign_kind, ign_count, "");
   Free(old_idx_hashes);
   Free(old_idx_offsets);
+  IgnoreFree(ign_patterns, ign_negate, ign_kind);
 
   U8 tree_tagged[4096];
   tree_tagged[0] = OBJ_TREE;

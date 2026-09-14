@@ -223,6 +223,25 @@ U0 HgitFullRegressionTest()
   Hgit("merge C:/Home/TFullMergeRepo.hgs main");
   CommPrint(1, "TFULL_MERGE_FF_END_MARKER\n");
 
+  // --- ignore rules (ADR 0014, v1.8.0, probes 117/118) ---
+  Del("C:/Home/TFIgnoreRoot/x.tmp", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFIgnoreRoot/keep.txt", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFIgnoreRoot/.hgitignore", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFIgnoreRoot", FALSE, TRUE, FALSE);
+  Del("C:/Home/TFIgnoreRepo.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFIgnoreRepo.hgs.m", FALSE, FALSE, FALSE);
+  Hgit("init C:/Home/TFIgnoreRepo.hgs");
+  DirMk("C:/Home/TFIgnoreRoot");
+  FileWrite("C:/Home/TFIgnoreRoot/.hgitignore", "*.tmp\n", 6);
+  FileWrite("C:/Home/TFIgnoreRoot/keep.txt", "kept", 4);
+  FileWrite("C:/Home/TFIgnoreRoot/x.tmp", "ignored", 7);
+  CommPrint(1, "TFULL_IGNORE_BEGIN\n");
+  Hgit("offertree C:/Home/TFIgnoreRepo.hgs C:/Home/TFIgnoreRoot/ ignore_test_offer");
+  CommPrint(1, "TFULL_IGNORE_END_MARKER\n");
+  CommPrint(1, "TFULL_IGNORE_CHECK_BEGIN\n");
+  Hgit("check C:/Home/TFIgnoreRepo.hgs");
+  CommPrint(1, "TFULL_IGNORE_CHECK_END_MARKER\n");
+
   // --- discoverability ---
   Hgit("version");
   Hgit("logo");

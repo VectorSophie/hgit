@@ -1,0 +1,45 @@
+DISPATCH_OK init C:/Home/P118Repo.hgs
+DISPATCH_OK offer
+P118_OFFER_TWO_BEGIN
+OFFER_IGNORED C:/Home/P118NewTracked.txt
+DISPATCH_OK offer
+P118_OFFER_TWO_END
+P118_SEE_BEGIN
+SEE_COMMIT ts=36242701 parents=1 msg=second_offer
+SEE_PARENT 3defb248ccad3b6b6396e3328c679703c072a54132b2200b7c4ae92d0cbc9623cbc048605b5ed7561bc17c05fc1a09f93c754f0b645c1e85d0d113f00781738b
+SEE_TREE entries=1
+  entry type=1 id=82418f0118e48efb name=P118AlreadyTracked.txt
+SEE_END
+P118_SEE_END
+P118_STATUS_BEGIN
+STATUS_UNCHANGED P118AlreadyTracked.txt
+STATUS_END
+P118_STATUS_END
+DISPATCH_OK init C:/Home/P118TreeRepo.hgs
+P118_OFFERTREE_BEGIN
+OFFER_IGNORED C:/Home/P118Root/build
+OFFER_IGNORED C:/Home/P118Root/generated/direct.txt
+OFFER_IGNORED C:/Home/P118Root/x.tmp
+DISPATCH_OK offertree
+P118_OFFERTREE_END
+P118_TREE_SEE_BEGIN
+SEE_COMMIT ts=36252885 parents=0 msg=tree_offer
+SEE_TREE entries=4
+  entry type=2 id=33fb97841d1bc23d name=SubA
+    entry type=2 id=a0505d5a02e4a8a9 name=generated
+      entry type=1 id=92fa537a0a890952 name=nested.txt
+  entry type=1 id=9fdbbb7a2fa73284 name=important.hc
+  entry type=1 id=661a2ad6765d8667 name=.hgitignore
+  entry type=1 id=36846a9bb95d5cff name=top.txt
+SEE_END
+P118_TREE_SEE_END
+P118_STATUSTREE_BEGIN
+STATUS_END
+DISPATCH_OK statustree
+P118_STATUSTREE_END
+P118_CHECK_BEGIN
+CHECK_OK objects=8 format_version=2
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+P118_CHECK_END
+PASS p118_ignore_wired

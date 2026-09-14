@@ -85,8 +85,8 @@ loaded) for the same list straight from the live dispatcher.
 | Command | What it does |
 |---|---|
 | `init` | Create a new, empty repository |
-| `offer` | Snapshot matching files as a new commit (hgit's own name for git's "commit") |
-| `offertree` / `statustree` | Real subdirectory support (ADR 0010) — `offer`/`status`, recursing into nested directories, as separate commands rather than changing `offer`/`status`'s own flat semantics |
+| `offer` | Snapshot matching files as a new commit (hgit's own name for git's "commit") — honors `.hgitignore` (ADR 0014): an ignore rule only ever hides a genuinely untracked name, never an already-tracked one |
+| `offertree` / `statustree` | Real subdirectory support (ADR 0010) — `offer`/`status`, recursing into nested directories, as separate commands rather than changing `offer`/`status`'s own flat semantics; also honor `.hgitignore` (ADR 0014), including a whole ignored subdirectory (`build/`) never even being recursed into |
 | `status` | Compare the working directory against HEAD — new/modified/deleted, **and renamed** (exact-content match, ADR 0009) |
 | `merge` | A real three-way merge between two named paths (ADR 0011) — a genuine conflict aborts the whole merge, zero side effects; no resolution mechanism yet |
 | `history` | Walk the current path's commit chain |
@@ -100,6 +100,28 @@ loaded) for the same list straight from the live dispatcher.
 | `historydoc` / `reconciledoc` / `reconcileoverview` | Executable DolDoc views — real rendered documents (colored, with live `$LK$` links and collapsible `$TR$` trees), not plain text logs |
 | `export` / `import` | Whole-repo portability, own paths and history intact |
 | `help` / `version` / `logo` | Discoverability and a bit of fun |
+
+## Ignore rules
+
+A `.hgitignore` file (one per repository, next to the files it
+governs) keeps generated/temporary files out of `offer`/`offertree`/
+`status`/`statustree` without excluding them by hand every time. A
+small, deliberately smaller-than-`.gitignore` grammar (ADR 0014,
+`docs/adr/0014-ignore-rules.md`):
+
+```text
+*.tmp           # a name pattern (glob, any depth)
+build/          # a directory pattern (any depth, whole subtree)
+generated/*     # anchored to the repo root - direct children only
+!important.hc   # negation - the LAST matching line wins
+```
+
+**The one rule that matters most: ignore only ever hides discovery of
+untracked material. It never conceals an already-tracked file** — add
+a `build/` rule after `build/output.txt` is already committed, and
+`output.txt` stays fully tracked and visible until you actually delete
+it. `.hgitignore` itself is an ordinary trackable file, not special
+metadata — include it in your own `offer` if you want it versioned.
 
 ## The graph
 

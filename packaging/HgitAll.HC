@@ -55,6 +55,177 @@ U64 GetU64LE(U8 *buf, I64 off)
   for (i = 0; i < 8; i++) v |= buf[off+i](U64) << (i*8);
   return v;
 }
+// Ignore.HC — `.hgitignore`: a small, deterministic ignore grammar.
+// Design decisions written up in `docs/adr/0014-ignore-rules.md` -
+// read that first, this file only implements what it already decided.
+//
+// Three real pattern kinds, no more:
+//   NAME          "*.tmp"     - basename glob (single '*' wildcard),
+//                                any depth.
+//   DIR           "build/"    - a directory named exactly this,
+//                                any depth, recursively (caller skips
+//                                descending into it at all).
+//   DIR_CONTENTS  "generated/*" - anchored to the repo root; matches
+//                                only a DIRECT child of that exact
+//                                directory, not deeper.
+// A leading "!" negates. Patterns are evaluated in file order; the
+// LAST matching pattern (negated or not) wins - same real precedence
+// rule `.gitignore` itself uses.
+//
+// No caching: `IgnoreLoad` reads `.hgitignore` fresh from disk every
+// time a caller wants it, matching hgit's own "no working-directory
+// checkout, read real filesystem state at the moment of the
+// operation" design throughout. Returns real, MAlloc'd arrays (freed
+// by the caller via `IgnoreFree`) sized from the real ignore file's
+// own byte length - no guessed cap (ADR 0007's own discipline): every
+// real pattern line needs at least 1 content byte plus a newline, so
+// `fsize/2 + 2` is a real, computed upper bound on pattern count, not
+// a guess.
+//
+// Depends on nothing beyond real TempleOS builtins (FileRead, StrLen,
+// StrCmp, MAlloc/Free).
+
+#define IGNORE_KIND_NAME 0
+#define IGNORE_KIND_DIR 1
+#define IGNORE_KIND_DIR_CONTENTS 2
+#define IGNORE_KIND_SKIP 255 // an unsupported line - parsed, printed, not stored
+
+// Reads and parses a real `.hgitignore` file at `ignore_path`. If it
+// doesn't exist, all four `out_*` are set to NULL/0 - not an error,
+// just "no rules" (everything passes `IsIgnored`). Unsupported lines
+// (any other slash-containing pattern) are diagnosed
+// (`IGNORE_UNSUPPORTED_LINE <raw line>`) and skipped, not guessed at.
+U0 IgnoreLoad(U8 *ignore_path, U8 **out_patterns, U8 **out_negate,
+              U8 **out_kind, I64 *out_count)
+{
+  I64 fsize;
+  U8 *buf = FileRead(ignore_path, &fsize);
+  if (buf == NULL) {
+    *out_patterns = NULL;
+    *out_negate = NULL;
+    *out_kind = NULL;
+    *out_count = 0;
+    return;
+  }
+
+  I64 max_patterns = fsize/2 + 2;
+  U8 *patterns = MAlloc(max_patterns*256);
+  U8 *negate = MAlloc(max_patterns);
+  U8 *kind = MAlloc(max_patterns);
+  I64 count = 0;
+  I64 pos = 0;
+
+  while (pos < fsize) {
+    I64 line_start = pos;
+    while (pos < fsize && buf[pos] != '\n') pos++;
+    I64 line_len = pos - line_start;
+    if (pos < fsize) pos++; // skip the newline itself
+    if (line_len > 0 && buf[line_start+line_len-1] == '\r') line_len--;
+
+    if (line_len > 0 && buf[line_start] != '#') {
+      Bool neg = FALSE;
+      I64 p_start = line_start;
+      I64 p_len = line_len;
+      if (buf[p_start] == '!') { neg = TRUE; p_start++; p_len--; }
+
+      if (p_len > 0) {
+        U8 kkind;
+        I64 real_len;
+        if (p_len >= 2 && buf[p_start+p_len-2]=='/' && buf[p_start+p_len-1]=='*') {
+          kkind = IGNORE_KIND_DIR_CONTENTS;
+          real_len = p_len - 2;
+        } else if (buf[p_start+p_len-1] == '/') {
+          kkind = IGNORE_KIND_DIR;
+          real_len = p_len - 1;
+        } else {
+          Bool has_slash = FALSE;
+          I64 si;
+          for (si=0; si<p_len; si++) if (buf[p_start+si] == '/') has_slash = TRUE;
+          if (has_slash) {
+            kkind = IGNORE_KIND_SKIP;
+            real_len = 0;
+            CommPrint(1, "IGNORE_UNSUPPORTED_LINE ");
+            I64 li;
+            for (li=0; li<line_len; li++) CommPrint(1, "%c", buf[line_start+li]);
+            CommPrint(1, "\n");
+          } else {
+            kkind = IGNORE_KIND_NAME;
+            real_len = p_len;
+          }
+        }
+
+        if (kkind != IGNORE_KIND_SKIP && real_len > 0 && real_len < 256) {
+          I64 ci;
+          for (ci=0; ci<real_len; ci++) patterns[count*256+ci] = buf[p_start+ci];
+          patterns[count*256+real_len] = 0;
+          negate[count] = neg;
+          kind[count] = kkind;
+          count++;
+        }
+      }
+    }
+  }
+
+  *out_patterns = patterns;
+  *out_negate = negate;
+  *out_kind = kind;
+  *out_count = count;
+}
+
+U0 IgnoreFree(U8 *patterns, U8 *negate, U8 *kind)
+{
+  if (patterns != NULL) Free(patterns);
+  if (negate != NULL) Free(negate);
+  if (kind != NULL) Free(kind);
+}
+
+// A real, minimal glob matcher: only `*` is special (matches any run
+// of characters, including none), everything else is literal. No
+// `**`/`?`/character classes - not needed by this grammar's own
+// scope (ADR 0014), not built speculatively. Classic iterative
+// backtracking match, not recursive (patterns/names here are always
+// short, but this avoids call-depth concerns anyway).
+Bool IgnoreGlobMatch(U8 *pattern, U8 *s)
+{
+  I64 plen = StrLen(pattern);
+  I64 slen = StrLen(s);
+  I64 ppi = 0, si = 0;
+  I64 star_p = -1, star_s = -1;
+  while (si < slen) {
+    if (ppi < plen && pattern[ppi] == s[si]) { ppi++; si++; }
+    else if (ppi < plen && pattern[ppi] == '*') { star_p = ppi; star_s = si; ppi++; }
+    else if (star_p >= 0) { ppi = star_p+1; star_s++; si = star_s; }
+    else return FALSE;
+  }
+  while (ppi < plen && pattern[ppi] == '*') ppi++;
+  return ppi == plen;
+}
+
+// Checks whether one discovered candidate is ignored. `name` is its
+// own basename; `rel_dir` is the real, root-relative directory path
+// it lives directly inside (no leading/trailing slash, "" for the
+// discovery root itself - flat, non-recursive callers always pass
+// ""). Evaluates every real loaded pattern in file order; the LAST
+// match (negated or not) wins.
+Bool IsIgnored(U8 *patterns, U8 *negate, U8 *kind, I64 count,
+               U8 *name, U8 *rel_dir)
+{
+  Bool ignored = FALSE;
+  I64 i;
+  for (i=0; i<count; i++) {
+    U8 *pat = patterns + i*256;
+    Bool matched = FALSE;
+    if (kind[i] == IGNORE_KIND_NAME) {
+      matched = IgnoreGlobMatch(pat, name);
+    } else if (kind[i] == IGNORE_KIND_DIR) {
+      matched = (StrCmp(pat, name) == 0);
+    } else if (kind[i] == IGNORE_KIND_DIR_CONTENTS) {
+      matched = (StrCmp(pat, rel_dir) == 0);
+    }
+    if (matched) ignored = !negate[i];
+  }
+  return ignored;
+}
 // Blake2b.HC — BLAKE2b-512, unkeyed, single-block (input <= 111 bytes)
 // implementation of hgit's authoritative content hash.
 //
@@ -2557,6 +2728,14 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   I64 *new_content_lens = MAlloc(disk_count*8 + 8);
   I64 new_count = 0;
 
+  // ADR 0014 (docs/adr/0014-ignore-rules.md): `.hgitignore` lives
+  // alongside `dir_prefix` - loaded once per call, fresh from disk.
+  U8 ignore_path[256];
+  StrPrint(ignore_path, "%s.hgitignore", dir_prefix);
+  U8 *ign_patterns, *ign_negate, *ign_kind;
+  I64 ign_count;
+  IgnoreLoad(ignore_path, &ign_patterns, &ign_negate, &ign_kind, &ign_count);
+
   CDirEntry *tmpde = FilesFind(find_mask, 0);
   CDirEntry *tmpde1 = tmpde;
   while (tmpde) {
@@ -2590,7 +2769,15 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     Bool in_tree = TreeFindEntry(tree_content, tree_content_len,
                                   tmpde->full_name+name_start, name_len,
                                   &tree_type, tree_entry_hash, &tree_entity_id);
-    if (!in_tree) {
+    if (!in_tree && IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                              tmpde->full_name+name_start, "")) {
+      // ADR 0014's safety rule already holds structurally here: this
+      // branch is only reached when `!in_tree` (not already tracked),
+      // so an ignored name is simply never treated as NEW at all -
+      // never buffered, never reported. A tracked file matching this
+      // same rule would have taken the `in_tree` branch below instead,
+      // completely unaffected by ignore.
+    } else if (!in_tree) {
       // Buffered, not printed - a possible rename source. Names over
       // 254 chars are truncated to fit the fixed 256-byte slot; this
       // repo's own 33-char path ceiling (ADR 0003) means a real name
@@ -2618,6 +2805,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     tmpde = tmpde->next;
   }
   DirTreeDel(tmpde1);
+  IgnoreFree(ign_patterns, ign_negate, ign_kind);
 
   // Pass 2: deleted - walk every tree entry, check it still exists on
   // disk. This is the only place hgit-core needs "everything the tree
@@ -2760,7 +2948,9 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 // rename detection remains ADR 0010's own deliberately deferred item.
 U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
                   U8 *dir_path, U8 *tree_content, I64 tree_content_len,
-                  U8 *prefix)
+                  U8 *prefix,
+                  U8 *ign_patterns, U8 *ign_negate, U8 *ign_kind, I64 ign_count,
+                  U8 *rel_dir)
 {
   U8 mask[256];
   StrPrint(mask, "%s*", dir_path);
@@ -2818,6 +3008,10 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
         for (spj=0; tmpde->full_name[spj]; spj++) subdir_path[spi++] = tmpde->full_name[spj];
         subdir_path[spi++] = '/'; subdir_path[spi] = 0;
 
+        U8 child_rel_dir[256];
+        if (rel_dir[0] == 0) StrPrint(child_rel_dir, "%s", tmpde->full_name+name_start);
+        else StrPrint(child_rel_dir, "%s/%s", rel_dir, tmpde->full_name+name_start);
+
         if (found && old_type == OBJ_TREE) {
           U8 *sub_tree_content_a = NULL; I64 sub_tree_len_a = 0;
           I64 sub_off_rel_a;
@@ -2832,16 +3026,22 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
           for (pja=0; full_name[pja]; pja++) sub_prefix_a[pia++] = full_name[pja];
           sub_prefix_a[pia++] = '/'; sub_prefix_a[pia] = 0;
           StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
-                        subdir_path, sub_tree_content_a, sub_tree_len_a, sub_prefix_a);
+                        subdir_path, sub_tree_content_a, sub_tree_len_a, sub_prefix_a,
+                        ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir);
         } else if (found) {
           CommPrint(1, "STATUS_TYPE_CHANGED %s\n", full_name);
+        } else if (IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                              tmpde->full_name+name_start, rel_dir)) {
+          // ADR 0014: not already tracked, and ignored - don't even
+          // recurse, so nothing inside is reported as STATUS_NEW.
         } else {
           U8 sub_prefix_b[256];
           I64 pib = 0, pjb;
           for (pjb=0; full_name[pjb]; pjb++) sub_prefix_b[pib++] = full_name[pjb];
           sub_prefix_b[pib++] = '/'; sub_prefix_b[pib] = 0;
           StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
-                        subdir_path, NULL, 0, sub_prefix_b);
+                        subdir_path, NULL, 0, sub_prefix_b,
+                        ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir);
         }
       } else {
         I64 fsize;
@@ -2876,6 +3076,10 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
             if (!same_c) CommPrint(1, "STATUS_MODIFIED %s\n", full_name);
           } else if (in_tree) {
             CommPrint(1, "STATUS_TYPE_CHANGED %s\n", full_name);
+          } else if (IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                                tmpde->full_name+name_start, rel_dir)) {
+            // ADR 0014: not already tracked, and ignored - never
+            // reported as STATUS_NEW.
           } else {
             I64 cap = fi; if (cap > 254) cap = 254;
             for (i=0; i<cap; i++) new_names[new_count*256+i] = full_name[i];
@@ -2946,8 +3150,19 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
           I64 pic = 0, pjc;
           for (pjc=0; full_tname[pjc]; pjc++) sub_prefix_c[pic++] = full_tname[pjc];
           sub_prefix_c[pic++] = '/'; sub_prefix_c[pic] = 0;
+          // The directory itself is confirmed gone from disk (!still_dir),
+          // so no NEW candidate can ever be found inside this recursive
+          // call - ignore rules are structurally moot here, but rel_dir
+          // is still threaded through for signature consistency.
+          U8 tname_str[256];
+          I64 tni; for (tni=0; tni<tname_len && tni<254; tni++) tname_str[tni] = tname[tni];
+          tname_str[tni] = 0;
+          U8 child_rel_dir_c[256];
+          if (rel_dir[0] == 0) StrPrint(child_rel_dir_c, "%s", tname_str);
+          else StrPrint(child_rel_dir_c, "%s/%s", rel_dir, tname_str);
           StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
-                        check_path, sub_content_c, sub_len_c, sub_prefix_c);
+                        check_path, sub_content_c, sub_len_c, sub_prefix_c,
+                        ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir_c);
         }
         // still_dir==TRUE: already handled by the new-tree pass above
         // (found && old_type==OBJ_TREE branch), skip to avoid a
@@ -3067,8 +3282,18 @@ U0 HgitStatusTree(U8 *repo_path, U8 *dir_path)
   I64 tree_content_len = tree_record_len - 1;
 
   U8 root_prefix[1]; root_prefix[0] = 0;
+
+  // ADR 0014: `.hgitignore` lives at `dir_path` itself.
+  U8 ignore_path[256];
+  StrPrint(ignore_path, "%s.hgitignore", dir_path);
+  U8 *ign_patterns, *ign_negate, *ign_kind;
+  I64 ign_count;
+  IgnoreLoad(ignore_path, &ign_patterns, &ign_negate, &ign_kind, &ign_count);
+
   StatusTreeWalk(rbuf, idx_hashes, idx_offsets, idx_count,
-                dir_path, tree_content, tree_content_len, root_prefix);
+                dir_path, tree_content, tree_content_len, root_prefix,
+                ign_patterns, ign_negate, ign_kind, ign_count, "");
+  IgnoreFree(ign_patterns, ign_negate, ign_kind);
 
   CommPrint(1, "STATUS_END\n");
   Free(idx_hashes);
@@ -5234,7 +5459,9 @@ U0 SumTreeFileBytes(U8 *dir_path, I64 *bytes_out, I64 *file_count_out, I64 *subd
 U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
                       U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
                       U8 *old_tree_content, I64 old_tree_content_len,
-                      U8 *tree_content_out, I64 *tree_content_len_out)
+                      U8 *tree_content_out, I64 *tree_content_len_out,
+                      U8 *ign_patterns, U8 *ign_negate, U8 *ign_kind, I64 ign_count,
+                      U8 *rel_dir)
 {
   I64 tlen = 4; // room for entry_count, filled in at the end
   I64 entry_count = 0;
@@ -5262,10 +5489,17 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
         U8 *old_sub_tree_content = NULL;
         I64 old_sub_tree_content_len = 0;
         Bool found_old_sub = FALSE;
+        // ADR 0014's safety rule: this must reflect "was this NAME
+        // tracked at all," independent of the type-mismatch reset
+        // below - a directory that was already tracked (even if its
+        // old entry happened to be a file, a real kind change) must
+        // never be hidden by a later ignore rule.
+        Bool name_was_tracked = FALSE;
         if (old_tree_content != NULL) {
           found_old_sub = TreeFindEntry(old_tree_content, old_tree_content_len,
                                         tmpde->full_name+name_start, name_len,
                                         &old_sub_type, old_sub_hash, &old_sub_entity_id);
+          name_was_tracked = found_old_sub;
           if (found_old_sub && old_sub_type == OBJ_TREE) {
             I64 sub_off_rel;
             if (IndexLookup(idx_hashes, idx_offsets, idx_count, old_sub_hash, &sub_off_rel)) {
@@ -5282,36 +5516,66 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
           }
         }
 
+        if (!name_was_tracked &&
+            IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                      tmpde->full_name+name_start, rel_dir)) {
+          CommPrint(1, "OFFER_IGNORED %s\n", tmpde->full_name);
+        } else {
         U8 subdir_path[256];
         StrPrint(subdir_path, "%s/", tmpde->full_name);
+        U8 child_rel_dir[256];
+        if (rel_dir[0] == 0) StrPrint(child_rel_dir, "%s", tmpde->full_name+name_start);
+        else StrPrint(child_rel_dir, "%s/%s", rel_dir, tmpde->full_name+name_start);
         U8 child_tree_content[2048];
         I64 child_tree_content_len;
         TreeBuildRecursive(subdir_path, archive, alen, rbuf, idx_hashes, idx_offsets, idx_count,
                            old_sub_tree_content, old_sub_tree_content_len,
-                           child_tree_content, &child_tree_content_len);
+                           child_tree_content, &child_tree_content_len,
+                           ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir);
 
-        U8 child_tagged[2048];
-        child_tagged[0] = OBJ_TREE;
-        I64 ci;
-        for (ci=0; ci<child_tree_content_len; ci++) child_tagged[1+ci] = child_tree_content[ci];
-        U8 child_hash[64];
-        B2Hash512Any(child_tagged, child_tree_content_len+1, child_hash);
-        ObjectPut(archive, alen, OBJ_TREE, child_tree_content, child_tree_content_len);
+        // Real gap surfaced by ADR 0014's own "generated/*" example:
+        // a subdirectory whose entire real content was ignore-filtered
+        // out (or that's simply empty on disk) used to still leave a
+        // pointless empty tree entry behind. Git's own real, well-
+        // known convention is to never track an empty directory at
+        // all - matched here, generally, not just for the ignore
+        // case: a child tree with zero real entries is treated as if
+        // that subdirectory doesn't exist for tree purposes, no
+        // object stored, no entry encoded.
+        if (GetU32LE(child_tree_content, 0) > 0) {
+          U8 child_tagged[2048];
+          child_tagged[0] = OBJ_TREE;
+          I64 ci;
+          for (ci=0; ci<child_tree_content_len; ci++) child_tagged[1+ci] = child_tree_content[ci];
+          U8 child_hash[64];
+          B2Hash512Any(child_tagged, child_tree_content_len+1, child_hash);
+          ObjectPut(archive, alen, OBJ_TREE, child_tree_content, child_tree_content_len);
 
-        U64 sub_entity_id;
-        if (found_old_sub) sub_entity_id = old_sub_entity_id;
-        else sub_entity_id = GenerateEntityId();
+          U64 sub_entity_id;
+          if (found_old_sub) sub_entity_id = old_sub_entity_id;
+          else sub_entity_id = GenerateEntityId();
 
-        TreeEncodeEntry(tree_content_out, &tlen, tmpde->full_name+name_start, name_len,
-                        OBJ_TREE, child_hash, sub_entity_id);
-        entry_count++;
+          TreeEncodeEntry(tree_content_out, &tlen, tmpde->full_name+name_start, name_len,
+                          OBJ_TREE, child_hash, sub_entity_id);
+          entry_count++;
+        }
+        }
       } else {
         // Regular file: the same blob-storage + entity-ID logic
         // HgitOfferWithRelation's own flat loop already uses,
         // parameterized by THIS directory level's own old tree.
         I64 fsize;
         U8 *fbuf = FileRead(tmpde->full_name, &fsize);
-        {
+        U8 file_at_type; U8 file_at_hash[64]; U64 file_at_entity;
+        Bool file_already_tracked = (old_tree_content != NULL) &&
+          TreeFindEntry(old_tree_content, old_tree_content_len,
+                        tmpde->full_name+name_start, name_len,
+                        &file_at_type, file_at_hash, &file_at_entity);
+        if (!file_already_tracked &&
+            IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                      tmpde->full_name+name_start, rel_dir)) {
+          CommPrint(1, "OFFER_IGNORED %s\n", tmpde->full_name);
+        } else {
           // Probe 107: was `if (fsize+1 <= 512)` guarding a fixed
           // `blob_tagged[512]` stack buffer - a file over 511 bytes
           // was silently DROPPED here (no message at all, worse than
@@ -5488,6 +5752,22 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   I64 tlen = 4; // leave room for the U32 entry_count, filled in below
   I64 entry_count = 0;
 
+  // ADR 0014 (docs/adr/0014-ignore-rules.md): `.hgitignore` lives
+  // alongside `find_mask`'s own directory portion - the same
+  // directory-prefix convention `Status.HC`'s own `dir_prefix`
+  // parameter already uses elsewhere, derived here since this flat
+  // command takes only `find_mask`. Loaded once per call, fresh from
+  // disk (no caching - real filesystem state at the moment of this
+  // offer, matching hgit's own design throughout).
+  U8 ignore_path[256];
+  I64 dp_len = 0, dp_j;
+  for (dp_j=0; find_mask[dp_j]; dp_j++) if (find_mask[dp_j]=='/') dp_len=dp_j+1;
+  for (dp_j=0; dp_j<dp_len; dp_j++) ignore_path[dp_j] = find_mask[dp_j];
+  StrPrint(ignore_path+dp_len, ".hgitignore");
+  U8 *ign_patterns, *ign_negate, *ign_kind;
+  I64 ign_count;
+  IgnoreLoad(ignore_path, &ign_patterns, &ign_negate, &ign_kind, &ign_count);
+
   CDirEntry *tmpde = FilesFind(find_mask, 0);
   CDirEntry *tmpde1 = tmpde;
   while (tmpde) {
@@ -5500,13 +5780,31 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
     I64 name_len = j - name_start;
     I64 entry_needed = 1 + name_len + 1 + 64 + 8;
 
+    // ADR 0014's own safety rule: ignore rules are only ever
+    // consulted for a name NOT already tracked by this exact name in
+    // the parent tree - an already-tracked file can never be hidden
+    // by adding an ignore rule later. Checked here, structurally,
+    // before any ignore lookup happens at all.
+    Bool already_tracked = FALSE;
+    if (old_tree_content != NULL) {
+      U8 at_type; U8 at_hash[64]; U64 at_entity;
+      already_tracked = TreeFindEntry(old_tree_content, old_tree_content_len,
+                                       tmpde->full_name+name_start, name_len,
+                                       &at_type, at_hash, &at_entity);
+    }
+    Bool skip_ignored = !already_tracked &&
+                         IsIgnored(ign_patterns, ign_negate, ign_kind, ign_count,
+                                   tmpde->full_name+name_start, "");
+
     // No `continue` here - confirmed absent from HolyC (matches
     // experiments/templeos-devkit's own documented bug-compat corpus,
     // `holyc-parser/tests/corpus/failing/007-bug-compat-bug52-continue-keyword.hc`
     // - `if (cond) continue;` isn't a keyword there, it parses as an
     // undefined identifier). Nest the rest of the loop body inside an
     // `else` instead of early-`continue`-ing past the guards.
-    if (tlen + entry_needed > 2048) {
+    if (skip_ignored) {
+      CommPrint(1, "OFFER_IGNORED %s\n", tmpde->full_name);
+    } else if (tlen + entry_needed > 2048) {
       CommPrint(1, "OFFER_SKIP tree_full %s\n", tmpde->full_name);
     } else {
       // Probe 106: was a fixed blob_tagged[512] stack buffer (the
@@ -5560,6 +5858,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   DirTreeDel(tmpde1);
   Free(old_idx_hashes);
   Free(old_idx_offsets);
+  IgnoreFree(ign_patterns, ign_negate, ign_kind);
   PutU32LE(tree_content, 0, entry_count);
 
   I64 tree_content_len = tlen;
@@ -5698,6 +5997,16 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
     }
   }
 
+  // ADR 0014: `.hgitignore` lives at `dir_path` itself (the recursive
+  // discovery root) - one rule set for the whole tree, `rel_dir`
+  // tracked as "" at this level and grown by `TreeBuildRecursive`'s
+  // own recursion below it.
+  U8 ignore_path[256];
+  StrPrint(ignore_path, "%s.hgitignore", dir_path);
+  U8 *ign_patterns, *ign_negate, *ign_kind;
+  I64 ign_count;
+  IgnoreLoad(ignore_path, &ign_patterns, &ign_negate, &ign_kind, &ign_count);
+
   // The one real substitution: TreeBuildRecursive replaces
   // HgitOfferWithRelation's own flat FilesFind loop, recursing into
   // real subdirectories instead. old_idx_hashes/old_idx_offsets stay
@@ -5707,9 +6016,11 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   I64 tree_content_len;
   TreeBuildRecursive(dir_path, archive, &alen, rbuf, old_idx_hashes, old_idx_offsets, old_idx_count,
                      old_tree_content, old_tree_content_len,
-                     tree_content, &tree_content_len);
+                     tree_content, &tree_content_len,
+                     ign_patterns, ign_negate, ign_kind, ign_count, "");
   Free(old_idx_hashes);
   Free(old_idx_offsets);
+  IgnoreFree(ign_patterns, ign_negate, ign_kind);
 
   U8 tree_tagged[4096];
   tree_tagged[0] = OBJ_TREE;
@@ -6427,7 +6738,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.7.7"
+#define HGIT_VERSION "1.8.0"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
