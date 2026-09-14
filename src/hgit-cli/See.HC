@@ -1,5 +1,7 @@
 // See.HC — `hgit see <offering>`: show one commit's full detail -
-// message, timestamp, parent count, and its tree's entries.
+// message, timestamp, parent count and hashes (probe 112 - a real
+// merge commit's own SECOND parent was previously invisible here,
+// only the count was shown), and its tree's entries.
 //
 // Takes the target commit as a raw 64-byte hash (same convention as
 // every other hgit-core/hgit-cli function so far) rather than a hex
@@ -116,6 +118,21 @@ U0 HgitSee(U8 *repo_path, U8 *target_hash)
   CommPrint(1, "SEE_COMMIT ts=%d parents=%d msg=", ts, pcount);
   for (i=0; i<mlen; i++) CommPrint(1, "%c", msg[i]);
   CommPrint(1, "\n");
+
+  // Probe 112 (experiments/112-see-parent-hashes/): `parents=%d` only
+  // ever showed the COUNT, never which commits they actually were -
+  // a real gap for a merge commit specifically (the only real case
+  // with more than one), where "how many parents" alone doesn't tell
+  // a user which two histories were joined. One SEE_PARENT line per
+  // parent, in the same real order Commit.HC's own encoding stores
+  // them (ours first, theirs second, for a real merge commit -
+  // Merge.HC's own convention).
+  for (i=0; i<pcount; i++) {
+    U8 *ph = CommitParentHash(content, i);
+    U8 ph_hex[129];
+    HashToHex(ph, ph_hex);
+    CommPrint(1, "SEE_PARENT %s\n", ph_hex);
+  }
 
   U8 rel_tag = CommitRelationTag(content);
   if (rel_tag != REL_NONE) {

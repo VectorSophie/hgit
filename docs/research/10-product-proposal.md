@@ -1931,6 +1931,21 @@ answer - just previously unverified and undocumented. Header comment
 corrected to state this plainly. Comment-only change, rebuilt/linted/
 pushed to the live daemon (`COMPILE_OK`), regression re-run clean.
 
+**`hgit see` now shows real parent hashes, not just a count.**
+`experiments/112-see-parent-hashes/` (PASS): `SEE_COMMIT`'s own
+`parents=N` never showed WHICH commits those were - a real gap for a
+merge commit specifically, the only case with more than one, where a
+user previously had no way to see what was actually joined without
+separately cross-referencing `history`/`operation history` by
+timestamp. One `SEE_PARENT <hex>` line per real parent added, in
+`Commit.HC`'s own real storage order (`Merge.HC`'s own convention:
+index 0 = ours, index 1 = theirs). Verified against three real cases,
+each cross-checked byte-for-byte against an independently-read real
+hash: a root commit (0 parents, no line at all), an ordinary commit
+(1 line, matches its real parent), and a real merge commit (2 lines,
+matching the real ours/theirs hashes in the real order). Both the
+standing regression and the full command-surface suite re-run clean.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided
