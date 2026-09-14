@@ -28,6 +28,15 @@
 // version-1 repo (every repo any test/probe in this project has ever
 // built) is not migrated and still reads back fine - HgsReadHeader
 // doesn't reject it, and no code path treats the two differently.
+//
+// ADR 0015 (v1.8.1): bumped again, 2 -> 3, for the same documentation
+// reason as the 1 -> 2 bump above - a real, additive commit-content
+// change (has_attrs/attrs_hash) exists now. Still purely a correction
+// to what gets WRITTEN: `Commit.HC`'s own bounds-check convention
+// (`CommitHasAttrs`) already makes an older commit's content read
+// back correctly with no attrs, with no version branch anywhere -
+// same "no migration mechanism, no evidence one's needed yet" note
+// as the version 2 bump.
 
 // Returns TRUE on success, FALSE if a file already exists at `path`
 // (existing repos/files are never overwritten by init).
@@ -37,7 +46,7 @@ Bool HgitInit(U8 *path)
   U8 *existing = FileRead(path, &existing_size);
   if (existing != NULL) return FALSE;
   U8 header[16];
-  HgsWriteHeader(header, 2, 0);
+  HgsWriteHeader(header, 3, 0);
   FileWrite(path, header, 16);
   return TRUE;
 }

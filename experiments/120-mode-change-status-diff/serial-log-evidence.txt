@@ -1,0 +1,40 @@
+Final clean run of P120ModeChangeTest, after fixing Check.HC's own
+OBJ_ATTRS reachability gap (see README.md):
+
+DISPATCH_OK init C:/Home/P120Repo.hgs
+DISPATCH_OK offer
+P120_STATUS_BEGIN
+STATUS_UNCHANGED P120Plain.txt
+STATUS_UNCHANGED P120Script.txt
+STATUS_MODE_CHANGED P120Script.txt 0 -> 2
+STATUS_END
+P120_STATUS_END
+DISPATCH_OK offer
+P120_DIFF_BEGIN
+DIFF_MODE_CHANGED P120Script.txt 0 -> 2
+DIFF_END
+P120_DIFF_END
+P120_STATUS2_BEGIN
+STATUS_UNCHANGED P120Plain.txt
+STATUS_UNCHANGED P120Script.txt
+STATUS_MODE_CHANGED P120Script.txt 2 -> 0
+STATUS_END
+P120_STATUS2_END
+DISPATCH_OK offer
+P120_DIFF2_BEGIN
+DIFF_MODE_CHANGED P120Script.txt 2 -> 0
+DIFF_END
+P120_DIFF2_END
+CHECK_OK objects=13 format_version=2
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+PASS p120_mode_change_status_diff
+
+For contrast, BEFORE the Check.HC fix (the real gap this probe
+found), the same repo's final check reported the attrs object as
+falsely dangling and mislabeled as a blob:
+
+CHECK_OK objects=13 format_version=2
+CHECK_REFS_OK
+CHECK_DANGLING blob dcf5c3beb7f81f2cc4b9aea881815271860b4269abc52af7f9746f25aa8c9462b850b88f194b5fed454e475b488f45d9a1145d58fb6b8ce3ab94799b857ed2d2
+CHECK_DANGLING_COUNT 1

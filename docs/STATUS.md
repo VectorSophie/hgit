@@ -10,19 +10,22 @@ deserves its own answer, separate from "what happened in what order."
 owner's own scoped brief for a v1.8.x "usability series" (ignore
 rules, minimal attributes/modes, a complete three-way merge, conflicts
 as persistent repository data, and the CLI/DolDoc UX to use all of
-it). v1.8.0 (ignore rules, ADR 0014) is done; read that file before
-picking the next v1.8.x item.
+it). v1.8.0 (ignore rules, ADR 0014) and v1.8.1 (tracked file
+attributes/modes, ADR 0015) are done; read that file before picking
+the next v1.8.x item.
 
 ## The one-paragraph version
 
 hgit is a real, working, TempleOS-native version control tool: content-
 addressed objects, nested-tree subdirectories, multi-parent merge
 commits with a real three-way merge, typed relations, named paths with
-undo/redo, a DolDoc-rendered reconciliation view, and (as of v1.8.0) a
-real `.hgitignore` mechanism - all implemented in native HolyC,
-verified on real (QEMU-hosted) TempleOS, not simulated or assumed.
-Tagged releases exist from v0.10.0 through v1.8.0, 14 ADRs document
-real, evidence-backed architectural decisions, and 118+ numbered probes
+undo/redo, a DolDoc-rendered reconciliation view, a real `.hgitignore`
+mechanism (v1.8.0), and (as of v1.8.1) a real `.hgitattributes`/file-
+mode mechanism surfaced in status/diff and validated by check - all
+implemented in native HolyC, verified on real (QEMU-hosted) TempleOS,
+not simulated or assumed. Tagged releases exist from v0.10.0 through
+v1.8.0 (v1.8.1 pending its own release), 15 ADRs document real,
+evidence-backed architectural decisions, and 120+ numbered probes
 (`experiments/`) each pair one concrete question with a real, captured
 answer. M0 through M4 are functionally complete by their own original
 acceptance criteria; M5 was never concretely scoped, and its own real
@@ -109,6 +112,22 @@ designed or started:
   ignore-filtered away used to leave a pointless empty tree entry -
   now matches Git's own real convention of never tracking an empty
   directory, generally, not just for the ignore case.
+- **Tracked file attributes/modes** (v1.8.1, ADR 0015, `format_version`
+  bumped 2 -> 3): a `.hgitattributes` grammar (`text`/`binary`/
+  `executable`, reusing `.hgitignore`'s own pattern engine) plus
+  Git's real NUL-byte auto-binary-detection heuristic, wired into
+  `offer`/`offertree`. Mode is a commit-level side-channel
+  (`OBJ_ATTRS`, entity-ID-keyed) rather than embedded in tree entries
+  - a deliberate choice after measuring the alternative's real blast
+  radius (8 files hand-parse tree-entry bytes; only 3 call
+  `CommitEncode`). `status`/`statustree` and `diff` both surface a
+  pure mode change (no content edit) independently of the existing
+  UNCHANGED/MODIFIED verdict. Found and fixed a real related gap along
+  the way: `check`'s own reachability walk didn't know about
+  `attrs_hash` at all, so every repo's own attrs object showed up as a
+  false `CHECK_DANGLING` (mislabeled as a blob, too) - closed by
+  wiring the same commit-edge walk every other reference already
+  gets.
 - **Packaging**: `packaging/HgitAll.HC` is the real release artifact,
   attached to every tagged GitHub Release; `tools/build-package.sh`/
   `tools/lint-package.sh` catch real errors (including HolyC's own

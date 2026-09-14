@@ -242,6 +242,35 @@ U0 HgitFullRegressionTest()
   Hgit("check C:/Home/TFIgnoreRepo.hgs");
   CommPrint(1, "TFULL_IGNORE_CHECK_END_MARKER\n");
 
+  // --- attributes/modes (ADR 0015, v1.8.1, probes 119/120): a pure
+  // mode change (no content edit) is surfaced by both status and
+  // diff, and its OBJ_ATTRS object stays real (check-reachable). ---
+  Del("C:/Home/TFAttrsRepo.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFAttrsRepo.hgs.m", FALSE, FALSE, FALSE);
+  Del("C:/Home/.hgitattributes", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFAttrsScript.txt", FALSE, FALSE, FALSE);
+  Hgit("init C:/Home/TFAttrsRepo.hgs");
+  FileWrite("C:/Home/TFAttrsScript.txt", "echo hi", 7);
+  Hgit("offer C:/Home/TFAttrsRepo.hgs C:/Home/TFAttrsScript.txt attrs_root_commit");
+  FileWrite("C:/Home/.hgitattributes", "TFAttrsScript.txt executable\n", 29);
+  CommPrint(1, "TFULL_ATTRS_STATUS_BEGIN\n");
+  Hgit("status C:/Home/TFAttrsRepo.hgs C:/Home/TFAttrsScript.txt C:/Home/");
+  CommPrint(1, "TFULL_ATTRS_STATUS_END_MARKER\n");
+  Hgit("offer C:/Home/TFAttrsRepo.hgs C:/Home/TFAttrsScript.txt attrs_mode_offer");
+  U8 attrs_head_hash[64];
+  CurrentHeadRead("C:/Home/TFAttrsRepo.hgs", attrs_head_hash);
+  U8 attrs_head_hex[129];
+  HashToHex(attrs_head_hash, attrs_head_hex);
+  U8 attrs_diff_cmd[512];
+  StrPrint(attrs_diff_cmd, "diff C:/Home/TFAttrsRepo.hgs %s", attrs_head_hex);
+  CommPrint(1, "TFULL_ATTRS_DIFF_BEGIN\n");
+  Hgit(attrs_diff_cmd);
+  CommPrint(1, "TFULL_ATTRS_DIFF_END_MARKER\n");
+  CommPrint(1, "TFULL_ATTRS_CHECK_BEGIN\n");
+  Hgit("check C:/Home/TFAttrsRepo.hgs");
+  CommPrint(1, "TFULL_ATTRS_CHECK_END_MARKER\n");
+  Del("C:/Home/.hgitattributes", FALSE, FALSE, FALSE);
+
   // --- discoverability ---
   Hgit("version");
   Hgit("logo");

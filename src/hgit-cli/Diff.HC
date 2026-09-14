@@ -63,6 +63,14 @@ Bool DiffResolveTreeByHash(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_c
   return TRUE;
 }
 
+// ADR 0015 addendum: mode changes are surfaced independently of
+// content changes, entity-ID-keyed - the same commit-level OBJ_ATTRS
+// lists `Status.HC` consults, just for two committed trees instead of
+// working-dir-vs-HEAD. `old_attrs_content`/`new_attrs_content` are the
+// two commits' own attrs lists (NULL/0 if that commit has none), the
+// same value at every recursion depth (entity IDs are unique
+// repo-wide, not per-directory).
+//
 // Diffs one tree level (old vs new, either side may be NULL - a real,
 // valid base case for recursing into a wholly new/deleted
 // subdirectory against an empty tree, not a special case needing its
@@ -73,7 +81,9 @@ Bool DiffResolveTreeByHash(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_c
 U0 DiffPrintTreeChanges(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
                         U8 *old_tree_content, I64 old_tree_content_len,
                         U8 *new_tree_content, I64 new_tree_content_len,
-                        U8 *prefix)
+                        U8 *prefix,
+                        U8 *old_attrs_content, I64 old_attrs_len,
+                        U8 *new_attrs_content, I64 new_attrs_len)
 {
   U32 new_tcount = 0;
   if (new_tree_content != NULL) new_tcount = GetU32LE(new_tree_content, 0);
@@ -105,7 +115,7 @@ U0 DiffPrintTreeChanges(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_coun
       U8 *name = new_tree_content + pos; pos += nlen;
       U8 new_type = new_tree_content[pos]; pos += 1;
       U8 *hash = new_tree_content + pos; pos += 64;
-      pos += 8; // entity_id - not needed here
+      U64 new_entity_id = GetU64LE(new_tree_content, pos); pos += 8; // ADR 0015: needed for mode lookup
 
       U8 full_name[256];
       I64 fi = 0, fj;
@@ -140,7 +150,9 @@ U0 DiffPrintTreeChanges(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_coun
             sub_prefix_a[spi_a++] = '/'; sub_prefix_a[spi_a] = 0;
             DiffPrintTreeChanges(rbuf, idx_hashes, idx_offsets, idx_count,
                                  sub_old_content_a, sub_old_len_a,
-                                 sub_new_content_a, sub_new_len_a, sub_prefix_a);
+                                 sub_new_content_a, sub_new_len_a, sub_prefix_a,
+                                 old_attrs_content, old_attrs_len,
+                                 new_attrs_content, new_attrs_len);
           }
         } else if (found_by_name) {
           // Same name, old side isn't a tree - a real kind-change
@@ -161,7 +173,9 @@ U0 DiffPrintTreeChanges(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_coun
           for (spj_b=0; full_name[spj_b]; spj_b++) sub_prefix_b[spi_b++] = full_name[spj_b];
           sub_prefix_b[spi_b++] = '/'; sub_prefix_b[spi_b] = 0;
           DiffPrintTreeChanges(rbuf, idx_hashes, idx_offsets, idx_count,
-                               NULL, 0, sub_new_content_b, sub_new_len_b, sub_prefix_b);
+                               NULL, 0, sub_new_content_b, sub_new_len_b, sub_prefix_b,
+                               old_attrs_content, old_attrs_len,
+                               new_attrs_content, new_attrs_len);
         }
       } else {
         // OBJ_BLOB: unchanged from before - same name/same type in old
@@ -174,6 +188,23 @@ U0 DiffPrintTreeChanges(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_coun
             CommPrint(1, "DIFF_MODIFIED ");
             for (i=0; full_name[i]; i++) CommPrint(1, "%c", full_name[i]);
             CommPrint(1, "\n");
+          }
+
+          // ADR 0015: mode is a separate dimension from content -
+          // checked regardless of the content verdict just above.
+          // Same entity ID both sides (found_by_name means the SAME
+          // tracked identity survived, per ADR 0004).
+          U8 old_mode_d = 0, new_mode_d = 0;
+          if (old_attrs_content != NULL) {
+            AttrsListFindMode(old_attrs_content, old_attrs_len, old_entity_id, &old_mode_d);
+          }
+          if (new_attrs_content != NULL) {
+            AttrsListFindMode(new_attrs_content, new_attrs_len, new_entity_id, &new_mode_d);
+          }
+          if (old_mode_d != new_mode_d) {
+            CommPrint(1, "DIFF_MODE_CHANGED ");
+            for (i=0; full_name[i]; i++) CommPrint(1, "%c", full_name[i]);
+            CommPrint(1, " %d -> %d\n", old_mode_d, new_mode_d);
           }
         } else if (found_by_name) {
           CommPrint(1, "DIFF_TYPE_CHANGED ");
@@ -232,7 +263,9 @@ U0 DiffPrintTreeChanges(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_coun
           for (spj_c=0; full_oname[spj_c]; spj_c++) sub_prefix_c[spi_c++] = full_oname[spj_c];
           sub_prefix_c[spi_c++] = '/'; sub_prefix_c[spi_c] = 0;
           DiffPrintTreeChanges(rbuf, idx_hashes, idx_offsets, idx_count,
-                               sub_old_content_c, sub_old_len_c, NULL, 0, sub_prefix_c);
+                               sub_old_content_c, sub_old_len_c, NULL, 0, sub_prefix_c,
+                               old_attrs_content, old_attrs_len,
+                               new_attrs_content, new_attrs_len);
         } else {
           I64 dcap = ofi; if (dcap > 254) dcap = 254;
           for (i=0; i<dcap; i++) del_names[del_count*256+i] = full_oname[i];
@@ -359,8 +392,26 @@ U0 HgitDiff(U8 *repo_path, U8 *commit_hash)
   U8 *new_tree_content = rbuf + nt_off + 9;
   I64 new_tree_content_len = nt_rec_len - 1;
 
+  // ADR 0015: this commit's own OBJ_ATTRS list, if any.
+  U64 c_rec_len = GetU64LE(rbuf, c_off);
+  I64 c_content_len = c_rec_len - 1;
+  U8 *new_attrs_content = NULL;
+  I64 new_attrs_len = 0;
+  if (CommitHasAttrs(c_content, c_content_len)) {
+    U8 *ah = CommitAttrsHash(c_content);
+    I64 a_off_rel;
+    if (IndexLookup(idx_hashes, idx_offsets, idx_count, ah, &a_off_rel)) {
+      I64 a_off = 16 + a_off_rel;
+      U64 a_rec_len = GetU64LE(rbuf, a_off);
+      new_attrs_content = rbuf + a_off + 9;
+      new_attrs_len = a_rec_len - 1;
+    }
+  }
+
   U8 *old_tree_content = NULL;
   I64 old_tree_content_len = 0;
+  U8 *old_attrs_content = NULL;
+  I64 old_attrs_len = 0;
   U8 pcount = CommitParentCount(c_content);
   if (pcount > 0) {
     U8 *parent_hash = CommitParentHash(c_content, 0);
@@ -376,13 +427,27 @@ U0 HgitDiff(U8 *repo_path, U8 *commit_hash)
         old_tree_content = rbuf + ot_off + 9;
         old_tree_content_len = ot_rec_len - 1;
       }
+      U64 p_rec_len = GetU64LE(rbuf, p_off);
+      I64 p_content_len = p_rec_len - 1;
+      if (CommitHasAttrs(p_content, p_content_len)) {
+        U8 *pah = CommitAttrsHash(p_content);
+        I64 pa_off_rel;
+        if (IndexLookup(idx_hashes, idx_offsets, idx_count, pah, &pa_off_rel)) {
+          I64 pa_off = 16 + pa_off_rel;
+          U64 pa_rec_len = GetU64LE(rbuf, pa_off);
+          old_attrs_content = rbuf + pa_off + 9;
+          old_attrs_len = pa_rec_len - 1;
+        }
+      }
     }
   }
 
   U8 root_prefix[1]; root_prefix[0] = 0;
   DiffPrintTreeChanges(rbuf, idx_hashes, idx_offsets, idx_count,
                        old_tree_content, old_tree_content_len,
-                       new_tree_content, new_tree_content_len, root_prefix);
+                       new_tree_content, new_tree_content_len, root_prefix,
+                       old_attrs_content, old_attrs_len,
+                       new_attrs_content, new_attrs_len);
 
   CommPrint(1, "DIFF_END\n");
 

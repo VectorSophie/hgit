@@ -123,6 +123,32 @@ a `build/` rule after `build/output.txt` is already committed, and
 it. `.hgitignore` itself is an ordinary trackable file, not special
 metadata — include it in your own `offer` if you want it versioned.
 
+## File attributes and modes
+
+A `.hgitattributes` file (same directory, same glob grammar as
+`.hgitignore`) declares a tracked file's real mode — TempleOS has no
+Unix permission bits or execute bit, so `text`/`binary`/`executable`
+are only ever set explicitly, never guessed for `executable` (ADR
+0015, `docs/adr/0015-file-attributes-and-modes.md`):
+
+```text
+*.png binary
+*.HC text,executable
+build/* binary
+```
+
+Binary detection otherwise falls back to auto-detection — the same
+NUL-byte-in-the-first-8000-bytes heuristic Git's own `is_binary` uses
+— for any file no rule matches. Mode is stored as a commit-level
+side-channel keyed by entity ID (independent of path/content, same as
+the identity ADR 0004 already gives every tracked name), not embedded
+in tree entries, and costs nothing for a repo where every file is
+plain text and non-executable. `status`/`statustree` and `diff` both
+surface a mode change independently of any content change —
+`STATUS_MODE_CHANGED`/`DIFF_MODE_CHANGED <path> <old> -> <new>` — and
+`check` validates the mode list's own referential integrity the same
+way it does every other object reference.
+
 ## The graph
 
 `hgit graph` walks every declared path (not just the current one) and

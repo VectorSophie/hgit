@@ -40,6 +40,14 @@
 // real ref this repo has. Recursion stops the instant it re-enters an
 // already-marked object, so shared history between multiple paths is
 // only ever walked once.
+//
+// ADR 0015 addendum: a commit's own `attrs_hash` (if `has_attrs`) is
+// now a real outgoing reference too, same as tree_hash/parent_hashes/
+// relation_target above - a commit with attrs whose OBJ_ATTRS object
+// went missing is exactly the "missing object" failure mode this
+// file's own header comment already describes for every other
+// reference, not a new category. OBJ_ATTRS itself has no further
+// outgoing references (a flat entity_id/mode list, no hashes inside).
 
 // Marks `hash`'s object (and everything real it references) reachable
 // in `reachable[]`. A no-op if `hash` isn't in the index at all (a
@@ -78,6 +86,15 @@ U0 CheckMarkReachable(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
       U8 *rel_target = CommitRelationTarget(content);
       CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, rel_target);
     }
+    // ADR 0015: figures out `content_len` the same way every other
+    // real reader of a commit record does - `rec_len` (the archive's
+    // own length prefix, includes the type tag byte) minus 1.
+    U64 commit_rec_len = GetU64LE(rbuf, off);
+    I64 commit_content_len = commit_rec_len - 1;
+    if (CommitHasAttrs(content, commit_content_len)) {
+      U8 *attrs_hash = CommitAttrsHash(content);
+      CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, attrs_hash);
+    }
   } else if (obj_type == OBJ_TREE) {
     U32 tcount = GetU32LE(content, 0);
     I64 tpos = 4;
@@ -91,7 +108,7 @@ U0 CheckMarkReachable(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
       CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, child_hash);
     }
   }
-  // OBJ_BLOB: no outgoing references, nothing further to mark.
+  // OBJ_BLOB/OBJ_ATTRS: no outgoing references, nothing further to mark.
 }
 
 U0 HgitCheck(U8 *repo_path)
@@ -168,6 +185,21 @@ U0 HgitCheck(U8 *repo_path)
           U8 rhex[129];
           HashToHex(rel_target, rhex);
           CommPrint(1, "CHECK_BROKEN_REF relation_target_missing %s\n", rhex);
+          broken_refs++;
+        }
+      }
+      // ADR 0015: `content_len` here is `rec_len` (this loop's own
+      // length prefix, already read above, includes the type tag)
+      // minus 1 - same convention as every other content_len in this
+      // project.
+      I64 commit_content_len2 = rec_len - 1;
+      if (CommitHasAttrs(content, commit_content_len2)) {
+        U8 *attrs_hash = CommitAttrsHash(content);
+        I64 aoff;
+        if (!IndexLookup(idx_hashes, idx_offsets, idx_count, attrs_hash, &aoff)) {
+          U8 ahex[129];
+          HashToHex(attrs_hash, ahex);
+          CommPrint(1, "CHECK_BROKEN_REF commit_attrs_missing %s\n", ahex);
           broken_refs++;
         }
       }
@@ -263,6 +295,7 @@ U0 HgitCheck(U8 *repo_path)
       U8 *kind = "blob";
       if (dtype == OBJ_COMMIT) kind = "commit";
       else if (dtype == OBJ_TREE) kind = "tree";
+      else if (dtype == OBJ_ATTRS) kind = "attrs";
       U8 dhex[129];
       HashToHex(idx_hashes + zi*64, dhex);
       CommPrint(1, "CHECK_DANGLING %s %s\n", kind, dhex);

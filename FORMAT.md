@@ -1,13 +1,14 @@
-# hgit `.HGS` archive format — version 2 (draft)
+# hgit `.HGS` archive format — version 3 (draft)
 
 **Status: draft, still not frozen.** Implemented and verified
 end-to-end on real TempleOS (`src/hgit-core/Hgs.HC`,
 `src/hgit-core/Archive.HC`, `experiments/06-hgs-format/`), and by now
-carries M0 through M4's real, tested command surface (offer/merge/
-relations/nested trees and more) - well past the M0-only scope this
-line originally described. Now on version 2 (bumped from 1 - see
-"Versioning policy" below, `experiments/113-check-format-version/`) -
-no repository written with this format should be treated as durable
+carries M0 through v1.8.x's real, tested command surface (offer/merge/
+relations/nested trees/ignore rules/file attributes and more) - well
+past the M0-only scope this line originally described. Now on version
+3 (bumped from 2, itself bumped from 1 - see "Versioning policy"
+below, `experiments/113-check-format-version/`, ADR 0015) - no
+repository written with this format should be treated as durable
 across format changes until this document says a version is stable
 (see ADR 0001).
 
@@ -26,7 +27,7 @@ across format changes until this document says a version is stable
 | Offset | Size | Field | Meaning |
 |---|---|---|---|
 | 0 | 4 | magic | ASCII bytes `H` `G` `S` `0` (0x48 0x47 0x53 0x30) |
-| 4 | 2 | format_version | `U16`, currently `2` (bumped from 1 - see "Versioning policy" below) |
+| 4 | 2 | format_version | `U16`, currently `3` (bumped from 2, itself bumped from 1 - see "Versioning policy" below) |
 | 6 | 2 | reserved | Must be written as `0`. Readers must not reject a nonzero value (no meaning assigned yet) but must not assume anything about it either. |
 | 8 | 8 | object_count | `U64`, number of object records that follow |
 
@@ -77,6 +78,7 @@ before the content is hashed and stored (`src/hgit-core/Object.HC`,
 | 1 | `OBJ_BLOB` |
 | 2 | `OBJ_TREE` |
 | 3 | `OBJ_COMMIT` (hgit's own vocabulary calls the real, wired-in command `hgit offer` — the mapping this row once called "not yet designed" is now the whole real CLI command surface: `offer`/`correct`/`revert`/`reconcile`/`merge` and their `...tree` variants all produce real `OBJ_COMMIT` objects) |
+| 4 | `OBJ_ATTRS` (ADR 0015, v1.8.1 - a commit's own `entity_id -> mode` list, see "Attrs object content" below) |
 
 The tag participates in the BLAKE2b hash (matching Git's
 `"<type> <size>\0<content>"` header-in-hash approach) specifically so
@@ -180,6 +182,51 @@ per the product thesis's "stable entity ID"/"human mark" concepts;
 ADR 0004 covers the entity-ID half, this covers the relation-vocabulary
 half; author/identity itself is still not invented.
 
+`has_attrs`/`attrs_hash` (added per
+`docs/adr/0015-file-attributes-and-modes.md`, v1.8.1) are two more
+optional trailing fields, placed AFTER the relation fields for the
+same reason those were placed after the message: every existing
+accessor keeps its offset math unchanged, and this new field
+recomputes its own start offset from what came before instead of
+assuming a fixed position:
+
+```
+U8        has_attrs (0 = no non-default file mode anywhere in this
+                     commit's own tree - the common case, costs
+                     exactly one byte)
+if has_attrs != 0:
+  64 bytes attrs_hash (references a real OBJ_ATTRS object)
+```
+
+`has_attrs=0`/`attrs_hash` absent is the default for every commit
+where every tracked file is plain text and non-executable. A commit
+written before this change simply has no room for the field at all -
+detected by a real bounds check against the record's own content
+length (`CommitHasAttrs`), not a version branch, same convention as
+every other optional trailing field in this format.
+
+## Attrs object content
+
+An `OBJ_ATTRS` object's content (`src/hgit-core/Attrs.HC`, ADR 0015,
+probe 119) is a flat list, same shape convention as a tree's own entry
+list:
+
+```
+U32 count
+repeated count times:
+  U64 entity_id (LE)
+  U8  mode      (bit 0 = MODE_BINARY 0x01, bit 1 = MODE_EXECUTABLE 0x02)
+```
+
+Keyed by entity ID (ADR 0004), not name or content hash - mode stays
+independent of both, per ADR 0015's own explicit requirement. Only
+entities with a non-default (nonzero) mode are ever listed - a
+repo where every file is plain text and non-executable needs no
+`OBJ_ATTRS` object at all. A full snapshot per commit, not a diff,
+matching this format's existing "trees are full snapshots"
+philosophy - mode is recomputed fresh every offer, same as content
+hash.
+
 ## What this format deliberately does NOT have yet
 
 - ~~No merge commits tested~~ **Resolved** (`docs/adr/0011-merge.md`,
@@ -266,3 +313,18 @@ Going forward, the real discipline this policy always intended: an
 actual incompatible change bumps `format_version` and gets a
 documented migration note here, at the time it happens - not
 retroactively noticed several changes later.
+
+**v1.8.1 / ADR 0015** (`docs/adr/0015-file-attributes-and-modes.md`):
+`format_version` bumped again, 2 -> 3, following through on the
+discipline just above - this time at the point of the change, not
+retroactively. The real change: a commit object may now carry two
+optional trailing fields, `has_attrs`/`attrs_hash` (see `Commit.HC`'s
+own header comment), referencing a new object type (`OBJ_ATTRS`,
+`Attrs.HC`) that lists any tracked entity's non-default file mode
+(binary/executable). Additive and backward-compatible in both
+directions, same as the entity-ID/relation-field precedent this
+policy already established: a version-2-or-earlier commit simply has
+no room for the field at all, correctly detected via a real bounds
+check (`CommitHasAttrs`) rather than a version branch - no reader
+anywhere branches on the literal `format_version` number here either,
+same as before.

@@ -20,10 +20,11 @@ flowchart TB
         Fossil["Fossil.HC<br/>delta format + similarity<br/>(wired into Offer.HC's fuzzy rename detection)"]
         MergeBase["MergeBase.HC<br/>lowest-common-ancestor search"]
         Ignore["Ignore.HC<br/>.hgitignore matching (ADR 0014)"]
+        Attrs["Attrs.HC<br/>.hgitattributes + file modes (ADR 0015)"]
     end
     subgraph cli["src/hgit-cli — command surface"]
         Hgit["Hgit.HC<br/>the one dispatcher, Hgit(cmdline)"]
-        Offer["Offer.HC / Status.HC / History.HC / See.HC / Diff.HC<br/>(each recurses into nested trees, ADR 0010;<br/>Offer.HC/Status.HC also honor Ignore.HC, ADR 0014)"]
+        Offer["Offer.HC / Status.HC / History.HC / See.HC / Diff.HC<br/>(each recurses into nested trees, ADR 0010;<br/>Offer.HC/Status.HC also honor Ignore.HC, ADR 0014;<br/>Offer.HC/Status.HC/Diff.HC also honor Attrs.HC, ADR 0015)"]
         Merge["Merge.HC<br/>real three-way merge (ADR 0011)"]
         Check["Check.HC<br/>integrity + dangling-object detection"]
         Paths["Paths.HC<br/>named paths"]
@@ -41,6 +42,7 @@ flowchart TB
     Hgit --> Portable
     Offer --> Object
     Offer --> Ignore
+    Offer --> Attrs
     Merge --> MergeBase
     Object --> Index
     Meta --> Object
@@ -124,7 +126,8 @@ cleanly on any genuine conflict rather than attempting resolution.
   rename detection — object-store delta compression itself remains a
   separate, real decision; see `docs/adr/0008-fossil-delta-format-prototype.md`),
   `MergeBase.HC` (lowest-common-ancestor search, ADR 0011), `Ignore.HC`
-  (`.hgitignore` matching, ADR 0014).
+  (`.hgitignore` matching, ADR 0014), `Attrs.HC` (`.hgitattributes` +
+  file modes, ADR 0015).
 - `src/hgit-cli/` — the command surface: `Init.HC`, `Check.HC`,
   `WorkDir.HC`, `Paths.HC`, `Offer.HC` (+ its own `HgitOfferTree` for
   real subdirectory support, ADR 0010), `Status.HC` (+ `StatusTreeWalk`
