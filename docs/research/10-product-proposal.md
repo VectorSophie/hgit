@@ -1946,6 +1946,43 @@ hash: a root commit (0 parents, no line at all), an ordinary commit
 matching the real ours/theirs hashes in the real order). Both the
 standing regression and the full command-surface suite re-run clean.
 
+**FORMAT.md doc-accuracy sweep, and a real policy-vs-practice gap
+found.** Corrected several stale claims: the `OBJ_COMMIT` type-tag row
+still called the commit-object mapping "not yet designed" (it's now
+the entire real CLI command surface); the object-content size-limit
+paragraph still cited `ObjectPut`'s old `tagged[128]` cap (bumped to
+4096 by probe 10 long ago, then made fully dynamic by probe 105 -
+`FORMAT.md` had tracked neither change); the index section still said
+"not a hash table yet" (probe 104 built one, deliberately unwired).
+More significantly: found and documented a real, honest gap between
+this project's own stated versioning policy and actual practice -
+`format_version` has never been bumped despite at least three real,
+explicitly-labeled breaking changes to what version 1 means since
+(ADR 0004's entity-ID field, ADR 0010's recursive trees, ADR 0011's
+multi-parent commits). Caused no real problem so far (no released
+users, every test repo built fresh) but a real inconsistency, not a
+hypothetical one - logged plainly in `FORMAT.md`'s own "Versioning
+policy" section rather than left unnoticed, with no retroactive fix
+attempted here (a real design decision - what version 1 actually
+covers, or when to bump - not one to make by guessing). Doc-only
+change, no source touched.
+
+**That gap, now actually corrected.** `experiments/113-check-format-version/`
+(PASS): `Init.HC` now writes `format_version` 2 for every new repo - a
+real, deliberate line drawn under the accumulated version-1-era
+changes (entity IDs, recursive trees, multi-parent commits). Confirmed
+by direct search first that no reader anywhere branches on the literal
+version number, so this is purely a correction to what gets written,
+not a new migration mechanism. A related gap fixed alongside it: no
+real command ever actually showed `format_version` to a user - `hgit
+check` now prints it in both `CHECK_OK`/`CHECK_FAIL`. Verified: a fresh
+repo shows `format_version=2` immediately and works completely
+normally afterward (a real offer, re-checked). Backward compatibility
+confirmed, not assumed: the standing regression runs against a real,
+already-existing version-1 repo from earlier in this session and
+passes unaffected. Full command-surface suite re-run clean, every
+fresh repo it builds correctly showing `format_version=2`.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

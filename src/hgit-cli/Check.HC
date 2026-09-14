@@ -111,10 +111,16 @@ U0 HgitCheck(U8 *repo_path)
     CommPrint(1, "CHECK_WARN object_count_mismatch header=%d scanned=%d\n",
               rcount, total);
   }
+  // Probe 113 (experiments/113-check-format-version/): `format_version`
+  // was read here (and everywhere else that opens a repo) but never
+  // actually shown to a user by ANY real command - a real, previously-
+  // unnoticed gap (found while investigating FORMAT.md's own
+  // versioning-policy inconsistency) now that the version means
+  // something worth checking.
   if (ok == total) {
-    CommPrint(1, "CHECK_OK objects=%d\n", total);
+    CommPrint(1, "CHECK_OK objects=%d format_version=%d\n", total, rver);
   } else {
-    CommPrint(1, "CHECK_FAIL objects=%d ok=%d corrupt=%d\n", total, ok, total-ok);
+    CommPrint(1, "CHECK_FAIL objects=%d ok=%d corrupt=%d format_version=%d\n", total, ok, total-ok, rver);
   }
 
   // Referential integrity pass: build the same hash->offset index

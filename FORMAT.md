@@ -1,10 +1,15 @@
-# hgit `.HGS` archive format — version 1 (draft)
+# hgit `.HGS` archive format — version 2 (draft)
 
-**Status: draft, M0-stage.** Implemented and verified end-to-end on real
-TempleOS (`src/hgit-core/Hgs.HC`, `src/hgit-core/Archive.HC`,
-`experiments/06-hgs-format/`). Not yet frozen — no repository written
-with this format should be treated as durable across format changes
-until this document says version 1 is stable (see ADR 0001).
+**Status: draft, still not frozen.** Implemented and verified
+end-to-end on real TempleOS (`src/hgit-core/Hgs.HC`,
+`src/hgit-core/Archive.HC`, `experiments/06-hgs-format/`), and by now
+carries M0 through M4's real, tested command surface (offer/merge/
+relations/nested trees and more) - well past the M0-only scope this
+line originally described. Now on version 2 (bumped from 1 - see
+"Versioning policy" below, `experiments/113-check-format-version/`) -
+no repository written with this format should be treated as durable
+across format changes until this document says a version is stable
+(see ADR 0001).
 
 ## Layout
 
@@ -21,7 +26,7 @@ until this document says version 1 is stable (see ADR 0001).
 | Offset | Size | Field | Meaning |
 |---|---|---|---|
 | 0 | 4 | magic | ASCII bytes `H` `G` `S` `0` (0x48 0x47 0x53 0x30) |
-| 4 | 2 | format_version | `U16`, currently `1` |
+| 4 | 2 | format_version | `U16`, currently `2` (bumped from 1 - see "Versioning policy" below) |
 | 6 | 2 | reserved | Must be written as `0`. Readers must not reject a nonzero value (no meaning assigned yet) but must not assume anything about it either. |
 | 8 | 8 | object_count | `U64`, number of object records that follow |
 
@@ -48,10 +53,18 @@ hashing any more either: `ArchivePut`/`ArchiveVerify`/`HgsPut` all call
 `B2Hash512Any` (`Blake2b.HC`'s streaming wrapper — verified on 200- and
 300-byte messages against a host oracle, `experiments/08-blake2b-streaming/`
 and `experiments/09-wire-streaming-hash/`), not the 128-byte-capped
-`B2Hash512`. The one remaining size limit is `ObjectPut`'s own
-`tagged[128]` scratch buffer (a fixed-size-local implementation detail,
-not a format or hashing limitation) — real next work if a tagged object
-needs to exceed that.
+`B2Hash512`. **Resolved** (`experiments/105-objectput-dynamic-tag/`):
+`ObjectPut`'s own tagging scratch buffer — a fixed-size local
+implementation detail that grew from 128 to 4096 bytes over this
+project's history (see doc 06's own probe 10 entry) — is now `MAlloc`'d
+at exactly the object's own size, verified past the old 4096-byte
+ceiling with a real 10,000-byte object round-tripping through
+`ArchiveVerify`. `hgit offer`/`hgit offertree` also had their own,
+separate per-file caller-side caps (511 bytes), lifted the same way in
+`experiments/106-offer-large-file-support/` and
+`experiments/107-offertree-large-file-support/` (with real archive-
+capacity accounting to match, not just a wider buffer). No known
+object-content size limit remains anywhere in this path.
 
 ## Object typing
 
@@ -63,7 +76,7 @@ before the content is hashed and stored (`src/hgit-core/Object.HC`,
 |---|---|
 | 1 | `OBJ_BLOB` |
 | 2 | `OBJ_TREE` |
-| 3 | `OBJ_COMMIT` (hgit's own vocabulary — "offering" — will map onto this at a higher layer; not yet designed) |
+| 3 | `OBJ_COMMIT` (hgit's own vocabulary calls the real, wired-in command `hgit offer` — the mapping this row once called "not yet designed" is now the whole real CLI command surface: `offer`/`correct`/`revert`/`reconcile`/`merge` and their `...tree` variants all produce real `OBJ_COMMIT` objects) |
 
 The tag participates in the BLAKE2b hash (matching Git's
 `"<type> <size>\0<content>"` header-in-hash approach) specifically so
@@ -183,13 +196,18 @@ half; author/identity itself is still not invented.
   from a genuine on-disk directory tree, and `statustree`/`diff`/
   `see`/`check`/`merge` all correctly recurse into it. Not just the
   object model round-tripping in isolation anymore.
-- **Index is linear-search, not a hash table yet.** `src/hgit-core/Index.HC`
-  (`IndexBuild`/`IndexLookup`, `experiments/12-index/`) now answers
-  "where is the object with this hash" — verified by fully dereferencing
-  a tree entry's child hash through it back to real blob content — but
-  the lookup itself is still a linear scan, and the index isn't
-  persisted (rebuilt from a full scan every time). Real optimization,
-  not yet needed at hgit's current scale.
+- **Index is still linear-search in every real command, though a real
+  hash table now exists standalone.** `src/hgit-core/Index.HC`
+  (`IndexBuild`/`IndexLookup`, `experiments/12-index/`) answers "where
+  is the object with this hash" — verified by fully dereferencing a
+  tree entry's child hash through it back to real blob content — via a
+  linear scan, and the index isn't persisted (rebuilt from a full scan
+  every time). A real, O(1)-expected hash table
+  (`IndexBuildHashTable`/`IndexLookupHashTable`, `experiments/104-index-hash-table/`)
+  was since built and verified equivalent to the linear scan, but is
+  deliberately not wired into any real call site — no evidence yet at
+  hgit's current scale (low hundreds of objects per repo) that the
+  linear scan is a practical bottleneck.
 - **No compression or delta encoding in the object store itself.**
   Every byte of every stored object is still raw. `src/hgit-core/Fossil.HC`
   (a real, verified-reliable delta format, `docs/adr/0008-fossil-delta-format-prototype.md`)
@@ -212,11 +230,39 @@ match freshly recomputed ones. Total file size for that fixture: 170
 bytes (16-byte header + 2 × 77-byte records). See that probe's `README.md`
 for the exact commands and raw output.
 
-## Versioning policy (forward-looking, not yet exercised)
+## Versioning policy (a real gap found, then corrected)
 
 `format_version` exists so a future incompatible change bumps this
-number rather than silently breaking old archives. No migration path
-has been needed or built yet — version 1 is the only version that has
-ever existed. Per the brief's own discipline, an incompatible change
-gets a new version number and a documented migration note here, not a
-silent redefinition of what version 1 means.
+number rather than silently breaking old archives. In practice, it had
+never been bumped: `Init.HC` hardcoded `HgsWriteHeader(header, 1, 0)`
+for every new repo, despite at least three real, explicitly-labeled
+breaking changes to what version 1's own on-disk shapes mean since
+this policy was written: ADR 0004's own tree-entry format change
+(adding the 8-byte entity ID field, its own text says plainly "this is
+a real, breaking change to the tree object format"), ADR 0010's
+recursive trees (a tree entry's `child_hash` can now point at another
+tree, not just a blob), and ADR 0011's multi-parent commits. None of
+these bumped `format_version` or wrote a migration note here, despite
+this policy's own stated intent.
+
+**Corrected** (`experiments/113-check-format-version/`): `Init.HC` now
+writes `format_version` 2 for every new repo - a real, deliberate line
+drawn under the accumulated version-1-era changes above (entity IDs,
+recursive trees, multi-parent commits all now "belong" to version 2's
+own retroactive definition, rather than pretending they were part of
+an unchanged version 1). No reader anywhere branches on the literal
+version number (confirmed by direct search before this change), so
+this is purely a correction to what gets WRITTEN, not a new migration
+mechanism - no real evidence yet that one is needed (no released
+users, no repo has ever had to survive across one of these format
+changes; every version-1 repo any test/probe in this project has ever
+built still reads back fine, unaffected). `hgit check` now also prints
+`format_version=%d` in its own output (`CHECK_OK`/`CHECK_FAIL`) - the
+version was always read internally but never actually shown to a user
+by any real command until now, a real, separate gap this same
+investigation surfaced.
+
+Going forward, the real discipline this policy always intended: an
+actual incompatible change bumps `format_version` and gets a
+documented migration note here, at the time it happens - not
+retroactively noticed several changes later.

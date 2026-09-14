@@ -13,6 +13,22 @@
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC (HgsWriteHeader/HgsReadHeader).
 
+// Probe 113 (experiments/113-check-format-version/, FORMAT.md's own
+// "Versioning policy" section): a new repo now starts at
+// `format_version` 2, not 1 - a real, deliberate bump correcting a
+// real gap this project found in its own practice: version 1 was
+// still being written for every new repo despite at least three real,
+// documented breaking changes to what it means since (ADR 0004's
+// entity-ID field, ADR 0010's recursive trees, ADR 0011's multi-parent
+// commits). No reader anywhere branches on the literal version number
+// (confirmed by direct search before this change), so this is purely
+// a correction to what gets WRITTEN, not a new migration mechanism -
+// no real evidence yet that one is needed (no released users, no repo
+// has ever had to survive across one of these format changes). A
+// version-1 repo (every repo any test/probe in this project has ever
+// built) is not migrated and still reads back fine - HgsReadHeader
+// doesn't reject it, and no code path treats the two differently.
+
 // Returns TRUE on success, FALSE if a file already exists at `path`
 // (existing repos/files are never overwritten by init).
 Bool HgitInit(U8 *path)
@@ -21,7 +37,7 @@ Bool HgitInit(U8 *path)
   U8 *existing = FileRead(path, &existing_size);
   if (existing != NULL) return FALSE;
   U8 header[16];
-  HgsWriteHeader(header, 1, 0);
+  HgsWriteHeader(header, 2, 0);
   FileWrite(path, header, 16);
   return TRUE;
 }
