@@ -1,0 +1,59 @@
+=== BEFORE FIX (parent[0]-only walk): real, wrong MERGE_CONFLICT ===
+DISPATCH_OK init C:/Home/P109Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new Y
+DISPATCH_OK path_go Y
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+P109_MERGE_ONE_BEGIN
+MERGE_OK
+P109_MERGE_ONE_END
+DISPATCH_OK path_go Y
+DISPATCH_OK path_new Z
+DISPATCH_OK path_go Z
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+P109_MERGE_TWO_BEGIN
+MERGE_CONFLICT P109Y.txt
+MERGE_ABORTED conflicts=1
+P109_MERGE_TWO_END
+P109_FINAL_SEE_BEGIN
+SEE_COMMIT ts=26778864 parents=1 msg=main_commit_3
+SEE_TREE entries=4
+
+=== AFTER FIX (all-parents ancestor-set BFS): correct MERGE_OK, real edit adopted ===
+DISPATCH_OK init C:/Home/P109Repo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new Y
+DISPATCH_OK path_go Y
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+P109_MERGE_ONE_BEGIN
+MERGE_OK
+P109_MERGE_ONE_END
+DISPATCH_OK path_go Y
+DISPATCH_OK path_new Z
+DISPATCH_OK path_go Z
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+P109_MERGE_TWO_BEGIN
+MERGE_OK
+P109_MERGE_TWO_END
+P109_FINAL_SEE_BEGIN
+SEE_COMMIT ts=26917067 parents=2 msg=merge Z
+SEE_TREE entries=4
+  entry type=1 id=a025c5dc50fb342b name=P109Main2.txt
+  entry type=1 id=a025c5dc50fb342b name=P109Main3.txt
+  entry type=1 id=d7d181fad7db3772 name=P109Top.txt
+  entry type=1 id=d7d181fad7db3772 name=P109Y.txt
+SEE_END
+P109_FINAL_SEE_END
+PASS p109_merge_base_stale_test
+COMPILE_OK
+D_DONE
+DIFF_MODIFIED P109Y.txt
+DIFF_END

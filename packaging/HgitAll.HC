@@ -2061,102 +2061,155 @@ Bool FossilDeltaApply(U8 *source, I64 source_len, U8 *delta, I64 delta_len,
 // before any real three-way tree merge can happen. Verified standalone
 // (experiments/98-merge-base/) before any real command wires it in.
 //
-// Walks each commit's own parent[0] chain backward - the same
-// single-parent-chain-following convention `History.HC`/
-// `HistoryDoc.HC`/`Graph.HC`'s own fork-point search already use (all
-// three explicitly, honestly document this as their own real,
-// existing limitation, not new here). Correct for the real, common
-// case this project's own history shape actually produces: a path
-// forks once, directly, from another path's own chain (`Paths.HC`'s
-// own `PathNew` copies the current path's HEAD at creation time, so a
-// real, findable single fork point always exists on a direct ancestor
-// path). A real, deliberate limitation for genuine criss-cross
-// histories (multiple independent forks/merges producing ambiguous
-// multiple lowest common ancestors, needing something like Git's own
-// "recursive" strategy) - not attempted here, no evidence yet hgit's
-// own real usage needs it.
+// Probe 109 (experiments/109-merge-base-stale-ancestor/): this
+// function originally walked each commit's own parent[0] chain only -
+// documented at the time as a deliberate limitation for "genuine
+// criss-cross histories," with "no evidence yet hgit's own real usage
+// needs" anything stronger. That was wrong once real merge commits
+// existed: parent[0]-only isn't just ambiguous in a criss-cross case,
+// it's flatly WRONG the moment either side's history passes through a
+// real merge commit at all - a merge's own SECOND (and later) parent
+// is invisible to a parent[0]-only walk, so a real, more-recent common
+// ancestor reachable only through that side is silently skipped in
+// favor of an older, stale one. Probe 109 built a real, minimal
+// reproduction (two merges, the second one merging a path forked from
+// the FIRST merge's non-"ours" side) and confirmed a real, wrong
+// `MERGE_CONFLICT` where a clean, correct three-way merge should have
+// happened - not a hypothetical, an actual observed failure.
+//
+// Fixed here: a real ancestor-SET walk considering EVERY parent (not
+// just parent[0]) from each side. `CollectAllAncestors` does a real
+// BFS from `hash_a` over the full parent DAG, producing hash_a's
+// complete ancestor set. `FindMergeBase` itself then does a real BFS
+// from `hash_b`, level by level over ALL its own parents too,
+// returning the first node found in hash_a's ancestor set - the first
+// match during a breadth-first walk from b is the closest (to b)
+// common ancestor, a real, practical proxy for "most recent" that
+// correctly reaches a merge's non-"ours" parent, not the exact
+// Git-style "recursive merge-base" algorithm (which itself falls back
+// to a virtual merge of multiple candidate bases in a genuine
+// criss-cross case). Genuine criss-cross ambiguity (multiple real
+// lowest common ancestors, no single correct answer) remains a real,
+// separate, deliberately out-of-scope limitation - unrelated to and
+// not fixed by this probe, which only fixes "ignoring real ancestry
+// that was reachable all along."
 //
 // Depends on Canon.HC, Object.HC, Commit.HC, Index.HC.
+
+// Real, minimal linear-scan "hash set" helpers - the same style this
+// project already uses for name/hash arrays throughout (Status.HC's
+// own new_matched/del_matched, etc.), not a new data structure. Both
+// take a MAlloc'd `set` (idx_count*64+64 bytes, sized by the same real
+// upper bound - total distinct objects in the repo - every other
+// dynamic buffer in this file already uses).
+Bool HashSetContains(U8 *set, I64 count, U8 *hash)
+{
+  I64 i, j;
+  for (i=0; i<count; i++) {
+    Bool same = TRUE;
+    for (j=0; j<64; j++) if (set[i*64+j] != hash[j]) same = FALSE;
+    if (same) return TRUE;
+  }
+  return FALSE;
+}
+
+// Adds `hash` to `set` if not already present. Returns TRUE if it was
+// actually added (a real new node this BFS hasn't visited yet).
+Bool HashSetAdd(U8 *set, I64 *count, U8 *hash)
+{
+  if (HashSetContains(set, *count, hash)) return FALSE;
+  I64 i;
+  for (i=0; i<64; i++) set[(*count)*64+i] = hash[i];
+  (*count)++;
+  return TRUE;
+}
+
+// A real BFS from `start_hash` over EVERY parent edge (not just
+// parent[0]) - the complete ancestor set (including `start_hash`
+// itself). `out_hashes` doubles as both the growing result set and
+// the BFS frontier (append-only, scanned by index `qi` below) - no
+// separate queue needed since nothing is ever removed, only appended.
+U0 CollectAllAncestors(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
+                       U8 *start_hash, U8 *out_hashes, I64 *out_count)
+{
+  *out_count = 0;
+  HashSetAdd(out_hashes, out_count, start_hash);
+  I64 qi = 0;
+  while (qi < *out_count) {
+    U8 *cur = out_hashes + qi*64;
+    I64 off_rel;
+    if (IndexLookup(idx_hashes, idx_offsets, idx_count, cur, &off_rel)) {
+      I64 off = 16 + off_rel;
+      if (rbuf[off+8] == OBJ_COMMIT) {
+        U8 *content = rbuf + off + 9;
+        U8 pcount = CommitParentCount(content);
+        U8 pidx;
+        for (pidx=0; pidx<pcount; pidx++) {
+          U8 *parent = CommitParentHash(content, pidx);
+          HashSetAdd(out_hashes, out_count, parent);
+        }
+      }
+    }
+    qi++;
+  }
+}
 
 Bool FindMergeBase(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
                    U8 *hash_a, U8 *hash_b, U8 *out_base_hash)
 {
-  // Walk chain A backward from its own tip, collecting every real
-  // ancestor (including hash_a itself). MAlloc'd from idx_count - the
-  // real upper bound on how many distinct commits could possibly
-  // exist in this repo (no guessed cap, same discipline ADR 0007
-  // established for every other dynamic buffer in this project).
-  U8 *chain_a = MAlloc(idx_count*64 + 64);
-  I64 chain_a_count = 0;
-  U8 cur_a[64];
-  I64 i;
-  for (i=0; i<64; i++) cur_a[i] = hash_a[i];
-  Bool has_cur_a = TRUE;
-  while (has_cur_a) {
-    for (i=0; i<64; i++) chain_a[chain_a_count*64+i] = cur_a[i];
-    chain_a_count++;
-    I64 off_rel;
-    if (!IndexLookup(idx_hashes, idx_offsets, idx_count, cur_a, &off_rel)) {
-      has_cur_a = FALSE;
-    } else {
-      I64 off = 16 + off_rel;
-      if (rbuf[off+8] != OBJ_COMMIT) {
-        has_cur_a = FALSE;
-      } else {
-        U8 *content = rbuf + off + 9;
-        U8 pcount = CommitParentCount(content);
-        if (pcount > 0) {
-          U8 *parent = CommitParentHash(content, 0);
-          for (i=0; i<64; i++) cur_a[i] = parent[i];
-          has_cur_a = TRUE;
-        } else {
-          has_cur_a = FALSE;
-        }
-      }
-    }
-  }
+  // hash_a's complete ancestor set (every real parent edge, not just
+  // parent[0]) - MAlloc'd from idx_count, the same real upper bound
+  // (total distinct objects in this repo) every other dynamic buffer
+  // in this codebase already uses (no guessed cap, ADR 0007's own
+  // discipline).
+  U8 *ancestors_a = MAlloc(idx_count*64 + 64);
+  I64 ancestors_a_count = 0;
+  CollectAllAncestors(rbuf, idx_hashes, idx_offsets, idx_count,
+                      hash_a, ancestors_a, &ancestors_a_count);
 
-  // Walk chain B backward from its own tip; the first commit that's
-  // also in chain_a is the lowest common ancestor along this path.
-  U8 cur_b[64];
-  for (i=0; i<64; i++) cur_b[i] = hash_b[i];
-  Bool has_cur_b = TRUE;
+  // A real BFS from hash_b, level by level, over EVERY parent edge -
+  // `queue_b` doubles as both the visited set (so a diamond-shaped
+  // history never re-expands the same node twice) and the frontier,
+  // same append-and-scan technique as CollectAllAncestors above. The
+  // first node found in hash_a's ancestor set during this breadth-
+  // first walk is the closest (to b) common ancestor - not
+  // necessarily THE unique lowest common ancestor in a genuine
+  // criss-cross case (still a real, separate, undecided question),
+  // but always at least as correct as the old parent[0]-only walk,
+  // and correctly reaches a merge's non-"ours" parent, which the old
+  // walk never did.
+  U8 *queue_b = MAlloc(idx_count*64 + 64);
+  I64 queue_b_count = 0;
+  HashSetAdd(queue_b, &queue_b_count, hash_b);
+
   Bool found = FALSE;
-  while (has_cur_b && !found) {
-    I64 ai;
-    for (ai=0; ai<chain_a_count && !found; ai++) {
-      Bool same = TRUE;
+  I64 qi = 0;
+  while (qi < queue_b_count && !found) {
+    U8 *cur = queue_b + qi*64;
+    if (HashSetContains(ancestors_a, ancestors_a_count, cur)) {
       I64 hi;
-      for (hi=0; hi<64; hi++) if (chain_a[ai*64+hi] != cur_b[hi]) same = FALSE;
-      if (same) {
-        for (hi=0; hi<64; hi++) out_base_hash[hi] = cur_b[hi];
-        found = TRUE;
-      }
-    }
-    if (!found) {
-      I64 off_rel_b;
-      if (!IndexLookup(idx_hashes, idx_offsets, idx_count, cur_b, &off_rel_b)) {
-        has_cur_b = FALSE;
-      } else {
-        I64 off_b = 16 + off_rel_b;
-        if (rbuf[off_b+8] != OBJ_COMMIT) {
-          has_cur_b = FALSE;
-        } else {
-          U8 *content_b = rbuf + off_b + 9;
-          U8 pcount_b = CommitParentCount(content_b);
-          if (pcount_b > 0) {
-            U8 *parent_b = CommitParentHash(content_b, 0);
-            for (i=0; i<64; i++) cur_b[i] = parent_b[i];
-            has_cur_b = TRUE;
-          } else {
-            has_cur_b = FALSE;
+      for (hi=0; hi<64; hi++) out_base_hash[hi] = cur[hi];
+      found = TRUE;
+    } else {
+      I64 off_rel;
+      if (IndexLookup(idx_hashes, idx_offsets, idx_count, cur, &off_rel)) {
+        I64 off = 16 + off_rel;
+        if (rbuf[off+8] == OBJ_COMMIT) {
+          U8 *content = rbuf + off + 9;
+          U8 pcount = CommitParentCount(content);
+          U8 pidx;
+          for (pidx=0; pidx<pcount; pidx++) {
+            U8 *parent = CommitParentHash(content, pidx);
+            HashSetAdd(queue_b, &queue_b_count, parent);
           }
         }
       }
+      qi++;
     }
   }
 
-  Free(chain_a);
+  Free(ancestors_a);
+  Free(queue_b);
   return found;
 }
 // Init.HC — `hgit init`: create a new, empty repository.
@@ -6309,7 +6362,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.7.4"
+#define HGIT_VERSION "1.7.5"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing

@@ -136,7 +136,19 @@ established incremental-ADR pattern (ADR 0010's own precedent):**
   conflict-marker format, no partial commit.
 - Handle real criss-cross histories with ambiguous multiple lowest
   common ancestors - `FindMergeBase`'s own already-documented
-  limitation (probe 98), unchanged here.
+  limitation (probe 98), still real and unchanged. **A related but
+  DIFFERENT limitation was found and fixed since** (probe 109,
+  `experiments/109-merge-base-stale-ancestor/`): the original
+  parent[0]-only chain walk wasn't just ambiguous in a rare criss-cross
+  case, it was flatly WRONG the moment either side's history passed
+  through any real merge commit at all - a merge's own second parent
+  was invisible to it, causing a real, confirmed, reproduced false
+  `MERGE_CONFLICT` where a clean merge should have happened.
+  `MergeBase.HC` now does a real ancestor-set BFS over every parent
+  (not just index 0) from both sides. Genuine multi-LCA criss-cross
+  ambiguity remains exactly as real and unaddressed as this bullet
+  already said - this fix only stops ignoring real, unambiguous
+  ancestry that was reachable all along.
 - Merge rename information across the two sides (e.g., recognizing
   that `theirs` renamed a file `ours` also edited under its old name)
   - each side's own tree is compared purely by entry NAME, the same
@@ -161,4 +173,7 @@ established incremental-ADR pattern (ADR 0010's own precedent):**
 - Real usage of criss-cross path histories (a path forking from a
   path that itself forked from `main`, then merging in an order that
   produces genuine ambiguity) - not yet observed in any real workflow
-  this project has built.
+  this project has built. (Probe 109 confirms the underlying algorithm
+  is now at least a real, all-parents ancestor-set BFS rather than a
+  parent[0]-only chain, so this remaining gap is specifically about
+  multi-LCA ambiguity, not about ignoring reachable ancestry.)

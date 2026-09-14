@@ -1866,6 +1866,38 @@ nothing else), including nested inside a real subdirectory via
 Both the standing regression and the full command-surface suite
 re-run clean.
 
+**A real, confirmed correctness bug in `FindMergeBase`, found and
+fixed.** `experiments/109-merge-base-stale-ancestor/` (PASS): ADR
+0011's own documented "criss-cross ambiguity, no evidence yet needed"
+stance turned out to understate the real risk once actually tested -
+the parent[0]-only chain walk isn't just ambiguous in a rare
+criss-cross case, it's flatly WRONG the moment either side's history
+passes through ANY real merge commit at all, since a merge's own
+second parent is invisible to it. Built a real, minimal reproduction:
+a path forking from another path's own PRE-merge commit, later merged
+back after that other path had already been merged once - the TRUE
+common ancestor (reachable only via the earlier merge's second parent)
+gets replaced by a stale, older root, producing a confirmed, real,
+wrong `MERGE_CONFLICT` where a clean auto-merge should happen (not a
+hypothetical - directly observed: `MERGE_CONFLICT`/`MERGE_ABORTED`
+before the fix, `MERGE_OK` with the correct edit adopted after, same
+scenario, same repo).
+
+Fixed: `MergeBase.HC` rewritten to do a real ancestor-SET BFS over
+EVERY parent (not just index 0) from both sides, backed by two small
+reusable hash-set helpers. Genuine multi-LCA criss-cross ambiguity
+remains a real, separate, still-undecided limitation (ADR 0011's own
+still-accurate caveat) - this fix only stops ignoring real,
+unambiguous ancestry that was reachable all along. A real HolyC quirk
+caught by `tools/lint-package.sh` before QEMU: a loop variable named
+`pi` collides with TempleOS's own reserved `pi` constant (this
+project's own previously-documented quirk) - renamed to `pidx`.
+Verified the fix produces the SEMANTICALLY correct result, not just
+"no conflict": `hgit diff` against the merge's own first parent
+confirms the real edit was actually adopted. Full command-surface
+suite (including its own existing merge/fast-forward cases) and the
+standing regression both re-run clean.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided
