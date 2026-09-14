@@ -100,6 +100,14 @@ ordinary releases.
   Unlicense) made this choice explicitly rather than leaving it
   unstated). Logged here rather than silently added with a guessed
   choice, or silently left unnoticed.
+- **A smaller, related finding from the same check**: the real GitHub
+  repo's own topics and homepage URL are both unset (`gh repo view`
+  confirms `repositoryTopics: null`, `homepageUrl: ""`) - a minor
+  discoverability gap, not a legal one. Left unset rather than set
+  unilaterally, the same reasoning as repo settings generally (a real
+  change to the project's own public presentation, not a pure
+  documentation fix) - flagged for the project owner, not acted on
+  here.
 
 ## Architectural implications so far
 
