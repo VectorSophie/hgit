@@ -124,6 +124,23 @@ ordinary releases.
   fetchable and byte-identical. This is a release-asset fix (GitHub's
   own release storage), not a git commit - no source or history
   touched.
+- **A related, real but harmless consistency check**: verified every
+  real git tag's own `HGIT_VERSION` (embedded in the source at that
+  exact commit) matches the tag name, across all 30 tags. Every real
+  1.x release (v1.0.0 onward) is perfectly consistent. Pre-1.0 tags
+  (v0.3.0-v0.12.0) predate `HGIT_VERSION` existing at all (a real,
+  already-documented fact, not a bug - see this doc's own "Done"
+  entries above). One genuine, minor, historical discrepancy found:
+  `v0.14.0`'s own tagged commit still carries `HGIT_VERSION "0.13.0"`
+  internally - the tag was placed on a real research commit, not the
+  version-bump commit that (per git history) came slightly later.
+  Harmless (nobody downloads a pre-1.0 tag expecting `hgit version` to
+  self-report anything meaningful this far back) and not worth
+  disturbing old history to retroactively fix - logged as a real,
+  honest footnote, not acted on. Every release since has kept this
+  exactly consistent (confirmed directly, not assumed) - the modern
+  "bump version, rebuild, then tag" discipline already fixed this
+  class of issue going forward.
 
 ## Architectural implications so far
 
