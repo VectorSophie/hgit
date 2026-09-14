@@ -17,10 +17,26 @@ syntactic/semantic delta between HolyC and ZealC has not been read yet
 
 ## Unresolved risk
 
-- "Networking capabilities... under way" is vague — doesn't establish
+- ~~"Networking capabilities... under way" is vague — doesn't establish
   whether ZealOS networking is usable enough today to be a viable
-  `hgit-transport` target, or purely aspirational. Needs the actual
-  network driver/stack source and a running test, not the README.
+  `hgit-transport` target, or purely aspirational.~~ **Checked directly
+  against real, current primary source (2026-09-14)**: the real
+  `Zeal-Operating-System/ZealOS` repo's own `src/Kernel` directory
+  (fetched live via the GitHub API, not a cached description) contains
+  `BlkDev`, `Memory`, and `SerialDev` subdirectories, `PCI.ZC`/
+  `PCIBIOS.ZC` (bus enumeration only), and no `Net`/networking
+  directory or file of any kind. The project's own current features
+  page (`zeal-operating-system.github.io/Doc/Features.DD.html`) doesn't
+  mention networking at all, and the README still lists "network card
+  drivers and a networking stack" under "features in development" —
+  same real status as when this doc was first written, not stale, just
+  now independently confirmed against the actual source tree rather
+  than only the README's own summary claim. Real conclusion: ZealOS
+  networking is still purely aspirational, zero real source exists yet
+  — not a viable `hgit-transport` target today, and this question is
+  moot regardless per doc 10's own resolution (`hgit export`/`import`,
+  plain local file copies, needed no network transport at all - see
+  the main risk register).
 - ZealC vs HolyC compatibility is the load-bearing question for the
   "shared core without conditional chaos" goal in the brief. Unverified.
 - Whether `templeos-devkit` (see doc 08) builds ZealOS in a way that would
@@ -39,8 +55,13 @@ syntactic/semantic delta between HolyC and ZealC has not been read yet
 
 ## Not yet done
 
-VCS-comparison-weight networking source reading, ZealOS `Kernel`/driver
-directory inspection, and a ZealOS boot probe analogous to
-`experiments/00-qemu-boot/` (same method, different ISO — the
-`templeos-devkit` `make setup` path fetches a ~44MB ZealOS BIOS ISO
-automatically, per doc 08).
+~~ZealOS `Kernel`/driver directory inspection~~ **Done** (2026-09-14,
+see "Unresolved risk" above) - no networking source exists, real
+question answered without needing a running probe. A ZealOS boot
+probe analogous to `experiments/00-qemu-boot/` (same method, different
+ISO — the `templeos-devkit` `make setup` path fetches a ~44MB ZealOS
+BIOS ISO automatically, per doc 08) remains genuinely not done - real,
+separate work if this project ever needs to target ZealOS specifically
+rather than TempleOS, no evidence of that need yet (hgit's own real
+target has stayed TempleOS throughout). ZealC-vs-HolyC compatibility
+also remains unread.

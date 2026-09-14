@@ -6,6 +6,13 @@ chronological record) or the ADRs in `docs/adr/`. It exists because
 that log is now long enough that "where do things actually stand"
 deserves its own answer, separate from "what happened in what order."
 
+**The next real phase of work is `docs/ROADMAP-v1.8.md`** - the
+project owner's own scoped brief for a v1.8.x "usability series"
+(ignore rules, minimal attributes/modes, a complete three-way merge,
+conflicts as persistent repository data, and the CLI/DolDoc UX to use
+all of it). Adopted, not yet started as of this snapshot - read that
+file before picking a next task once this phase begins.
+
 ## The one-paragraph version
 
 hgit is a real, working, TempleOS-native version control tool: content-

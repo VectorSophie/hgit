@@ -2031,6 +2031,20 @@ one. Also fixed a real stale claim found while cross-checking doc
 13 ADRs exist now) and linked the new status doc from README and doc
 00. Resuming the normal loop next iteration.
 
+**`hgit export`/`hgit import` verified against a real merge commit and
+multiple named paths.** `experiments/116-export-import-with-merge-and-paths/`
+(PASS): `Portable.HC`'s whole-file byte copy was never directly tested
+against a repo with a real merge commit AND more than one real path
+with its own distinct HEAD. No bug expected (a raw byte copy can't be
+confused by specific content) and none found: both `main` (post-merge)
+and `feature` (its own separate, never-advanced HEAD) survive the
+export byte-for-byte; `hgit check` on the export reports everything
+intact; the operation log survived too (`undo` on the exported copy
+correctly restores its own `main` HEAD); and undoing the export was
+confirmed to leave the ORIGINAL repo's own HEAD completely unaffected
+- a real, independent copy, not a shared reference. No source change
+needed.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided
