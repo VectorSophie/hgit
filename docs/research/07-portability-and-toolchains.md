@@ -137,8 +137,14 @@ rebuilds `packaging/HgitAll.HC` fresh and fails if that differs from
 what's committed - catching the real, human mistake this project has
 always relied on itself remembering not to make (changing source
 without rebuilding the package before committing). Does not attempt
-real QEMU verification in CI - no CI-feasible path exists yet for that
-(see doc 08) - this closes only the host-side half of the gap.
+real QEMU verification in CI - genuinely more plausible than it first
+looks (TCG-only boot, no KVM needed, a small 17MB ISO - see doc 08's
+own "Not yet done" #5 for the real, evidence-backed feasibility note),
+but real, non-trivial infrastructure (a persistent disk-image caching
+strategy across ephemeral CI runners, visual-not-just-text install
+automation) makes it a genuinely separate, larger project, not
+something to bolt onto this workflow - this closes only the host-side
+half of the gap, deliberately.
 **Verified with a real run, not just a green checkmark**: the
 workflow's first-ever run (`gh run view`, run id `34818692577`)
 genuinely cloned `templeos-devkit` fresh, built `holycc` via `cargo

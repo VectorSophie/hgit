@@ -117,6 +117,27 @@ unmodified on this Linux host.
 4. Malformed/adversarial input tests (truncated archive, cyclical delta,
    oversized length field) — deferred until there's an actual decoder to
    attack.
+5. **Real QEMU/TempleOS boot-and-test automation in CI** - genuinely
+   more plausible than it first looks (2026-09-14 re-check, prompted by
+   adding host-side lint CI, `.github/workflows/lint.yml`): probe 00's
+   own real finding - TempleOS boots correctly under plain QEMU/TCG, no
+   KVM/hardware virtualization needed - is exactly the enabling fact a
+   standard GitHub Actions `ubuntu-latest` runner needs (no nested
+   virtualization available there either), and the official ISO is a
+   small, fast 17MB download. **But not a quick add**, checked honestly
+   rather than assumed either way: probe 01's own real install
+   automation needs VISUAL screendump-based polling (not just text) to
+   drive the installer's own prompts, found a real, empirically-tuned
+   timing quirk (a ~45-60s post-boot settle wait, not a fixed sleep) that
+   may not transfer cleanly to a CI runner's own different real
+   performance characteristics, and - the biggest real blocker - needs a
+   PERSISTENT installed disk image to skip re-running that install on
+   every single CI run; `*.qcow2` is deliberately gitignored in this
+   repo for size reasons, so a real CI version would need its own
+   caching strategy for a real, multi-GB artifact, not yet designed or
+   sized. A real, well-scoped future project on its own, not something
+   to bolt onto the existing lint workflow - logged here with real
+   evidence for whoever picks it up next, not attempted in this pass.
 
 ## Architectural implications so far
 
