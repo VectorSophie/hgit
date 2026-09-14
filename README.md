@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/VectorSophie/hgit/releases/latest"><img src="https://img.shields.io/github/v/release/VectorSophie/hgit?label=release&color=blue" alt="latest release"></a>
+  <a href="https://github.com/VectorSophie/hgit/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/VectorSophie/hgit/lint.yml?branch=main&label=lint" alt="host-side lint status"></a>
   <a href="docs/research/01-templeos-holyc.md"><img src="https://img.shields.io/badge/language-HolyC-8B0000" alt="written in HolyC"></a>
   <a href="docs/research/08-qemu-testing.md"><img src="https://img.shields.io/badge/platform-TempleOS-000000" alt="native TempleOS"></a>
   <a href="docs/research/08-qemu-testing.md"><img src="https://img.shields.io/badge/tested-real%20QEMU-brightgreen" alt="tested on real QEMU"></a>
