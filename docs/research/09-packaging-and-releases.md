@@ -85,6 +85,22 @@ ordinary releases.
   genuine, dated dead end (`docs/research/failed-approaches.md`)
   rather than hidden or overclaimed.
 
+- **A real, currently-open gap, found while checking release hygiene
+  (2026-09-14): this repository has no `LICENSE` file of any kind.**
+  Every real GitHub release (v0.3.0 through v1.8.0) has shipped without
+  one. This is a real legal/distribution question, not a technical
+  one - which license (if any) to apply is the project owner's own
+  decision to make deliberately, not something to pick by guessing (a
+  permissive choice like MIT/BSD/Unlicense, a copyleft choice like
+  GPL, or a deliberate "no license, all rights reserved" stance are
+  all real, different choices with real different consequences for
+  anyone who might want to reuse or fork this code - several of the
+  third-party tools this project itself depends on/studied
+  (`holyc-parser`: Unlicense; `holyc-lang`: BSD-2-Clause; ZealOS:
+  Unlicense) made this choice explicitly rather than leaving it
+  unstated). Logged here rather than silently added with a guessed
+  choice, or silently left unnoticed.
+
 ## Architectural implications so far
 
 - No packaging redesign needed - the existing single-file concatenation
