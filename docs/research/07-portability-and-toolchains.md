@@ -123,6 +123,23 @@ for `continue`, no runtime/execution checking at all, and its built-ins
 manifest is incomplete - but it's a real, verified net time-saver for
 the class of errors it does catch.
 
+**Now also automated in real CI** (2026-09-14,
+`.github/workflows/lint.yml`): this project had no CI at all until
+now, despite the lint step above being cheap, fast, and QEMU-free -
+exactly the kind of check that belongs in CI rather than only being
+run by hand. A real, previously-undocumented wrinkle the workflow had
+to account for: `holyc-parser` (via `experiments/templeos-devkit/`) is
+deliberately NOT vendored into hgit's own git history (see
+`.gitignore`'s own comment) - so unlike checking out this repo itself,
+CI needs a separate step to clone `github.com/rshtirmer/templeos-devkit`
+before `tools/lint-package.sh` can run at all. The workflow also
+rebuilds `packaging/HgitAll.HC` fresh and fails if that differs from
+what's committed - catching the real, human mistake this project has
+always relied on itself remembering not to make (changing source
+without rebuilding the package before committing). Does not attempt
+real QEMU verification in CI - no CI-feasible path exists yet for that
+(see doc 08) - this closes only the host-side half of the gap.
+
 ## Unresolved risk
 
 - `holyc-parser` cannot execute anything — it only validates syntax/basic

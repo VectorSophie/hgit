@@ -1,0 +1,65 @@
+name: host-side lint
+
+# Real, disjoint infrastructure gap found and closed (2026-09-14): this
+# repo had no CI at all, despite already having a real, fast,
+# QEMU-free verification step (tools/lint-package.sh, ADR-less but
+# documented in docs/research/07-portability-and-toolchains.md) that
+# every real commit in this project's own history has already been run
+# through by hand before pushing. This workflow just runs the same
+# real check automatically, catching what tools/lint-package.sh would
+# have caught, on every push/PR - it does not replace the real QEMU
+# ground truth (packaging/HgitAll.HC still needs a real TempleOS boot
+# to actually prove a change works, which this project has no
+# CI-feasible way to automate - see docs/research/08-qemu-testing.md),
+# only the host-side half of this project's own established two-tier
+# model.
+#
+# A real, previously-undocumented dependency this workflow had to
+# account for: tools/lint-package.sh needs holyc-parser
+# (github.com/rshtirmer/templeos-devkit), but that repo is deliberately
+# NOT vendored into hgit's own git history (see .gitignore's own
+# comment) - so unlike every other tool here, it has to be cloned
+# separately, not just checked out with this repo.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out hgit
+        uses: actions/checkout@v4
+
+      - name: Check out templeos-devkit (holyc-parser's real source, not vendored - see .gitignore)
+        uses: actions/checkout@v4
+        with:
+          repository: rshtirmer/templeos-devkit
+          path: experiments/templeos-devkit
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            experiments/templeos-devkit/holyc-parser/target
+          key: holyc-parser-${{ runner.os }}-${{ hashFiles('experiments/templeos-devkit/holyc-parser/Cargo.lock') }}
+
+      - name: Rebuild packaging/HgitAll.HC and confirm it's not stale
+        run: |
+          bash tools/build-package.sh
+          if ! git diff --exit-code -- packaging/HgitAll.HC; then
+            echo ""
+            echo "packaging/HgitAll.HC is out of date - a source file changed without rebuilding the package. Run 'bash tools/build-package.sh' and commit the result."
+            exit 1
+          fi
+
+      - name: Run tools/lint-package.sh
+        run: bash tools/lint-package.sh
