@@ -139,6 +139,14 @@ always relied on itself remembering not to make (changing source
 without rebuilding the package before committing). Does not attempt
 real QEMU verification in CI - no CI-feasible path exists yet for that
 (see doc 08) - this closes only the host-side half of the gap.
+**Verified with a real run, not just a green checkmark**: the
+workflow's first-ever run (`gh run view`, run id `34818692577`)
+genuinely cloned `templeos-devkit` fresh, built `holycc` via `cargo
+build --release`, rebuilt `packaging/HgitAll.HC` from source, confirmed
+it matched the already-committed file, and ran the real lint pass -
+`lint-package.sh: no real errors (only the three known built-in-manifest
+gaps, if any) - safe to push`, the exact same output this project's own
+local runs already produce, now happening automatically.
 
 ## Unresolved risk
 
