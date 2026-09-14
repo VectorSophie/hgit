@@ -174,10 +174,24 @@ of its own claims were no longer true):
   chunking corpus still entirely unstarted - no evidence yet that
   hgit's own real repo sizes (low hundreds of objects, well under a
   megabyte) need it.
-- No RedSea/contiguous-file-storage constraints verified against actual
-  kernel source (only the philosophy doc's mention so far, per doc 01)
-  - though the risk register's own real, repeated evidence (`FileWrite`
-  transparently handling both growth and shrinkage across every real
-  command, `experiments/14-file-growth/`, `30-oplog-undo/`, and every
-  probe since) has made this a low-priority gap in practice, even
-  without reading the kernel source directly.
+- ~~No RedSea/contiguous-file-storage constraints verified against
+  actual kernel source~~ **Resolved** (2026-09-14, real primary source
+  read directly - `Kernel/BlkDev/FileSysRedSea.HC`'s own
+  `RedSeaFileWrite`/`RedSeaFilesDel`, not inferred from behavior alone
+  this time): confirms exactly WHY `FileWrite` transparently handles
+  both growth and shrinkage, and it's not incremental resizing at all.
+  `RedSeaFileWrite` unconditionally deletes any existing file of the
+  same name first (`RedSeaFilesDel`), allocates a BRAND NEW, exactly-
+  sized contiguous cluster range for the new content (`ClusAlloc(dv,
+  0, blk_cnt, TRUE) //Always contiguous`, the comment's own words), and
+  writes the whole new content in one shot - never resizing an
+  existing allocation in place. `RedSeaFilesDel` genuinely frees the
+  old allocation (`RedSeaFreeClus`) rather than leaking it, confirmed
+  in the same read. This is the real, authoritative mechanism behind
+  this project's own long-standing empirical observation (`FileWrite`
+  "transparently handling growth and shrinkage," `experiments/14-file-growth/`,
+  `30-oplog-undo/`, and every probe since) - not a mystery anymore, a
+  real, confirmed kernel-level fact: every `.hgs`/`.hgs.m` rewrite this
+  project performs is a full delete-and-reallocate, not an in-place
+  resize, which is exactly why growth and shrinkage both "just work"
+  with no special handling anywhere in hgit's own code.

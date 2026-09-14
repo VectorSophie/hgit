@@ -363,12 +363,21 @@ design work, not decided or built yet — flagged here for a future ADR.
   itself abstracts this away — tested directly
   (`experiments/14-file-growth/`): calling `FileWrite` twice on the
   *same* path with a larger buffer the second time works transparently
-  (`PASS filewrite_grows_existing_file`), presumably via delete+recreate
-  under the hood. `hgit-core`'s existing pattern of calling `FileWrite`
-  with a growing buffer on each save (as every probe from 05 onward
-  already does) needs no architectural change because of this
-  constraint — it was a real risk to check, and checking it was cheap
-  and worthwhile, but it doesn't change anything.
+  (`PASS filewrite_grows_existing_file`). At the time this was written,
+  "presumably via delete+recreate under the hood" was an inference, not
+  a confirmed mechanism - **since confirmed directly from the real
+  kernel source** (2026-09-14, `Kernel/BlkDev/FileSysRedSea.HC`'s own
+  `RedSeaFileWrite`/`RedSeaFilesDel`, see doc 06's own matching entry):
+  `RedSeaFileWrite` unconditionally deletes any existing same-named
+  file first (freeing its real cluster allocation via
+  `RedSeaFreeClus`), then allocates a brand-new, exactly-sized
+  contiguous cluster range and writes the whole new content in one
+  shot - a real, confirmed delete-and-reallocate, not a guess anymore.
+  `hgit-core`'s existing pattern of calling `FileWrite` with a growing
+  buffer on each save (as every probe from 05 onward already does)
+  needs no architectural change because of this constraint — it was a
+  real risk to check, and checking it was cheap and worthwhile, but it
+  doesn't change anything.
 - `throw`'s 8-byte-literal limit needs to be checked against how deep
   hgit-core's error paths need to be (repository corruption, hash
   mismatch, etc.) — may push toward return-code-based error propagation
