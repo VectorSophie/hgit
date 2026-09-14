@@ -14,6 +14,7 @@
 #define OBJ_BLOB   1
 #define OBJ_TREE   2
 #define OBJ_COMMIT 3
+#define OBJ_ATTRS  4 // ADR 0015: a commit's own (entity_id -> mode) list, see Attrs.HC
 
 // Tags `data` with `type` and appends it as one .HGS record. HgsPut
 // underneath hashes via B2Hash512Any, so there's no BLAKE2b block-size

@@ -25,6 +25,7 @@ mkdir -p packaging
 cat \
   src/hgit-core/Canon.HC \
   src/hgit-core/Ignore.HC \
+  src/hgit-core/Attrs.HC \
   src/hgit-core/Blake2b.HC \
   src/hgit-core/Archive.HC \
   src/hgit-core/Hgs.HC \

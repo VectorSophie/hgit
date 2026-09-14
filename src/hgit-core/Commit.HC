@@ -32,12 +32,25 @@
 //               real GenerateEntityId() landing on exactly 0 is
 //               vanishingly unlikely, same honest caveat OpLog.HC's
 //               own all-zero prev_head sentinel already carries.)
+//   U8        has_attrs (ADR 0015 - 0 = no non-default file mode
+//             exists anywhere in this commit's own tree, the common
+//             case, costs exactly one byte)
+//   if has_attrs != 0:
+//     64 bytes attrs_hash (a real OBJ_ATTRS object - Attrs.HC - listing
+//               every entity ID in this commit whose effective mode is
+//               non-default, i.e. binary and/or executable)
 //
-// The relation fields are placed AFTER the message deliberately: every
+// The relation fields are placed AFTER the message deliberately, and
+// has_attrs AFTER the relation fields, for the same reason: every
 // accessor that reads UP TO the message (CommitTimestamp/
 // CommitMessageLen/CommitMessage) keeps its existing offset math
-// unchanged. Anything reading the relation fields recomputes from
-// CommitMessageLen instead of assuming a fixed offset.
+// unchanged, and everything past it recomputes its own start offset
+// from what came before rather than assuming a fixed position. A
+// commit written before ADR 0015 simply has no room for has_attrs at
+// all - detected by a real bounds check against the record's own
+// content length (CommitHasAttrs), not a version branch; reading an
+// ADR-0015-aware field back out of an older commit correctly reports
+// "no attrs" rather than reading garbage.
 //
 // Depends on Canon.HC (PutU64LE/GetU64LE/PutU32LE/GetU32LE).
 
@@ -51,9 +64,18 @@
 // ordinary commit with no explicit relation (the common case - costs
 // exactly one byte). `relation_entity_id` is ignored when
 // relation_tag is REL_NONE; pass 0 for "not entity-scoped" otherwise.
+//
+// ADR 0015 (docs/adr/0015-file-attributes-and-modes.md): `has_attrs`/
+// `attrs_hash` are a real, separate optional field placed AFTER the
+// relation fields, same "recompute from CommitMessageLen, don't
+// assume a fixed offset" convention this file's own header comment
+// already established for the relation fields themselves - has_attrs
+// may be FALSE/NULL for a commit where every tracked file is plain
+// text and non-executable (the common case, costs exactly one byte).
 U0 CommitEncode(U8 *buf, I64 *len, U8 *tree_hash, U8 *parent_hashes,
                 U8 parent_count, U64 timestamp, U8 *message, I64 message_len,
-                U8 relation_tag, U8 *relation_target, U64 relation_entity_id)
+                U8 relation_tag, U8 *relation_target, U64 relation_entity_id,
+                Bool has_attrs, U8 *attrs_hash)
 {
   I64 i, j;
   for (i=0; i<64; i++) buf[*len+i] = tree_hash[i];
@@ -73,6 +95,12 @@ U0 CommitEncode(U8 *buf, I64 *len, U8 *tree_hash, U8 *parent_hashes,
     for (i=0; i<64; i++) buf[*len+i] = relation_target[i];
     *len += 64;
     PutU64LE(buf, *len, relation_entity_id); *len += 8;
+  }
+
+  buf[*len] = has_attrs; *len += 1;
+  if (has_attrs) {
+    for (i=0; i<64; i++) buf[*len+i] = attrs_hash[i];
+    *len += 64;
   }
 }
 
@@ -130,4 +158,34 @@ U8 *CommitRelationTarget(U8 *buf)
 U64 CommitRelationEntityId(U8 *buf)
 {
   return GetU64LE(buf, CommitRelationOffset(buf) + 1 + 64);
+}
+
+// ADR 0015: byte offset where the `has_attrs` field would be, if
+// present - right after the relation section (present or not).
+I64 CommitAttrsOffset(U8 *buf)
+{
+  I64 pos = CommitRelationOffset(buf) + 1;
+  if (buf[CommitRelationOffset(buf)] != REL_NONE) pos += 64 + 8;
+  return pos;
+}
+
+// `content_len` is the commit object's own real content length (the
+// .HGS record's length minus the one OBJ_COMMIT type-tag byte - the
+// same value every real caller already computes as `rec_len - 1` when
+// reading a commit from the archive). A commit written before ADR
+// 0015 (or one where has_attrs was simply never set) has no attrs
+// field at all - detected here with a real bounds check, not a
+// version branch: if there isn't room for the has_attrs byte itself,
+// there is no attrs field, full stop.
+Bool CommitHasAttrs(U8 *buf, I64 content_len)
+{
+  I64 pos = CommitAttrsOffset(buf);
+  if (pos >= content_len) return FALSE;
+  return buf[pos] != 0;
+}
+
+// Only valid to call if CommitHasAttrs(buf, content_len) is TRUE.
+U8 *CommitAttrsHash(U8 *buf)
+{
+  return buf + CommitAttrsOffset(buf) + 1;
 }

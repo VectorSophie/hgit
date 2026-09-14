@@ -494,8 +494,14 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
 
   U8 commit_content[512];
   I64 clen = 0;
+  // ADR 0015: a merge commit's own attrs are deliberately NOT carried
+  // forward yet - a real, separate, well-scoped follow-up (mirroring
+  // ADR 0011's own precedent of shipping merge in narrower slices,
+  // e.g. "merge rename information" was explicitly deferred too), not
+  // silently dropped. Every merged file still gets its own effective
+  // mode recomputed correctly the next time it's offered normally.
   CommitEncode(commit_content, &clen, merged_tree_hash, merge_parents, 2,
-              timestamp, msg, mi, REL_NONE, NULL, 0);
+              timestamp, msg, mi, REL_NONE, NULL, 0, FALSE, NULL);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];

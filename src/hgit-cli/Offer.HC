@@ -237,7 +237,9 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
                       U8 *old_tree_content, I64 old_tree_content_len,
                       U8 *tree_content_out, I64 *tree_content_len_out,
                       U8 *ign_patterns, U8 *ign_negate, U8 *ign_kind, I64 ign_count,
-                      U8 *rel_dir)
+                      U8 *rel_dir,
+                      U8 *attr_patterns, U8 *attr_kind, U8 *attr_sets, U8 *attr_values, I64 attr_count,
+                      U8 *attrs_content, I64 *attrs_len, I64 *attrs_entry_count)
 {
   I64 tlen = 4; // room for entry_count, filled in at the end
   I64 entry_count = 0;
@@ -307,7 +309,9 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
         TreeBuildRecursive(subdir_path, archive, alen, rbuf, idx_hashes, idx_offsets, idx_count,
                            old_sub_tree_content, old_sub_tree_content_len,
                            child_tree_content, &child_tree_content_len,
-                           ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir);
+                           ign_patterns, ign_negate, ign_kind, ign_count, child_rel_dir,
+                           attr_patterns, attr_kind, attr_sets, attr_values, attr_count,
+                           attrs_content, attrs_len, attrs_entry_count);
 
         // Real gap surfaced by ADR 0014's own "generated/*" example:
         // a subdirectory whose entire real content was ignore-filtered
@@ -389,6 +393,20 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
           }
           if (!found_old) entity_id = GenerateEntityId();
 
+          // ADR 0015: same real, fresh-every-offer mode computation
+          // as the flat path, keyed on this directory level's own
+          // rel_dir for DIR_CONTENTS-pattern anchoring, accumulating
+          // into the ONE shared attrs buffer threaded through the
+          // whole recursion (same "one archive, one alen" convention
+          // this file already uses for the object store itself).
+          Bool auto_binary = IsContentBinary(fbuf, fsize);
+          U8 mode = GetEffectiveMode(attr_patterns, attr_kind, attr_sets, attr_values, attr_count,
+                                      tmpde->full_name+name_start, rel_dir, auto_binary);
+          if (mode != 0) {
+            AttrsListEncode(attrs_content, attrs_len, entity_id, mode);
+            (*attrs_entry_count)++;
+          }
+
           TreeEncodeEntry(tree_content_out, &tlen, tmpde->full_name+name_start, name_len,
                           OBJ_BLOB, blob_hash, entity_id);
           entry_count++;
@@ -449,9 +467,14 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   }
   DirTreeDel(size_de1);
 
+  // ADR 0015: real, computed headroom for this call's own OBJ_ATTRS
+  // object too (9 bytes/entry max - one per real matched file - plus
+  // its own record overhead), same "no guessed cap" discipline as
+  // every other buffer here.
   I64 archive_cap = rsize + new_content_bytes
                    + new_file_count * OBJECT_RECORD_OVERHEAD
-                   + TREE_COMMIT_HEADROOM;
+                   + TREE_COMMIT_HEADROOM
+                   + new_file_count * 9 + OBJECT_RECORD_OVERHEAD;
   if (archive_cap > ARCHIVE_SANITY_MAX) {
     CommPrint(1, "OFFER_REFUSED archive_absurdly_large size=%d\n", archive_cap);
     return;
@@ -461,6 +484,24 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   I64 i;
   for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
   alen = rsize;
+
+  // ADR 0015: `.hgitattributes` lives alongside `find_mask`'s own
+  // directory portion, same convention `.hgitignore` (ADR 0014)
+  // already uses. `attrs_content`/`attrs_len` accumulate one
+  // (entity_id, mode) record per file whose effective mode is
+  // non-default - MAlloc'd from the real matched-file count, same
+  // upper bound `archive_cap`'s own headroom above already computed.
+  U8 attr_ignore_path[256];
+  I64 attr_dp_len = 0, attr_dp_j;
+  for (attr_dp_j=0; find_mask[attr_dp_j]; attr_dp_j++) if (find_mask[attr_dp_j]=='/') attr_dp_len=attr_dp_j+1;
+  for (attr_dp_j=0; attr_dp_j<attr_dp_len; attr_dp_j++) attr_ignore_path[attr_dp_j] = find_mask[attr_dp_j];
+  StrPrint(attr_ignore_path+attr_dp_len, ".hgitattributes");
+  U8 *attr_patterns, *attr_kind, *attr_sets, *attr_values;
+  I64 attr_count;
+  AttrsRulesLoad(attr_ignore_path, &attr_patterns, &attr_kind, &attr_sets, &attr_values, &attr_count);
+  U8 *attrs_content = MAlloc(new_file_count*9 + 9);
+  I64 attrs_len = 4; // room for the U32 count, filled in below
+  I64 attrs_entry_count = 0;
 
   // Parent lookup happens BEFORE building the new tree, so each file's
   // entity ID can be carried forward from the parent's own tree.
@@ -625,6 +666,18 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
       }
       if (!found_old) entity_id = GenerateEntityId();
 
+      // ADR 0015: recomputed fresh every offer, same as the content
+      // hash itself - mode is a real PROPERTY of current file state,
+      // not carried-forward identity. Only a non-default (binary
+      // and/or executable) mode costs anything.
+      Bool auto_binary = IsContentBinary(fbuf, fsize);
+      U8 mode = GetEffectiveMode(attr_patterns, attr_kind, attr_sets, attr_values, attr_count,
+                                  tmpde->full_name+name_start, "", auto_binary);
+      if (mode != 0) {
+        AttrsListEncode(attrs_content, &attrs_len, entity_id, mode);
+        attrs_entry_count++;
+      }
+
       TreeEncodeEntry(tree_content, &tlen, tmpde->full_name+name_start, name_len,
                        OBJ_BLOB, blob_hash, entity_id);
       entry_count++;
@@ -635,6 +688,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   Free(old_idx_hashes);
   Free(old_idx_offsets);
   IgnoreFree(ign_patterns, ign_negate, ign_kind);
+  AttrsRulesFree(attr_patterns, attr_kind, attr_sets, attr_values);
   PutU32LE(tree_content, 0, entry_count);
 
   I64 tree_content_len = tlen;
@@ -645,12 +699,29 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   B2Hash512Any(tree_tagged, tree_content_len+1, tree_hash);
   ObjectPut(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
 
+  // ADR 0015: only store a real OBJ_ATTRS object (and reference it
+  // from the commit) if at least one file actually has a non-default
+  // mode - the common case (an all-plain-text offer) costs nothing.
+  Bool has_attrs = (attrs_entry_count > 0);
+  U8 attrs_hash[64];
+  if (has_attrs) {
+    PutU32LE(attrs_content, 0, attrs_entry_count);
+    U8 *attrs_tagged = MAlloc(attrs_len+1);
+    attrs_tagged[0] = OBJ_ATTRS;
+    for (i=0; i<attrs_len; i++) attrs_tagged[1+i] = attrs_content[i];
+    B2Hash512Any(attrs_tagged, attrs_len+1, attrs_hash);
+    Free(attrs_tagged);
+    ObjectPut(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
+  }
+  Free(attrs_content);
+
   // Commit content itself (has_parent/parent_hash already computed above).
   U8 commit_content[512];
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
                has_parent, timestamp, message, message_len,
-               relation_tag, relation_target, relation_entity_id);
+               relation_tag, relation_target, relation_entity_id,
+               has_attrs, attrs_hash);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
@@ -659,8 +730,10 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
 
   // Rewrite the repo with the updated header (new total object count:
-  // rcount existing + entry_count blobs + 1 tree + 1 commit).
-  HgsWriteHeader(archive, rver, rcount + entry_count + 2);
+  // rcount existing + entry_count blobs + 1 tree + 1 commit + (1 real
+  // OBJ_ATTRS object, only if has_attrs - ADR 0015).
+  I64 attrs_object_count = 0; if (has_attrs) attrs_object_count = 1;
+  HgsWriteHeader(archive, rver, rcount + entry_count + 2 + attrs_object_count);
   FileWrite(repo_path, archive, alen);
 
   // Log this offer's HEAD transition before moving HEAD, so `undo` can
@@ -730,10 +803,13 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   SumTreeFileBytes(dir_path, &new_content_bytes, &new_file_count, &new_subdir_count);
   I64 tree_object_count = new_subdir_count + 1; // +1 for the root tree
 
+  // ADR 0015: real, computed headroom for this call's own OBJ_ATTRS
+  // object too, same pattern as the flat path.
   I64 archive_cap = rsize + new_content_bytes
                    + new_file_count * OBJECT_RECORD_OVERHEAD
                    + tree_object_count * (TREE_LEVEL_MAX + OBJECT_RECORD_OVERHEAD)
-                   + COMMIT_HEADROOM + OBJECT_RECORD_OVERHEAD;
+                   + COMMIT_HEADROOM + OBJECT_RECORD_OVERHEAD
+                   + new_file_count * 9 + OBJECT_RECORD_OVERHEAD;
   if (archive_cap > ARCHIVE_SANITY_MAX) {
     CommPrint(1, "OFFERTREE_REFUSED archive_absurdly_large size=%d\n", archive_cap);
     return;
@@ -783,6 +859,19 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   I64 ign_count;
   IgnoreLoad(ignore_path, &ign_patterns, &ign_negate, &ign_kind, &ign_count);
 
+  // ADR 0015: same real, one-per-tree `.hgitattributes` convention,
+  // and one shared attrs accumulator threaded through the whole
+  // recursion (same "one archive, one alen" pattern already used for
+  // the object store itself).
+  U8 attrs_path[256];
+  StrPrint(attrs_path, "%s.hgitattributes", dir_path);
+  U8 *attr_patterns, *attr_kind, *attr_sets, *attr_values;
+  I64 attr_count;
+  AttrsRulesLoad(attrs_path, &attr_patterns, &attr_kind, &attr_sets, &attr_values, &attr_count);
+  U8 *attrs_content = MAlloc(new_file_count*9 + 9);
+  I64 attrs_len = 4;
+  I64 attrs_entry_count = 0;
+
   // The one real substitution: TreeBuildRecursive replaces
   // HgitOfferWithRelation's own flat FilesFind loop, recursing into
   // real subdirectories instead. old_idx_hashes/old_idx_offsets stay
@@ -793,10 +882,13 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   TreeBuildRecursive(dir_path, archive, &alen, rbuf, old_idx_hashes, old_idx_offsets, old_idx_count,
                      old_tree_content, old_tree_content_len,
                      tree_content, &tree_content_len,
-                     ign_patterns, ign_negate, ign_kind, ign_count, "");
+                     ign_patterns, ign_negate, ign_kind, ign_count, "",
+                     attr_patterns, attr_kind, attr_sets, attr_values, attr_count,
+                     attrs_content, &attrs_len, &attrs_entry_count);
   Free(old_idx_hashes);
   Free(old_idx_offsets);
   IgnoreFree(ign_patterns, ign_negate, ign_kind);
+  AttrsRulesFree(attr_patterns, attr_kind, attr_sets, attr_values);
 
   U8 tree_tagged[4096];
   tree_tagged[0] = OBJ_TREE;
@@ -805,11 +897,28 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   B2Hash512Any(tree_tagged, tree_content_len+1, tree_hash);
   ObjectPut(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
 
+  // ADR 0015: same "only pay for what you use" real OBJ_ATTRS object,
+  // built from whatever TreeBuildRecursive's own recursion accumulated
+  // across every directory level.
+  Bool has_attrs = (attrs_entry_count > 0);
+  U8 attrs_hash[64];
+  if (has_attrs) {
+    PutU32LE(attrs_content, 0, attrs_entry_count);
+    U8 *attrs_tagged = MAlloc(attrs_len+1);
+    attrs_tagged[0] = OBJ_ATTRS;
+    for (i=0; i<attrs_len; i++) attrs_tagged[1+i] = attrs_content[i];
+    B2Hash512Any(attrs_tagged, attrs_len+1, attrs_hash);
+    Free(attrs_tagged);
+    ObjectPut(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
+  }
+  Free(attrs_content);
+
   U8 commit_content[512];
   I64 clen = 0;
   CommitEncode(commit_content, &clen, tree_hash, parent_hash,
                has_parent, timestamp, message, message_len,
-               relation_tag, relation_target, relation_entity_id);
+               relation_tag, relation_target, relation_entity_id,
+               has_attrs, attrs_hash);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
