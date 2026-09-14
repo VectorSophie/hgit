@@ -1,13 +1,18 @@
 # hgit Research Index
 
+**For a current, top-level snapshot of where the whole project stands
+(milestones, what's solid, what's genuinely still open), see
+`docs/STATUS.md` instead of trying to reconstruct it from this index.**
+
 Status legend: ✅ seeded with real primary-source material · 🟡 stub only (source list, nothing fetched yet) · ⛔ not started
 
 This is Phase 0. It is intentionally incomplete — every doc below distinguishes
 verified documentation, facts confirmed in source, experimental evidence,
 inference, and open risk, per the project brief. Nothing here should be read
-as a frozen decision; see `docs/adr/` (0001 and 0002 now written, backed
-by the M0 probes below — the rest still wait; no ADR should be
-authored before its supporting evidence exists).
+as a frozen decision; see `docs/adr/` (13 ADRs now written, each backed
+by real probes before being authored — no ADR should be authored
+before its supporting evidence exists, per this project's own standing
+discipline).
 
 | Doc | Status | Notes |
 |---|---|---|

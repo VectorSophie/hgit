@@ -1983,6 +1983,54 @@ already-existing version-1 repo from earlier in this session and
 passes unaffected. Full command-surface suite re-run clean, every
 fresh repo it builds correctly showing `format_version=2`.
 
+**`hgit undo`/`hgit redo` verified against a real merge commit.**
+`experiments/114-undo-redo-after-merge/` (PASS): a real, previously-
+unexercised test-coverage gap - `OpLogUndo`/`OpLogRedo` are entirely
+per-current-path and never inspect a commit's own internals, so no bug
+was expected, but this had never been directly tested end to end
+before. Real merge history built, every hash captured independently
+via `CurrentHeadRead` before each step (not re-derived from later
+output): undoing `main`'s merge restores its HEAD to the exact
+pre-merge hash (byte-for-byte); `feature`'s own HEAD is completely
+unaffected; `hgit check` correctly reports the merge commit and its
+tree as dangling (2 objects, expected non-destructive-history
+behavior); redo restores the merge commit and everything is reachable
+again. No bug found, no source change needed - a real verification
+closing a real gap, not left merely "probably fine."
+
+**`hgit operation restore` verified against a real merge commit too.**
+`experiments/115-operation-restore-to-merge/` (PASS): closes the exact
+gap probe 114's own README flagged as separate and not covered.
+`OpLogRestore` is structurally identical to `OpLogUndo`/`OpLogRedo`
+(per-current-path, jumps HEAD directly to a logged `new_head` by
+index, no inspection of commit internals) - no bug expected, none
+found. Real merge history built, one more commit made afterward, then
+`operation restore 2` (confirmed via `operation history`'s own real
+output to be the merge's own index) jumps HEAD directly back to the
+merge commit, byte-for-byte matching an independently-captured hash;
+`hgit check` correctly reports the later commit's own unique objects
+as dangling afterward - real, expected non-destructive-history
+behavior. No source change needed.
+
+**A pause for a real status summary, at the user's own request.**
+After a run of investigation/verification-heavy iterations (probes
+105-115), the user asked for a clear, current, top-level snapshot of
+where the whole project stands against M0-M5, separate from this
+doc's own long, dated, probe-by-probe log. Wrote `docs/STATUS.md`:
+milestone-by-milestone status (M0-M4 done by their own original
+acceptance criteria; M5 never concretely scoped, an open bucket of
+flagged-but-undesigned candidates), what's solid (the object model,
+file-size limits all lifted, merge, format versioning, packaging), and
+what's genuinely still open (no merge conflict-resolution mechanism,
+genuine criss-cross ambiguity, `hgit graph`'s non-DAG merge rendering,
+`Status.HC`'s fixed fuzzy-rename buffer, the unwired hash table, entity
+ID/rename-detection disagreement, author/identity, compression/
+chunking) - each claim traceable to a real probe, none asserted without
+one. Also fixed a real stale claim found while cross-checking doc
+00's own intro ("0001 and 0002 now written... the rest still wait" -
+13 ADRs exist now) and linked the new status doc from README and doc
+00. Resuming the normal loop next iteration.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

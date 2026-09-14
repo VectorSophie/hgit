@@ -32,9 +32,11 @@ verified on real TempleOS under QEMU — object storage, the full
 command surface, stable entity identity across renames, and executable
 DolDoc reconciliation views. Real subdirectory support (`offertree`/
 `statustree`, ADR 0010) and a real three-way `merge` command (ADR
-0011) have since shipped too. See `docs/research/10-product-proposal.md`
-for the live, dated, self-correcting record of what's actually built
-— nothing here is claimed without a real, re-runnable test behind it.
+0011) have since shipped too. See `docs/STATUS.md` for a current
+top-level snapshot (what's solid, what's genuinely still open) or
+`docs/research/10-product-proposal.md` for the live, dated,
+self-correcting record of what's actually built — nothing here is
+claimed without a real, re-runnable test behind it.
 
 The whole toolchain packages into one file (`packaging/HgitAll.HC`),
 loadable with a single `#include` — there is no argv/shell syntax in
