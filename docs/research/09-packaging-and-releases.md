@@ -108,6 +108,22 @@ ordinary releases.
   change to the project's own public presentation, not a pure
   documentation fix) - flagged for the project owner, not acted on
   here.
+- **Found and fixed (2026-09-14, not just flagged)**: the v1.8.1
+  release (then the latest) had shipped with **zero attached assets**
+  - `packaging/HgitAll.HC` itself, this project's entire real
+  distribution mechanism, was missing from it, unlike every other
+  release checked (`v1.2.0` through `v1.8.0`, all with exactly one
+  asset). A real, isolated one-off mistake, not a pattern - checked
+  every recent tag to confirm. Fixed directly, not just noted: rebuilt
+  the package fresh from the exact commit `v1.8.1` points to
+  (byte-for-byte diffed against the tag's own committed
+  `packaging/HgitAll.HC` to confirm before uploading - not assumed),
+  uploaded it as the release asset (`gh release upload`), then
+  downloaded it back fresh from GitHub and diffed again to confirm the
+  real, live asset is correct - not just "upload succeeded," actually
+  fetchable and byte-identical. This is a release-asset fix (GitHub's
+  own release storage), not a git commit - no source or history
+  touched.
 
 ## Architectural implications so far
 
