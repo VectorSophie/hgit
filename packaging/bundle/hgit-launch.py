@@ -50,16 +50,55 @@ import socket
 import subprocess
 import sys
 import time
-import tempfile
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DISK = os.path.join(HERE, "templeos-hgit.qcow2")
 
+# 2026-09-16: the monitor transport was originally a Unix domain socket
+# (AF_UNIX) - works on Linux/macOS, and on Windows 10 1803+ WHEN Python's
+# own build was compiled with AF_UNIX support, which is not guaranteed -
+# a real user's Microsoft Store Python 3.13 build hit
+# `AttributeError: module 'socket' has no attribute 'AF_UNIX'`
+# immediately on the first monitor command. QEMU's monitor also speaks
+# plain TCP (`-monitor tcp:host:port,server,nowait`) - switched to that
+# instead, since AF_INET is unconditionally available everywhere Python
+# runs, not just where the OS+build combination happens to support Unix
+# sockets. Bound to 127.0.0.1 only (never exposed beyond this machine).
 
-def monitor_cmd(sock_path, cmd, wait=0.5):
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.connect(sock_path)
+MONITOR_HOST = "127.0.0.1"
+
+
+def free_tcp_port():
+    """Picks a real, currently-free TCP port by asking the OS for one
+    (bind to port 0, read back what it chose, close) rather than
+    guessing a fixed number that might already be in use."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind((MONITOR_HOST, 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def monitor_connect(port, tries=50):
+    """Connects to the QEMU monitor's TCP port, retrying while QEMU is
+    still starting up (there's no socket-file-exists check possible
+    with TCP the way there was for the old Unix-socket path, so this
+    retries the connection itself instead)."""
+    last_err = None
+    for _ in range(tries):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((MONITOR_HOST, port))
+            return s
+        except OSError as e:
+            last_err = e
+            time.sleep(0.2)
+    sys.exit(f"error: could not connect to the QEMU monitor on {MONITOR_HOST}:{port}: {last_err}")
+
+
+def monitor_cmd(port, cmd, wait=0.5):
+    s = monitor_connect(port)
     time.sleep(0.2)
     s.recv(4096)
     s.send((cmd + "\n").encode())
@@ -68,7 +107,7 @@ def monitor_cmd(sock_path, cmd, wait=0.5):
     s.close()
 
 
-def send_text(sock_path, text, enter=True):
+def send_text(port, text, enter=True):
     """Sends text as real keystrokes via the QEMU monitor, matching the
     same technique this project's own send.py (experiments/templeos-devkit/)
     uses - typed one key at a time (TempleOS has no bare paste)."""
@@ -85,8 +124,7 @@ def send_text(sock_path, text, enter=True):
         ":": "semicolon", '"': "apostrophe", "<": "comma", ">": "dot",
         "?": "slash", "~": "grave_accent",
     }
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.connect(sock_path)
+    s = monitor_connect(port)
     time.sleep(0.2)
     s.recv(4096)
     for ch in text:
@@ -148,37 +186,35 @@ def main():
         sys.exit(f"error: disk image not found: {disk}")
 
     qemu = find_qemu()
-
-    tmpdir = tempfile.mkdtemp(prefix="hgit-launch-")
-    monitor_sock = os.path.join(tmpdir, "qemu.sock")
+    port = free_tcp_port()
 
     print(f"Booting {disk} ...")
     subprocess.Popen([
         qemu, "-machine", "pc", "-m", "512",
-        "-monitor", f"unix:{monitor_sock},server,nowait",
+        "-monitor", f"tcp:{MONITOR_HOST}:{port},server,nowait",
         "-boot", "c", "-drive", f"file={disk},if=ide,format=qcow2",
     ])
 
-    # Wait for the monitor socket, then the bootloader's own drive-select
-    # menu, then dismiss "Take Tour?" - both confirmed by real timing on
-    # this exact disk (experiments/87-bundle-install/), not guessed.
-    for _ in range(50):
-        if os.path.exists(monitor_sock):
-            break
-        time.sleep(0.2)
+    # Give QEMU a moment to start before the first monitor connection
+    # attempt (monitor_connect itself retries too, but this avoids
+    # spamming connection refused errors during the earliest moment).
+    time.sleep(1)
+    # Then the bootloader's own drive-select menu, then dismiss "Take
+    # Tour?" - both confirmed by real timing on this exact disk
+    # (experiments/87-bundle-install/), not guessed.
     time.sleep(3)
-    monitor_cmd(monitor_sock, "sendkey 1")  # boot drive C
+    monitor_cmd(port, "sendkey 1")  # boot drive C
     time.sleep(15)
-    monitor_cmd(monitor_sock, "sendkey n")  # decline Take Tour
+    monitor_cmd(port, "sendkey n")  # decline Take Tour
     time.sleep(2)
 
     print("Loading hgit (this takes ~20s - compiling ~200KB of real HolyC)...")
-    send_text(monitor_sock, '#include "::/Doc/Comm";')
+    send_text(port, '#include "::/Doc/Comm";')
     time.sleep(2)
-    send_text(monitor_sock, "CommInit8n1(1,115200);")
+    send_text(port, "CommInit8n1(1,115200);")
     time.sleep(2)
     send_text(
-        monitor_sock,
+        port,
         'I64 sz;U8 *b=FileRead("C:/Home/HgitAll.HC",&sz);ExePutS(b);',
     )
     time.sleep(20)
