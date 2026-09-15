@@ -1476,11 +1476,14 @@ Bool IndexLookupHashTable(U8 *index_hashes, I64 *index_offsets, I64 *table,
 // pointer (MetaCurrentGet/MetaCurrentSet). Probe 42 adds the operation
 // log (MetaOpLogAppend/MetaOpLogPopLast) - now every concern
 // Paths.HC's and OpLog.HC's sidecar files used to hold lives in this
-// one file too. Deliberately NOT yet wired in: Head.HC/Paths.HC/
-// OpLog.HC and every real hgit command still use today's separate-
-// sidecar-file layout - same incremental pattern this project already
-// used for OpLog.HC itself (built standalone in probe 30, wired into
-// Offer.HC in probe 31).
+// one file too. **Now wired in** (probes 43/44, stale note corrected
+// 2026-09-15): Paths.HC and OpLog.HC are both real, live callers of
+// this file today - every function's SIGNATURE and observable
+// behavior stayed unchanged through that cutover, so no other file
+// needed to change. `Portable.HC`'s `hgit export`/`import` also
+// depend on this file's own `MetaPath` to find and copy the `.m` file
+// alongside the object archive. ADR 0016 (conflict-as-data) adds two
+// more tags here too - see below.
 //
 // Depends on Canon.HC (PutU64LE/GetU64LE, for the operation-log entry
 // slice only) - load it first.
