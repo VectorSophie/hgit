@@ -72,11 +72,27 @@ quirk, not a TempleOS or hgit problem (the loader script's own typing,
 above, demonstrably works fine with exactly those characters). If this
 happens, use `hgit-type.py` — the identical, reliable keystroke-
 injection mechanism the loader itself uses, aimed at your own commands
-instead:
+instead. **Put your commands in a text file, one per line, and use
+`--file`** — a second real, seen issue (2026-09-16, Windows only):
+passing HolyC containing `"` as an inline command-line argument is
+genuinely unreliable there, since PowerShell/cmd's own argument
+reconstruction for native `.exe` programs can silently eat embedded
+quotes no matter how they're escaped. A file sidesteps shell quoting
+entirely:
+
+```text
+# commands.txt
+Hgit("version");
+Hgit("help");
+```
 
 ```sh
-python3 hgit-type.py <port> 'Hgit("version");'
+python3 hgit-type.py <port> --file commands.txt
 ```
+
+(Inline text still works for genuinely quote-free input - almost no
+real HolyC command qualifies, since even `Hgit(...)` itself takes a
+quoted string, so `--file` is the real, recommended default.)
 
 `hgit-launch.py`'s own "Ready." message prints `<port>` for that
 specific running session (each launch picks a fresh one).
