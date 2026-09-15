@@ -2099,6 +2099,87 @@ roadmap's own instruction. README/`docs/ARCHITECTURE.md`/`docs/STATUS.md`
 all updated. No `format_version` bump (ADR 0014's own explicit
 decision - nothing about the persisted object model changed).
 
+**v1.8.1 — tracked file attributes and modes (ADR 0015).**
+`docs/adr/0015-file-attributes-and-modes.md` written first, same
+discipline as v1.8.0. Real TempleOS/RedSea filesystem attributes
+confirmed from source first (`Kernel/KernelA.HH`): no execute bit, no
+Unix permission model at all - "executable" can only ever be declared
+via `.hgitattributes`, never auto-detected. Git's own real NUL-byte
+binary-detection heuristic (first 8000 bytes, any NUL = binary)
+adopted directly for `IsContentBinary`, confirmed against Git's own
+real docs/mailing-list history rather than assumed.
+
+Core design decision: mode is a commit-level side-channel
+(`OBJ_ATTRS`, a flat `entity_id -> mode` list, ADR 0015) rather than
+embedded in tree entries - chosen after concretely measuring the
+alternative's real blast radius (8 files hand-parse tree-entry bytes
+with hardcoded offsets; only 3 call `CommitEncode`). `Commit.HC`'s
+existing relation-field extensibility pattern (bounds-check-driven
+compatibility, not version branching) generalized cleanly to the new
+optional `has_attrs`/`attrs_hash` fields. `format_version` bumped
+2 -> 3 (a real, additive commit-content change, per the roadmap's own
+"any persisted format change must bump the version" rule).
+
+`Attrs.HC` built and verified standalone first
+(`experiments/119-attrs-primitive/`, PASS), then wired into
+`offer`/`offertree` (`experiments/120-mode-change-status-diff/`, PASS)
+alongside `status`/`statustree` and `diff` both surfacing a pure mode
+change independently of the existing UNCHANGED/MODIFIED verdict. A
+real, related gap found and fixed along the way: `check`'s own
+reachability walk didn't know about `attrs_hash` at all, so every
+repo's own attrs object showed up as a false `CHECK_DANGLING`
+(mislabeled as a blob, too) - closed by wiring the same commit-edge
+walk every other reference already gets.
+
+**v1.8.2 — merge's own real mode 3-way merge (ADR 0011/0015 follow-
+up).** `Merge.HC`'s own header comment had explicitly deferred
+carrying mode through a merge, citing ADR 0011's own precedent for
+shipping merge in narrower slices - this closes that specific,
+previously-documented TODO, and the roadmap's own "mode-only changes"
+item from its "Complete three-way merge" section.
+
+Mode is now a wholly separate 3-way decision from content inside
+`MergeTreesRecursive` - a file's bytes and its mode can each change
+independently, so each surviving tree entry gets its own base/ours/
+theirs mode resolved via a new `MergeResolveCommitAttrs` (the same
+commit->attrs_hash->object chain `MergeResolveCommitTree` already
+uses for commit->tree_hash->object), threaded through the recursion
+the same way the three trees already are - one shared, top-level
+output buffer every recursion depth appends into directly, since mode
+is keyed by entity ID globally, not per-directory (the same "same
+value at every recursion depth" note `Diff.HC`'s own attrs handling
+already documents). The merge's own conflict decision became
+`is_conflict || mode_conflict` - a genuine mode-only conflict is
+reported and aborts the whole merge exactly like a content conflict
+always has, not silently guessed either way. No format change needed
+- this reuses the exact `has_attrs`/`attrs_hash` mechanism ADR 0015
+already defined, just a second real writer of it.
+
+Verified standalone first (`experiments/121-merge-mode-3way/`, PASS):
+a clean mode-only round trip (two files offered together so `main`'s
+own HEAD genuinely diverges from the merge base too, not a trivial
+fast-forward; `feature` sets one file executable via
+`.hgitattributes`, content untouched) resolves to `MERGE_OK` and
+`hgit diff` on the merge commit shows
+`DIFF_MODE_CHANGED file.txt 0 -> 2` - reusing v1.8.1's own already-
+proven diff output as the verification tool rather than re-parsing
+objects by hand. A genuine mode-only conflict (one file, content never
+changes at all, `feature` sets it executable while `main`
+independently sets it binary) resolves to `MERGE_CONFLICT`/
+`MERGE_ABORTED`, HEAD provably byte-unchanged before/after (probe 99's
+own "zero side effects" verification style), and `hgit check` after
+the abort still comes back completely clean. A stable case added to
+`tests/full-regression.hc`; the whole suite (86+ probes) re-run
+end-to-end afterward, clean.
+
+One real, honest, narrower limitation left open, documented in
+`Merge.HC`'s own header comment and `docs/adr/0011-merge.md`: a
+mode-only change on the side a file gets DELETED from isn't itself
+detected as a conflict, since the existing edit-vs-delete decision
+only ever consults content, never mode - the file is gone from the
+merged tree either way (nothing silently lost), but a real
+chmod-vs-delete race across a merge isn't flagged. Not attempted here.
+
 ## Estimated line counts (very rough, will move once real code exists)
 
 Not estimated yet — premature before `hgit-core`'s object model is decided

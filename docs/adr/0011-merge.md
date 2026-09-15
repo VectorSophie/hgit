@@ -154,6 +154,22 @@ established incremental-ADR pattern (ADR 0010's own precedent):**
   - each side's own tree is compared purely by entry NAME, the same
   scope ADR 0009's own rename detection has for `status`/`diff`
   independently, not combined here.
+- ~~Carry file mode (ADR 0015) through a merge~~ **Closed** (probe
+  121, `experiments/121-merge-mode-3way/`, `docs/ROADMAP-v1.8.md`'s own
+  "mode-only changes" gap): mode is now a wholly separate 3-way
+  decision from content inside `MergeTreesRecursive` - a file's bytes
+  and its mode can each change independently, each surviving entity's
+  mode resolved base/ours/theirs the same way content already is, and
+  a genuine mode-only conflict (both sides changed mode, differently)
+  is reported and aborts the whole merge exactly like a content
+  conflict, not silently guessed. Verified: a clean mode-only round
+  trip (`DIFF_MODE_CHANGED file.txt 0 -> 2` on the resulting merge
+  commit) and a genuine mode-only conflict (`MERGE_CONFLICT`, zero side
+  effects, same as any other real conflict). One real, honest, narrower
+  limitation remains: a mode-only change on the side a file gets
+  DELETED from isn't itself detected as a conflict, since the existing
+  edit-vs-delete decision only ever consults content - not attempted
+  here.
 
 ## What would justify revisiting this
 

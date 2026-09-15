@@ -18,6 +18,19 @@
 // on another (a real kind mismatch) is still a genuine, honestly
 // reported conflict - not attempted to auto-resolve.
 //
+// File mode is now really 3-way merged too (ADR 0015 follow-up,
+// `docs/ROADMAP-v1.8.md`'s own "mode-only changes" gap): mode is a
+// wholly separate decision from content (a file's bytes and its mode
+// can each change independently), computed the same base/ours/theirs
+// way for every surviving entity, and a genuine mode-only conflict
+// (both sides changed mode, differently) is reported the same as any
+// other real conflict - not silently guessed either way. One real,
+// honest, narrower limitation: a mode-only change on the side a file
+// gets DELETED from is not itself detected as a conflict, since the
+// existing edit-vs-delete decision only ever consults content, not
+// mode - the file is gone in the merge result either way, so nothing
+// is silently lost, but a real chmod-vs-delete race isn't flagged.
+//
 // Scope of THIS slice (real, testable, honestly limited - see
 // docs/adr/0011-merge.md, experiments/99-hgit-merge/README.md, and
 // experiments/100-merge-nested-trees/README.md for the full account):
@@ -47,7 +60,8 @@
 //     rather than silently relied upon.
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Tree.HC,
-// Commit.HC, Index.HC, MergeBase.HC, Meta.HC, Paths.HC, OpLog.HC.
+// Commit.HC, Index.HC, MergeBase.HC, Meta.HC, Paths.HC, OpLog.HC,
+// Attrs.HC (ADR 0015 follow-up: real mode 3-way merge).
 
 #define MERGE_ARCHIVE_HEADROOM 20000
 #define MERGE_ARCHIVE_SANITY_MAX 1000000000
@@ -73,6 +87,35 @@ Bool MergeResolveCommitTree(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_
   U64 t_rec_len = GetU64LE(rbuf, t_off);
   *out_tree_content = rbuf + t_off + 9;
   *out_tree_len = t_rec_len - 1;
+  return TRUE;
+}
+
+// ADR 0015 follow-up: resolves a commit hash to its own OBJ_ATTRS
+// content/length, the same commit->attrs_hash->object chain
+// `MergeResolveCommitTree` already uses for commit->tree_hash->object.
+// Returns FALSE (not a crash) if the commit has no attrs at all
+// (`CommitHasAttrs` false - the common case, every mode implicitly 0
+// for merge purposes) or if a real reference is broken (Check.HC's
+// own job to report, not this file's).
+Bool MergeResolveCommitAttrs(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
+                             U8 *commit_hash, U8 **out_attrs_content, I64 *out_attrs_len)
+{
+  I64 c_off_rel;
+  if (!IndexLookup(idx_hashes, idx_offsets, idx_count, commit_hash, &c_off_rel)) return FALSE;
+  I64 c_off = 16 + c_off_rel;
+  if (rbuf[c_off+8] != OBJ_COMMIT) return FALSE;
+  U8 *c_content = rbuf + c_off + 9;
+  U64 c_rec_len = GetU64LE(rbuf, c_off);
+  I64 c_content_len = c_rec_len - 1;
+  if (!CommitHasAttrs(c_content, c_content_len)) return FALSE;
+  U8 *attrs_hash = CommitAttrsHash(c_content);
+
+  I64 a_off_rel;
+  if (!IndexLookup(idx_hashes, idx_offsets, idx_count, attrs_hash, &a_off_rel)) return FALSE;
+  I64 a_off = 16 + a_off_rel;
+  U64 a_rec_len = GetU64LE(rbuf, a_off);
+  *out_attrs_content = rbuf + a_off + 9;
+  *out_attrs_len = a_rec_len - 1;
   return TRUE;
 }
 
@@ -157,7 +200,20 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
                          U8 *theirs_tree, I64 theirs_tree_len,
                          U8 *prefix,
                          U8 *merged_tree_content_out, I64 *merged_tree_len_out,
-                         U8 *conflict_names_out, I64 *conflict_count_out)
+                         U8 *conflict_names_out, I64 *conflict_count_out,
+                         // ADR 0015 follow-up: each side's own commit-level
+                         // OBJ_ATTRS content (NULL/0 if that commit has none -
+                         // every entity's mode then implicitly 0), and ONE
+                         // shared, top-level output buffer/count every
+                         // recursion depth appends into directly (not
+                         // per-directory like merged_tree_content_out - mode
+                         // is keyed by entity ID globally, ADR 0015, same
+                         // value at every depth, matching Diff.HC's own
+                         // precedent for the identical two-sided case).
+                         U8 *base_attrs, I64 base_attrs_len,
+                         U8 *ours_attrs, I64 ours_attrs_len,
+                         U8 *theirs_attrs, I64 theirs_attrs_len,
+                         U8 *merged_attrs_content_out, I64 *merged_attrs_len_out)
 {
   U32 ours_tcount = 0; if (ours_tree != NULL) ours_tcount = GetU32LE(ours_tree, 0);
   U32 theirs_tcount = 0; if (theirs_tree != NULL) theirs_tcount = GetU32LE(theirs_tree, 0);
@@ -254,7 +310,15 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
                                         base_sub, base_sub_len, ours_sub, ours_sub_len,
                                         theirs_sub, theirs_sub_len, sub_prefix,
                                         sub_merged_content, &sub_merged_len,
-                                        sub_conflict_names, &sub_conflict_count);
+                                        sub_conflict_names, &sub_conflict_count,
+                                        // same shared top-level attrs
+                                        // buffers/output at every depth -
+                                        // see this function's own signature
+                                        // comment.
+                                        base_attrs, base_attrs_len,
+                                        ours_attrs, ours_attrs_len,
+                                        theirs_attrs, theirs_attrs_len,
+                                        merged_attrs_content_out, merged_attrs_len_out);
       if (!sub_ok) {
         all_ok = FALSE;
         I64 sci;
@@ -328,7 +392,34 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
         is_conflict = TRUE; // both changed, differently
       }
 
-      if (is_conflict) {
+      // ADR 0015 follow-up: mode is a wholly separate 3-way decision
+      // from content (a file's bytes and its mode can each change
+      // independently), computed the same way regardless of which
+      // content branch above fires - `AttrsListFindMode` defaults to
+      // 0 (plain text, non-executable) when a side has no attrs
+      // object at all or doesn't list this entity, matching every
+      // other reader of OBJ_ATTRS in this project. One real, honest,
+      // documented limitation: a mode-only change on the side a file
+      // gets DELETED from is not itself detected as a conflict (only
+      // content is consulted for the delete-vs-edit decision above) -
+      // not attempted here, a real but narrower gap than the general
+      // mode-merge case this closes.
+      U8 base_mode = 0, ours_mode = 0, theirs_mode = 0;
+      if (base_found2 && base_attrs != NULL) AttrsListFindMode(base_attrs, base_attrs_len, base_entity_id, &base_mode);
+      if (ours_found && ours_attrs != NULL) AttrsListFindMode(ours_attrs, ours_attrs_len, ours_entity_id, &ours_mode);
+      if (theirs_found && theirs_attrs != NULL) AttrsListFindMode(theirs_attrs, theirs_attrs_len, theirs_entity_id, &theirs_mode);
+
+      Bool mode_ours_eq_theirs = (ours_mode == theirs_mode);
+      Bool mode_theirs_eq_base = (theirs_mode == base_mode);
+      Bool mode_ours_eq_base = (ours_mode == base_mode);
+      U8 winning_mode = 0;
+      Bool mode_conflict = FALSE;
+      if (mode_ours_eq_theirs) winning_mode = ours_mode;
+      else if (mode_theirs_eq_base) winning_mode = ours_mode; // only ours changed mode
+      else if (mode_ours_eq_base) winning_mode = theirs_mode; // only theirs changed mode
+      else mode_conflict = TRUE; // both changed mode, differently
+
+      if (is_conflict || mode_conflict) {
         cap = fi; if (cap > 254) cap = 254; // fi = StrLen(full_name),
                                             // not name_len - see the
                                             // sibling branch above for
@@ -341,10 +432,12 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
         TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len,
                         ours_type, ours_hash, ours_entity_id);
         merged_entry_count++;
+        if (winning_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, ours_entity_id, winning_mode);
       } else if (take_theirs && theirs_found) {
         TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len,
                         theirs_type, theirs_hash, theirs_entity_id);
         merged_entry_count++;
+        if (winning_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, theirs_entity_id, winning_mode);
       }
       // else: a real deletion survived cleanly (removed on the
       // winning side, unchanged on the other) - correctly omitted
@@ -427,6 +520,17 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   }
   if (!base_tree_ok) base_tree = NULL; // degenerate case, real not-found - handled below like a root
 
+  // ADR 0015 follow-up: each side's own commit-level attrs (NULL/0 if
+  // that commit predates ADR 0015 or simply has none - every entity's
+  // mode then implicitly 0, the same bounds-check-driven backward
+  // compatibility `CommitHasAttrs` already provides everywhere else).
+  U8 *ours_attrs = NULL; I64 ours_attrs_len = 0;
+  U8 *theirs_attrs = NULL; I64 theirs_attrs_len = 0;
+  U8 *base_attrs = NULL; I64 base_attrs_len = 0;
+  MergeResolveCommitAttrs(rbuf, idx_hashes, idx_offsets, idx_count, ours_head, &ours_attrs, &ours_attrs_len);
+  MergeResolveCommitAttrs(rbuf, idx_hashes, idx_offsets, idx_count, theirs_head, &theirs_attrs, &theirs_attrs_len);
+  MergeResolveCommitAttrs(rbuf, idx_hashes, idx_offsets, idx_count, base_head, &base_attrs, &base_attrs_len);
+
   if (rsize > MERGE_ARCHIVE_SANITY_MAX) {
     CommPrint(1, "MERGE_REFUSED archive_absurdly_large size=%d\n", rsize);
     Free(idx_hashes); Free(idx_offsets);
@@ -455,13 +559,22 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   U8 merged_tree_content[4096];
   I64 merged_tree_len;
   U8 root_prefix[1]; root_prefix[0] = 0;
+  // Same real upper-bound reasoning as `conflict_names`/`max_names`
+  // above: no merge can produce more distinct entities than the union
+  // of all three sides' own trees.
+  U8 *merged_attrs_content = MAlloc(max_names*9 + 9);
+  I64 merged_attrs_len = 4; // room for the U32 count, filled in below
 
   Bool ok = MergeTreesRecursive(rbuf, idx_hashes, idx_offsets, idx_count,
                                 archive, &alen,
                                 base_tree, base_tree_len, ours_tree, ours_tree_len,
                                 theirs_tree, theirs_tree_len, root_prefix,
                                 merged_tree_content, &merged_tree_len,
-                                conflict_names, &conflict_count);
+                                conflict_names, &conflict_count,
+                                base_attrs, base_attrs_len,
+                                ours_attrs, ours_attrs_len,
+                                theirs_attrs, theirs_attrs_len,
+                                merged_attrs_content, &merged_attrs_len);
 
   if (!ok) {
     I64 ci2;
@@ -469,7 +582,7 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
       CommPrint(1, "MERGE_CONFLICT %s\n", conflict_names+ci2*256);
     }
     CommPrint(1, "MERGE_ABORTED conflicts=%d\n", conflict_count);
-    Free(idx_hashes); Free(idx_offsets); Free(conflict_names); Free(archive);
+    Free(idx_hashes); Free(idx_offsets); Free(conflict_names); Free(archive); Free(merged_attrs_content);
     return;
   }
 
@@ -479,6 +592,23 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   U8 merged_tree_hash[64];
   B2Hash512Any(merged_tree_tagged, merged_tree_len+1, merged_tree_hash);
   ObjectPut(archive, &alen, OBJ_TREE, merged_tree_content, merged_tree_len);
+
+  // ADR 0015 follow-up: build the merged OBJ_ATTRS object (if any
+  // entity ended up with a non-default mode) the same way Offer.HC
+  // does - `merged_attrs_len` is already the real content length
+  // (U32 count header + entries), only the count field itself still
+  // needs filling in now that every entry is known.
+  Bool merge_has_attrs = (merged_attrs_len > 4);
+  U8 merged_attrs_hash[64];
+  if (merge_has_attrs) {
+    PutU32LE(merged_attrs_content, 0, (merged_attrs_len-4)/9);
+    U8 *merged_attrs_tagged = MAlloc(merged_attrs_len+1);
+    merged_attrs_tagged[0] = OBJ_ATTRS;
+    for (i=0; i<merged_attrs_len; i++) merged_attrs_tagged[1+i] = merged_attrs_content[i];
+    B2Hash512Any(merged_attrs_tagged, merged_attrs_len+1, merged_attrs_hash);
+    Free(merged_attrs_tagged);
+    ObjectPut(archive, &alen, OBJ_ATTRS, merged_attrs_content, merged_attrs_len);
+  }
 
   U8 merge_parents[128];
   for (i=0; i<64; i++) merge_parents[i] = ours_head[i];
@@ -494,14 +624,13 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
 
   U8 commit_content[512];
   I64 clen = 0;
-  // ADR 0015: a merge commit's own attrs are deliberately NOT carried
-  // forward yet - a real, separate, well-scoped follow-up (mirroring
-  // ADR 0011's own precedent of shipping merge in narrower slices,
-  // e.g. "merge rename information" was explicitly deferred too), not
-  // silently dropped. Every merged file still gets its own effective
-  // mode recomputed correctly the next time it's offered normally.
+  // ADR 0015 follow-up: mode is now really 3-way merged (see
+  // `MergeTreesRecursive`'s own attrs handling above), so the merge
+  // commit carries real attrs whenever any entity ended up with a
+  // non-default mode - the "deliberately not carried forward yet" gap
+  // this comment used to describe is closed.
   CommitEncode(commit_content, &clen, merged_tree_hash, merge_parents, 2,
-              timestamp, msg, mi, REL_NONE, NULL, 0, FALSE, NULL);
+              timestamp, msg, mi, REL_NONE, NULL, 0, merge_has_attrs, merged_attrs_hash);
   U8 commit_tagged[512];
   commit_tagged[0] = OBJ_COMMIT;
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
@@ -529,4 +658,5 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   Free(idx_hashes);
   Free(idx_offsets);
   Free(conflict_names);
+  Free(merged_attrs_content);
 }

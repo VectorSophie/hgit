@@ -271,6 +271,40 @@ U0 HgitFullRegressionTest()
   CommPrint(1, "TFULL_ATTRS_CHECK_END_MARKER\n");
   Del("C:/Home/.hgitattributes", FALSE, FALSE, FALSE);
 
+  // --- merge's own real 3-way mode merge (ADR 0015 follow-up, probe
+  // 121): a clean mode-only change round-trips through a real,
+  // non-fast-forward merge, surfaced by diff on the merge commit. ---
+  Del("C:/Home/TFMergeModeRepo.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFMergeModeRepo.hgs.m", FALSE, FALSE, FALSE);
+  Del("C:/Home/.hgitattributes", FALSE, FALSE, FALSE);
+  Hgit("init C:/Home/TFMergeModeRepo.hgs");
+  FileWrite("C:/Home/TFMM_a.txt", "shared", 6);
+  FileWrite("C:/Home/TFMM_b.txt", "other root", 10);
+  Hgit("offer C:/Home/TFMergeModeRepo.hgs TFMM_*.txt mm_root");
+  Hgit("path new C:/Home/TFMergeModeRepo.hgs mm_feature");
+  Hgit("path go C:/Home/TFMergeModeRepo.hgs mm_feature");
+  FileWrite("C:/Home/.hgitattributes", "TFMM_a.txt executable\n", 23);
+  Hgit("offer C:/Home/TFMergeModeRepo.hgs TFMM_*.txt mm_mode_change");
+  Hgit("path go C:/Home/TFMergeModeRepo.hgs main");
+  Del("C:/Home/.hgitattributes", FALSE, FALSE, FALSE);
+  FileWrite("C:/Home/TFMM_b.txt", "other EDITED", 12);
+  Hgit("offer C:/Home/TFMergeModeRepo.hgs TFMM_*.txt mm_other_edit");
+  CommPrint(1, "TFULL_MERGEMODE_MERGE_BEGIN\n");
+  Hgit("merge C:/Home/TFMergeModeRepo.hgs mm_feature");
+  CommPrint(1, "TFULL_MERGEMODE_MERGE_END_MARKER\n");
+  U8 mm_head[64];
+  CurrentHeadRead("C:/Home/TFMergeModeRepo.hgs", mm_head);
+  U8 mm_hex[129];
+  HashToHex(mm_head, mm_hex);
+  U8 mm_diff_cmd[512];
+  StrPrint(mm_diff_cmd, "diff C:/Home/TFMergeModeRepo.hgs %s", mm_hex);
+  CommPrint(1, "TFULL_MERGEMODE_DIFF_BEGIN\n");
+  Hgit(mm_diff_cmd); // expect DIFF_MODE_CHANGED TFMM_a.txt 0 -> 2
+  CommPrint(1, "TFULL_MERGEMODE_DIFF_END_MARKER\n");
+  CommPrint(1, "TFULL_MERGEMODE_CHECK_BEGIN\n");
+  Hgit("check C:/Home/TFMergeModeRepo.hgs");
+  CommPrint(1, "TFULL_MERGEMODE_CHECK_END_MARKER\n");
+
   // --- discoverability ---
   Hgit("version");
   Hgit("logo");

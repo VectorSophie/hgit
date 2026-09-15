@@ -11,8 +11,10 @@ owner's own scoped brief for a v1.8.x "usability series" (ignore
 rules, minimal attributes/modes, a complete three-way merge, conflicts
 as persistent repository data, and the CLI/DolDoc UX to use all of
 it). v1.8.0 (ignore rules, ADR 0014) and v1.8.1 (tracked file
-attributes/modes, ADR 0015) are done; read that file before picking
-the next v1.8.x item.
+attributes/modes, ADR 0015, including status/diff integration) are
+released; merge's own mode 3-way handling (ADR 0011/0015, probe 121)
+is done and pending its own v1.8.2 release. Read that file before
+picking the next v1.8.x item.
 
 ## The one-paragraph version
 
@@ -24,7 +26,8 @@ mechanism (v1.8.0), and (as of v1.8.1) a real `.hgitattributes`/file-
 mode mechanism surfaced in status/diff and validated by check - all
 implemented in native HolyC, verified on real (QEMU-hosted) TempleOS,
 not simulated or assumed. Tagged releases exist from v0.10.0 through
-v1.8.0 (v1.8.1 pending its own release), 15 ADRs document real,
+v1.8.1 (v1.8.2, merge's own mode 3-way handling, pending its own
+release), 15 ADRs document real,
 evidence-backed architectural decisions, and 120+ numbered probes
 (`experiments/`) each pair one concrete question with a real, captured
 answer. M0 through M4 are functionally complete by their own original
@@ -128,6 +131,19 @@ designed or started:
   false `CHECK_DANGLING` (mislabeled as a blob, too) - closed by
   wiring the same commit-edge walk every other reference already
   gets.
+- **Merge mode 3-way merge** (v1.8.2 pending release, ADR 0011/0015,
+  probe 121): `hgit merge` now resolves file mode as a wholly separate
+  3-way decision from content - a file's bytes and its mode can each
+  change independently, each surviving entity's mode resolved
+  base/ours/theirs the same way content already is, and a genuine
+  mode-only conflict (both sides changed mode, differently) is
+  reported and aborts the whole merge exactly like a content conflict,
+  not silently guessed. Closes `docs/ROADMAP-v1.8.md`'s own
+  "mode-only changes" gap and the real TODO `Merge.HC`'s own header
+  comment used to carry. One real, honest, narrower limitation
+  remains: a mode-only change on the side a file gets DELETED from
+  isn't itself detected as a conflict, since the existing edit-vs-
+  delete decision only ever consults content - not attempted.
 - **Packaging**: `packaging/HgitAll.HC` is the real release artifact,
   attached to every tagged GitHub Release; `tools/build-package.sh`/
   `tools/lint-package.sh` catch real errors (including HolyC's own

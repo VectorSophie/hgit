@@ -89,7 +89,7 @@ loaded) for the same list straight from the live dispatcher.
 | `offer` | Snapshot matching files as a new commit (hgit's own name for git's "commit") — honors `.hgitignore` (ADR 0014): an ignore rule only ever hides a genuinely untracked name, never an already-tracked one |
 | `offertree` / `statustree` | Real subdirectory support (ADR 0010) — `offer`/`status`, recursing into nested directories, as separate commands rather than changing `offer`/`status`'s own flat semantics; also honor `.hgitignore` (ADR 0014), including a whole ignored subdirectory (`build/`) never even being recursed into |
 | `status` | Compare the working directory against HEAD — new/modified/deleted, **and renamed** (exact-content match, ADR 0009) |
-| `merge` | A real three-way merge between two named paths (ADR 0011) — a genuine conflict aborts the whole merge, zero side effects; no resolution mechanism yet |
+| `merge` | A real three-way merge between two named paths (ADR 0011), content and file mode (ADR 0015) both merged independently — a genuine conflict (content or mode) aborts the whole merge, zero side effects; no resolution mechanism yet |
 | `history` | Walk the current path's commit chain |
 | `graph` | Render the entire commit history across every path as a real, collapsible DolDoc tree — see below |
 | `see` / `diff` | Show one commit's tree/message/relation, or what changed relative to its parent — both recurse into nested trees |
