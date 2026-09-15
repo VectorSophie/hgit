@@ -44,6 +44,8 @@ for the full writeup):
    and go. See the main README.md's own "Try it" section for the
    command surface.
 """
+import platform
+import shutil
 import socket
 import subprocess
 import sys
@@ -106,17 +108,53 @@ def send_text(sock_path, text, enter=True):
     s.close()
 
 
+def find_qemu():
+    """Locates qemu-system-x86_64 (`.exe` on Windows - shutil.which
+    resolves that via PATHEXT automatically) and exits with a real,
+    actionable message instead of a raw traceback if it's missing -
+    a real gap found 2026-09-15: a Windows user whose QEMU install
+    hadn't updated that terminal's own PATH (a genuine, common
+    Windows installer quirk - the installer can add itself to the
+    system PATH, but an already-open terminal doesn't see it until
+    reopened) got a bare `FileNotFoundError` from `subprocess.Popen`
+    with no indication of what was actually missing or why."""
+    exe = shutil.which("qemu-system-x86_64")
+    if exe:
+        return exe
+    system = platform.system()
+    if system == "Windows":
+        hint = (
+            "Install it from https://qemu.weilnetz.de/w64/ (or "
+            "`choco install qemu`), then **close and reopen this "
+            "terminal** - a terminal already open when QEMU installs "
+            "doesn't pick up the updated PATH until restarted, a real "
+            "and common cause of this exact error. If you just did "
+            "reopen it and this still fails, check the install added "
+            "its own folder (typically `C:\\Program Files\\qemu`) to "
+            "your PATH."
+        )
+    elif system == "Darwin":
+        hint = "Install it with `brew install qemu`, then try again."
+    else:
+        hint = "Install it via your distro's `qemu-system-x86_64`/`qemu` package, then try again."
+    sys.exit(
+        "error: qemu-system-x86_64 not found on PATH.\n\n" + hint
+    )
+
+
 def main():
     disk = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DISK
     if not os.path.isfile(disk):
         sys.exit(f"error: disk image not found: {disk}")
+
+    qemu = find_qemu()
 
     tmpdir = tempfile.mkdtemp(prefix="hgit-launch-")
     monitor_sock = os.path.join(tmpdir, "qemu.sock")
 
     print(f"Booting {disk} ...")
     subprocess.Popen([
-        "qemu-system-x86_64", "-machine", "pc", "-m", "512",
+        qemu, "-machine", "pc", "-m", "512",
         "-monitor", f"unix:{monitor_sock},server,nowait",
         "-boot", "c", "-drive", f"file={disk},if=ide,format=qcow2",
     ])
