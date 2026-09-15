@@ -222,7 +222,14 @@ def main():
     print(
         "Ready. Switch to the QEMU window - hgit is loaded.\n"
         'Try: Hgit("version"); then Hgit("help");\n'
-        "See the main hgit README.md for the full command surface."
+        "See the main hgit README.md for the full command surface.\n\n"
+        f"If typing directly into the QEMU window doesn't work right "
+        f"(a real, seen issue - Shift-key characters not registering, "
+        f"often a host keyboard/IME/QEMU-focus quirk, not a TempleOS "
+        f"problem), you can send commands the same reliable way this "
+        f"script just did:\n"
+        f"    python hgit-type.py {port} \"Hgit(\\\"version\\\");\"\n"
+        f"(monitor port for this running session: {port})"
     )
 
 

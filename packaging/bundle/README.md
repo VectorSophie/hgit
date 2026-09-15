@@ -63,6 +63,24 @@ From there, it's real TempleOS — type HolyC directly at the prompt.
 See the main repo's `README.md` for the full command surface, or just
 run `Hgit("help");`.
 
+### If typing directly into the QEMU window doesn't work right
+
+A real, seen issue (2026-09-16): on some Windows setups, Shift-key
+characters (`(`, `"`, `;`, ...) don't register correctly when typed
+live into the QEMU window — a host keyboard layout/IME/QEMU-focus
+quirk, not a TempleOS or hgit problem (the loader script's own typing,
+above, demonstrably works fine with exactly those characters). If this
+happens, use `hgit-type.py` — the identical, reliable keystroke-
+injection mechanism the loader itself uses, aimed at your own commands
+instead:
+
+```sh
+python3 hgit-type.py <port> 'Hgit("version");'
+```
+
+`hgit-launch.py`'s own "Ready." message prints `<port>` for that
+specific running session (each launch picks a fresh one).
+
 ## Doing it by hand instead
 
 If you'd rather drive QEMU yourself:
