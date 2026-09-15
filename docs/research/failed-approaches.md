@@ -1478,3 +1478,69 @@ exactly the way any other doc can once later work (ADR 0009's own
 probes 83/84) extends what it originally described, and this project's
 own standing "verify before writing it down" discipline applies to its
 own past documents just as much as to new external research.
+
+## 2026-09-15 — refreshing the demo `.qcow2` bundle: a real, reproducible COM2-push reliability issue, not solved this session
+
+Discovered the demo bundle (`packaging/bundle/templeos-hgit.qcow2`,
+gitignored, `experiments/87-bundle-install/`) had `HGIT_VERSION 1.3.0`
+baked in - built and committed before v1.7.7/v1.8.0 even existed, so
+badly stale relative to the current v1.8.2. Attempted a real refresh:
+boot the existing disk fresh (separate from this project's own shared
+dev daemon, `experiments/01-temple-repl/`), bootstrap the same real
+`D()` stage-1 receive loop `temple-run.py`'s own `BOOTSTRAP_CMDS`
+defines (typed via QEMU monitor `sendkey`, not COM2 - COM2 isn't
+listening until `D()` itself is running), then push the current
+`packaging/HgitAll.HC` plus a save-trailer over COM2 via
+`paced_push.py`, matching probe 28/87's own already-documented
+"combined push" technique exactly.
+
+Two real, distinct failure modes hit, in order:
+
+1. **The bootstrap's own first keystrokes dropped.** `#include
+   "::/Doc/Comm";` typed via monitor `sendkey` repeatedly arrived as
+   `clude "::/Doc/Comm";` (missing `#in`) - reproduced across multiple
+   full reboots, at multiple keystroke delays (0.05s through 0.25s), a
+   real, systematic pattern, not one-off flakiness. A single retry of
+   the exact same line immediately after a failure consistently
+   succeeded - suggesting something (host scheduling jitter against
+   the guest's own input-buffer readiness right after a fresh boot's
+   settle period, never fully diagnosed) eats the first few characters
+   of the FIRST real keystroke burst after a wait, specifically,
+   not keystrokes in general. A leading no-op `--enter` keystroke
+   sometimes absorbed this and sometimes didn't - not a reliable fix,
+   just correlated often enough to look like one at first.
+2. **The real payload push (336KB) consistently failed partway
+   through**, every single time (5+ real attempts, across chunk sizes
+   2048/1024/512 bytes and delays 0.15s/0.2s/0.25s/0.3s, across
+   multiple full clean reboots) - always with a real HolyC parse error
+   landing inside `Canon.HC`'s own early low-level bit-packing
+   functions (`PutU32LE`/`PutU64LE`-shaped code, `buf[off+i]=(v>>
+   (i*8))&0xFF`-style), always a DIFFERENT exact corrupted character
+   each time, never the same byte offset twice. Prepending 200+ bytes
+   of throwaway comment padding to the front of the pushed payload
+   (on the theory this was the exact same "start of transmission is
+   fragile" pattern as finding #1) did NOT fix it - still a real parse
+   error, just at a different offset within the first few KB. This
+   project's own shared dev daemon (`experiments/01-temple-repl/`) has
+   received this EXACT same 336KB package via the identical
+   `paced_push.py` mechanism dozens of times this session alone with
+   zero corruption - so this is not a generic "large push" limit, it
+   is specific to THIS particular disk/session's own real, live state
+   in a way not root-caused here.
+
+**Not solved.** Stopped after real, honest effort rather than
+continuing to guess-and-check indefinitely - matching this project's
+own "log a real dead end rather than silently giving up" discipline.
+The existing, stale v1.3.0 bundle was published as-is (with an honest
+staleness note) so real Windows/cross-platform testing of the bundle
+*mechanism* itself (QEMU + the launch script, not hgit's own current
+feature set) wasn't blocked on this. A real, well-scoped follow-up:
+retry with the SHARED dev daemon's own already-battle-tested, already-
+running session instead of a fresh one-off boot (its own Db/RX-FIFO
+is smaller, 512KB per `daemon_v2.hc`, but has clearly never shown this
+corruption pattern across a very long session) - if reproducible even
+there, the corruption is a genuine COM2/FIFO emulation bug worth
+reporting upstream to QEMU or investigating in TempleOS's own serial
+driver; if NOT reproducible there, the real cause is something about a
+freshly-booted, never-before-pushed-to session specifically, worth
+its own isolated probe before the next bundle refresh attempt.

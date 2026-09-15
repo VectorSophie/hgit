@@ -1,10 +1,31 @@
 # hgit bundle — TempleOS + hgit, ready to run
 
-A real, fresh TempleOS 5.03 install with `hgit`'s current release
-already saved onto it (`C:/Home/HgitAll.HC`) — no accumulated dev-probe
-clutter, no test repos left lying around. Boot it and hgit is one
-short, scripted load away from ready. Full build/verification writeup:
+A real, fresh TempleOS 5.03 install with `hgit` already saved onto it
+(`C:/Home/HgitAll.HC`) — no accumulated dev-probe clutter, no test
+repos left lying around. Boot it and hgit is one short, scripted load
+away from ready. Full build/verification writeup:
 `experiments/87-bundle-install/` in the main repo.
+
+**⚠️ Stale as of 2026-09-15: `HGIT_VERSION 1.3.0` is baked in, not the
+current release.** `templeos-hgit.qcow2` is a large binary disk image
+(45MB) and is deliberately NOT committed to this git repo (see
+`.gitignore`) — it's attached as a real, downloadable asset on the
+[latest GitHub release](https://github.com/VectorSophie/hgit/releases/latest)
+instead, the same place `HgitAll.HC` itself is attached. A refresh
+attempt (loading the current package onto this same disk) hit a real,
+reproducible, not-yet-solved COM2-transmission reliability issue
+specific to a freshly-booted session — logged honestly in
+`docs/research/failed-approaches.md` (2026-09-15 entry) rather than
+silently shipping a claimed-fresh image that wasn't. The bundle
+*mechanism* below (QEMU + the launch script) is real and working on
+its own terms regardless of which hgit version happens to be loaded on
+the disk.
+
+## Getting the disk image
+
+Download `templeos-hgit.qcow2` from the
+[latest release's assets](https://github.com/VectorSophie/hgit/releases/latest)
+and put it in this same folder, alongside `hgit-launch.py`.
 
 ## What you need
 
