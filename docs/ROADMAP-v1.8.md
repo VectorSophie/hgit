@@ -1,14 +1,14 @@
 # hgit v1.8.x — the usability series
 
-**Status: adopted, not yet started.** This is the project owner's own
-written brief for the next real phase of work, recorded here verbatim
-(reorganized only for headings) so it survives across sessions and
-isn't reconstructed from memory. v1.5.0 through v1.7.7 was real,
-verified internal work (see `docs/STATUS.md`), but for hgit to be
-genuinely comparable to Jujutsu-like alternatives while keeping its own
-identity, the owner has scoped the following as v1.8.0's real
-successor phase. Nothing in this document has been implemented yet as
-of the date this file was added - work starts from here.
+**Status: in progress - v1.8.0 through v1.8.2 shipped, see this
+document's own "Version sequence" section below for exactly what.**
+This is the project owner's own written brief for this phase of work,
+recorded here verbatim (reorganized only for headings) so it survives
+across sessions and isn't reconstructed from memory. v1.5.0 through
+v1.7.7 was real, verified internal work (see `docs/STATUS.md`), but for
+hgit to be genuinely comparable to Jujutsu-like alternatives while
+keeping its own identity, the owner scoped the following as v1.8.0's
+real successor phase.
 
 ## Why this phase, and what it is not
 
@@ -257,12 +257,17 @@ version must be a real, tested vertical improvement, not merely a
 version bump or documentation release.
 
 ```text
-v1.8.0  ignore rules and recursive discovery behavior
-v1.8.1  tracked attributes and text/binary policy
-v1.8.2  file types, modes, status and diff integration
+v1.8.0  ignore rules and recursive discovery behavior               [shipped]
+v1.8.1  tracked attributes/modes, text/binary policy, AND status/    [shipped]
+        diff integration (folded together - closely coupled enough
+        to verify as one real release, per this section's own
+        "don't force every release to exist" rule)
+v1.8.2  merge's own mode 3-way handling (a real, separate slice of   [shipped]
+        the "complete three-way merge" item below - the rest of
+        that item, plus the persistent conflict model, still ahead)
 v1.8.3  persistent conflict object/model
 v1.8.4  conflict lifecycle: inspect, resolve, continue and abort
-v1.8.5  rename-, move-, delete- and mode-aware three-way merge
+v1.8.5  remaining rename-, move-, delete-aware three-way merge gaps
 v1.8.6  DolDoc and CLI diff/merge UX
 v1.8.7  recovery, export/import, integrity and adversarial hardening
 v1.8.8  full usability regression and documentation-accuracy sweep
