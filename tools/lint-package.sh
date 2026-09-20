@@ -21,6 +21,10 @@
 # has (probe-confirmed independently, docs/research/01-templeos-holyc.md) -
 # so always lint the already-ordered package, not the raw directories.
 #
+# (v1.8.9: `argv` - the implicit variadic-args names, and StrPrintJoin, used by the CommPrint
+# override in Canon.HC - and `AutoComplete` are real TempleOS names the parser
+# doesn't know either; same category.)
+#
 # Exit code: 1 if the parser reports any errors, 0 otherwise - the
 # three known built-in gaps below are filtered out of the pass/fail
 # decision (but still shown) since they're a confirmed tool
@@ -38,7 +42,7 @@ if [ ! -x "$BIN" ]; then
   (cd "$PARSER_DIR" && cargo build --release)
 fi
 
-KNOWN_BUILTIN_GAPS='`FilesFind`|`DirTreeDel`|`cnts`'
+KNOWN_BUILTIN_GAPS='`FilesFind`|`DirTreeDel`|`cnts`|`argv`|`argc`|`StrPrintJoin`|`AutoComplete`|`FileFind`|`PutS`'
 
 OUTPUT=$("$BIN" lint packaging/HgitAll.HC || true)
 echo "$OUTPUT"

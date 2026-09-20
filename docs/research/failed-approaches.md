@@ -1544,3 +1544,17 @@ reporting upstream to QEMU or investigating in TempleOS's own serial
 driver; if NOT reproducible there, the real cause is something about a
 freshly-booted, never-before-pushed-to session specifically, worth
 its own isolated probe before the next bundle refresh attempt.
+
+### Resolved (2026-09-20): the fresh-session bundle-refresh corruption was a receiver buffer cap
+
+Root cause of the 2026-09-15 dead end above: the stage-1 receiver `D()` that
+`temple-run.py`'s `BOOTSTRAP_CMDS` types has `Di<131071` - a 128KB buffer that
+silently DROPS every byte past 128KB (`else if(Di<131071){Db[Di++]=Dc;}`), and
+a 128KB RX FIFO. A 336KB+ package therefore arrived truncated and the
+compiler died at whatever construct the cut landed in. (The shared dev daemon
+never showed it because its `D2` uses 512KB.) `tools/build-bundle.py` types a
+receiver with 512KB buffers, waits out TempleOS's first-minutes CPU-busy
+period, and verifies the save with size + checksum in the guest; it refreshed
+the disk on the first attempt (guest: `SAVED 404976 CK 4111601547`, matching
+the host). Left unproven: whether the settle wait mattered - the buffer cap
+alone explains the observed failures.

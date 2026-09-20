@@ -20,7 +20,7 @@
 U0 CopyFileIfExists(U8 *src_path, U8 *dest_path)
 {
   I64 size;
-  U8 *buf = FileRead(src_path, &size);
+  U8 *buf = HgitFileRead(src_path, &size);
   if (buf == NULL) return;
   FileWrite(dest_path, buf, size);
 }

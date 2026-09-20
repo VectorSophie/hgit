@@ -68,7 +68,7 @@
 U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "STATUS_ERR not_a_repository %s\n", repo_path); return; }
   U16 rver;
   U64 rcount;
@@ -202,7 +202,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   CDirEntry *tmpde1 = tmpde;
   while (tmpde) {
     I64 fsize;
-    U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+    U8 *fbuf = HgitFileRead(tmpde->full_name, &fsize);
 
     I64 name_start = 0, j;
     for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
@@ -315,7 +315,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     check_path[k+tname_len] = 0;
 
     I64 check_size;
-    U8 *check_buf = FileRead(check_path, &check_size);
+    U8 *check_buf = HgitFileRead(check_path, &check_size);
     if (check_buf == NULL) {
       I64 dcap = tname_len; if (dcap > 254) dcap = 254;
       for (m=0; m<dcap; m++) del_names[del_count*256+m] = tname[m];
@@ -529,7 +529,7 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
         }
       } else {
         I64 fsize;
-        U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+        U8 *fbuf = HgitFileRead(tmpde->full_name, &fsize);
         {
           // Probe 108 (experiments/108-status-large-file-support/):
           // was `if (fsize+1 > 512) STATUS_TOO_LARGE_TO_CHECK` guarding
@@ -669,7 +669,7 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
         // duplicate report.
       } else {
         I64 check_size;
-        U8 *check_buf = FileRead(check_path, &check_size);
+        U8 *check_buf = HgitFileRead(check_path, &check_size);
         if (check_buf == NULL) {
           I64 dcap = fti; if (dcap > 254) dcap = 254;
           for (m=0; m<dcap; m++) del_names[del_count*256+m] = full_tname[m];
@@ -744,7 +744,7 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
 U0 HgitStatusTree(U8 *repo_path, U8 *dir_path)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "STATUS_ERR not_a_repository %s\n", repo_path); return; }
   U16 rver;
   U64 rcount;

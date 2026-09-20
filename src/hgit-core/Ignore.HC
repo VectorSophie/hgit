@@ -42,7 +42,7 @@ U0 IgnoreLoad(U8 *ignore_path, U8 **out_patterns, U8 **out_negate,
               U8 **out_kind, I64 *out_count)
 {
   I64 fsize;
-  U8 *buf = FileRead(ignore_path, &fsize);
+  U8 *buf = HgitFileRead(ignore_path, &fsize);
   if (buf == NULL) {
     *out_patterns = NULL;
     *out_negate = NULL;

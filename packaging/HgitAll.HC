@@ -1,3 +1,46 @@
+// --- v1.8.9: optional on-screen output -------------------------------
+// Every hgit command reports through CommPrint, which TempleOS's own
+// Comm.HC sends ONLY to a serial port - fine for the automated test
+// harness (it reads the serial log), but a person typing at the QEMU
+// window saw nothing at all. This redefinition (same signature as
+// Comm.HC's, same serial behavior) additionally echoes to the screen
+// when `hgit_screen_out` is set. Default OFF so the test/dev harness
+// is unchanged; `Hgit("interactive");` turns it on (and AutoComplete
+// off) for a person at the console.
+I64 hgit_screen_out = 0;
+
+// PutS interprets DolDoc `$` commands, so a literal `$` is doubled first.
+U0 HgitScreenPut(U8 *s)
+{
+  U8 *o = MAlloc(StrLen(s)*2 + 2);
+  I64 i, j = 0;
+  for (i=0; s[i]; i++) {
+    o[j++] = s[i];
+    if (s[i] == '$') o[j++] = '$';
+  }
+  o[j] = 0;
+  PutS(o);
+  Free(o);
+}
+
+U0 CommPrint(I64 port, U8 *fmt, ...)
+{
+  U8 *buf = StrPrintJoin(NULL, fmt, argc, argv);
+  CommPutS(port, buf);
+  if (hgit_screen_out) HgitScreenPut(buf);
+  Free(buf);
+}
+
+// FileRead prints a red "File not found" error on the screen when the
+// file is missing - and hgit deliberately probes for missing files (a
+// new repo has no metadata file yet, `init` checks the path is free).
+// Every hgit read goes through this instead: NULL, silently, if absent.
+U8 *HgitFileRead(U8 *name, I64 *size)
+{
+  if (!FileFind(name)) return NULL;
+  return FileRead(name, size);
+}
+
 // Canon.HC — canonical little-endian integer encode/decode for hgit's
 // on-disk formats. This is the first piece of hgit-core: everything
 // persisted (object headers, index entries, archive metadata) goes
@@ -99,7 +142,7 @@ U0 IgnoreLoad(U8 *ignore_path, U8 **out_patterns, U8 **out_negate,
               U8 **out_kind, I64 *out_count)
 {
   I64 fsize;
-  U8 *buf = FileRead(ignore_path, &fsize);
+  U8 *buf = HgitFileRead(ignore_path, &fsize);
   if (buf == NULL) {
     *out_patterns = NULL;
     *out_negate = NULL;
@@ -282,7 +325,7 @@ U0 AttrsRulesLoad(U8 *attrs_path, U8 **out_patterns, U8 **out_kind,
                    U8 **out_sets, U8 **out_values, I64 *out_count)
 {
   I64 fsize;
-  U8 *buf = FileRead(attrs_path, &fsize);
+  U8 *buf = HgitFileRead(attrs_path, &fsize);
   if (buf == NULL) {
     *out_patterns = NULL; *out_kind = NULL;
     *out_sets = NULL; *out_values = NULL; *out_count = 0;
@@ -1779,7 +1822,7 @@ Bool MetaReadHead(U8 *repo_path, U8 *name, U8 *hash_out)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
   I64 payload_len;
@@ -1797,7 +1840,7 @@ U0 MetaWriteHead(U8 *repo_path, U8 *name, U8 *hash)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -1817,7 +1860,7 @@ Bool MetaPathExists(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
   I64 payload_len;
   return MetaFind(buf, size, name, META_TAG_PATH_DECLARED, &payload_len) >= 0;
@@ -1831,7 +1874,7 @@ U0 MetaPathDeclare(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -1858,7 +1901,7 @@ U0 MetaPathUndeclare(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return;
   U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
@@ -1875,7 +1918,7 @@ U0 MetaPathList(U8 *repo_path)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return;
   I64 pos = 0;
   while (pos < size) {
@@ -1908,7 +1951,7 @@ I64 MetaPathCount(U8 *repo_path)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return 0;
   I64 pos = 0, n = 0;
   while (pos < size) {
@@ -1937,7 +1980,7 @@ U0 MetaPathListInto(U8 *repo_path, U8 *out_names, I64 *out_count)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf != NULL) {
     I64 pos = 0;
     while (pos < size) {
@@ -1966,7 +2009,7 @@ U0 MetaCurrentGet(U8 *repo_path, U8 *out_name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 payload_len;
   I64 payload_off = -1;
   if (buf != NULL) payload_off = MetaFind(buf, size, "", META_TAG_CURRENT, &payload_len);
@@ -1986,7 +2029,7 @@ U0 MetaCurrentSet(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -2068,7 +2111,7 @@ U0 MetaOpLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 tim
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -2095,7 +2138,7 @@ Bool MetaOpLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_o
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
   U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
@@ -2126,7 +2169,7 @@ Bool MetaOpLogGet(U8 *repo_path, U8 *name, I64 index, U8 *prev_out, U8 *new_out,
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
   I64 target_len = StrLen(name);
   I64 pos = 0, idx = 0;
@@ -2161,7 +2204,7 @@ I64 MetaOpLogCount(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return 0;
   I64 target_len = StrLen(name);
   I64 pos = 0, count = 0;
@@ -2198,7 +2241,7 @@ U0 MetaRedoLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 t
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -2222,7 +2265,7 @@ Bool MetaRedoLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
   U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
@@ -2249,7 +2292,7 @@ U0 MetaRedoLogClear(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return;
   U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
@@ -2285,7 +2328,7 @@ U0 MetaMergeStateWrite(U8 *repo_path, U8 *name, U8 *ours_head, U8 *theirs_head, 
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -2312,7 +2355,7 @@ Bool MetaMergeStateRead(U8 *repo_path, U8 *name, U8 *ours_head_out, U8 *theirs_h
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
   I64 payload_len;
   I64 payload_off = MetaFind(buf, size, name, META_TAG_MERGE_STATE, &payload_len);
@@ -2340,7 +2383,7 @@ U0 MetaMergeStateClear(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return;
   U8 *scratch = MAlloc(size + META_BUF_HEADROOM);
   I64 scratch_len;
@@ -2362,7 +2405,7 @@ U0 MetaConflictAppend(U8 *repo_path, U8 *name, U8 *conflict_hash)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -2388,7 +2431,7 @@ I64 MetaConflictCount(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return 0;
   I64 target_len = StrLen(name);
   I64 pos = 0, count = 0;
@@ -2418,7 +2461,7 @@ Bool MetaConflictGetAt(U8 *repo_path, U8 *name, I64 index,
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
   I64 target_len = StrLen(name);
   I64 pos = 0, idx = 0;
@@ -2461,7 +2504,7 @@ Bool MetaConflictSetResolved(U8 *repo_path, U8 *name, U8 *conflict_hash, U8 *res
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
   I64 target_len = StrLen(name);
@@ -3117,7 +3160,7 @@ Bool FindMergeBase(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
 Bool HgitInit(U8 *path)
 {
   I64 existing_size;
-  U8 *existing = FileRead(path, &existing_size);
+  U8 *existing = HgitFileRead(path, &existing_size);
   if (existing != NULL) return FALSE;
   U8 header[16];
   HgsWriteHeader(header, 4, 0);
@@ -3366,7 +3409,7 @@ U0 WorkDirList()
 U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "STATUS_ERR not_a_repository %s\n", repo_path); return; }
   U16 rver;
   U64 rcount;
@@ -3500,7 +3543,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   CDirEntry *tmpde1 = tmpde;
   while (tmpde) {
     I64 fsize;
-    U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+    U8 *fbuf = HgitFileRead(tmpde->full_name, &fsize);
 
     I64 name_start = 0, j;
     for (j=0; tmpde->full_name[j]; j++) if (tmpde->full_name[j]=='/') name_start=j+1;
@@ -3613,7 +3656,7 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
     check_path[k+tname_len] = 0;
 
     I64 check_size;
-    U8 *check_buf = FileRead(check_path, &check_size);
+    U8 *check_buf = HgitFileRead(check_path, &check_size);
     if (check_buf == NULL) {
       I64 dcap = tname_len; if (dcap > 254) dcap = 254;
       for (m=0; m<dcap; m++) del_names[del_count*256+m] = tname[m];
@@ -3827,7 +3870,7 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
         }
       } else {
         I64 fsize;
-        U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+        U8 *fbuf = HgitFileRead(tmpde->full_name, &fsize);
         {
           // Probe 108 (experiments/108-status-large-file-support/):
           // was `if (fsize+1 > 512) STATUS_TOO_LARGE_TO_CHECK` guarding
@@ -3967,7 +4010,7 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
         // duplicate report.
       } else {
         I64 check_size;
-        U8 *check_buf = FileRead(check_path, &check_size);
+        U8 *check_buf = HgitFileRead(check_path, &check_size);
         if (check_buf == NULL) {
           I64 dcap = fti; if (dcap > 254) dcap = 254;
           for (m=0; m<dcap; m++) del_names[del_count*256+m] = full_tname[m];
@@ -4042,7 +4085,7 @@ U0 StatusTreeWalk(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
 U0 HgitStatusTree(U8 *repo_path, U8 *dir_path)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "STATUS_ERR not_a_repository %s\n", repo_path); return; }
   U16 rver;
   U64 rcount;
@@ -4180,7 +4223,7 @@ U0 HgitHistory(U8 *repo_path)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver;
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
@@ -4454,7 +4497,7 @@ U0 CheckMarkReachable(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
 U0 HgitCheck(U8 *repo_path)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "CHECK_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;
@@ -4779,7 +4822,7 @@ U0 HgitHistoryDoc(U8 *repo_path, U8 *doc_path)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver;
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
@@ -5026,7 +5069,7 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
   for (fi=0; title[fi]; fi++) doc[dlen++] = title[fi];
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) {
     U8 *m1 = "(not a repository)$CR$";
     for (fi=0; m1[fi]; fi++) doc[dlen++] = m1[fi];
@@ -5107,7 +5150,7 @@ U0 HgitReconcileOverview(U8 *repo_path, U8 *doc_path)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver; U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 
@@ -5283,7 +5326,7 @@ U0 GraphAppendCommitLine(U8 *doc, I64 *dlen, U8 *hash, U8 *content)
 U0 HgitGraph(U8 *repo_path, U8 *doc_path)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) {
     U8 doc0[64];
     I64 dlen0 = 0;
@@ -5589,7 +5632,7 @@ U0 SeePrintTreeEntries(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count
 U0 HgitSee(U8 *repo_path, U8 *target_hash)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "SEE_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;
@@ -6022,7 +6065,7 @@ U0 DiffPrintTreeChanges(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_coun
 U0 HgitDiff(U8 *repo_path, U8 *commit_hash)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "DIFF_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;
@@ -6259,7 +6302,7 @@ Bool OpLogRestore(U8 *repo_path, I64 index)
 U0 CopyFileIfExists(U8 *src_path, U8 *dest_path)
 {
   I64 size;
-  U8 *buf = FileRead(src_path, &size);
+  U8 *buf = HgitFileRead(src_path, &size);
   if (buf == NULL) return;
   FileWrite(dest_path, buf, size);
 }
@@ -6625,7 +6668,7 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
         // HgitOfferWithRelation's own flat loop already uses,
         // parameterized by THIS directory level's own old tree.
         I64 fsize;
-        U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+        U8 *fbuf = HgitFileRead(tmpde->full_name, &fsize);
         U8 file_at_type; U8 file_at_hash[64]; U64 file_at_entity;
         Bool file_already_tracked = (old_tree_content != NULL) &&
           TreeFindEntry(old_tree_content, old_tree_content_len,
@@ -6706,7 +6749,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
 {
   // Load the existing repo's object section into a working buffer.
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver;
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
@@ -6869,7 +6912,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   CDirEntry *tmpde1 = tmpde;
   while (tmpde) {
     I64 fsize;
-    U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+    U8 *fbuf = HgitFileRead(tmpde->full_name, &fsize);
 
     // name = just the filename portion, after the last '/'
     I64 name_start = 0, j;
@@ -7062,7 +7105,7 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
                              U64 relation_entity_id)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver;
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
@@ -8108,7 +8151,7 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
 U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;
@@ -8317,7 +8360,7 @@ U0 HgitConflicts(U8 *repo_path)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;
@@ -8417,7 +8460,7 @@ U0 HgitResolve(U8 *repo_path, I64 conflict_index, U8 *which)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;
@@ -8519,7 +8562,7 @@ U0 HgitMergeContinue(U8 *repo_path, U64 timestamp)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); Free(resolution_conflict_hashes); Free(resolution_hashes); return; }
   U16 rver;
   U64 rcount;
@@ -8790,7 +8833,7 @@ U0 HgitConflictDoc(U8 *repo_path, U8 *doc_path)
   CdAppend(doc, &dlen, "theirs head: "); CdAppend(doc, &dlen, hh); CdAppend(doc, &dlen, "$CR$$CR$");
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver; U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
   U8 *idx_hashes = MAlloc(rcount*64 + 64);
@@ -8993,7 +9036,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.8.8"
+#define HGIT_VERSION "1.8.9"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -9149,6 +9192,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD path close <repo_path> <name>\n");
   CommPrint(1, "HELP_CMD export <src_repo_path> <dest_repo_path>\n");
   CommPrint(1, "HELP_CMD import <src_repo_path> <dest_repo_path>\n");
+  CommPrint(1, "HELP_CMD interactive (show hgit's output on the TempleOS screen and turn AutoComplete off - run this first when typing at the console)\n");
   CommPrint(1, "HELP_CMD help\n");
   CommPrint(1, "HELP_CMD version\n");
   CommPrint(1, "HELP_CMD logo\n");
@@ -9169,6 +9213,13 @@ U0 Hgit(U8 *cmdline)
 
   if (StrCmp(cmd, "") == 0 || StrCmp(cmd, "help") == 0) {
     HgitHelp();
+  } else if (StrCmp(cmd, "interactive") == 0) {
+    // v1.8.9: for a person at the console - echo every hgit report to the
+    // screen (it goes only to the serial port otherwise) and switch off
+    // AutoComplete, whose popup steals digit/F-keys mid-command.
+    hgit_screen_out = 1;
+    AutoComplete(0);
+    CommPrint(1, "INTERACTIVE_ON\n");
   } else if (StrCmp(cmd, "version") == 0) {
     CommPrint(1, "HGIT_VERSION %s\n", HGIT_VERSION);
   } else if (StrCmp(cmd, "logo") == 0) {

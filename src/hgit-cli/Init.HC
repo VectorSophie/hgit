@@ -52,7 +52,7 @@
 Bool HgitInit(U8 *path)
 {
   I64 existing_size;
-  U8 *existing = FileRead(path, &existing_size);
+  U8 *existing = HgitFileRead(path, &existing_size);
   if (existing != NULL) return FALSE;
   U8 header[16];
   HgsWriteHeader(header, 4, 0);

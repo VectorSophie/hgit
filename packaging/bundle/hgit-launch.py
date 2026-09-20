@@ -180,7 +180,27 @@ def find_qemu():
     )
 
 
+BUNDLE_HELP = """hgit - version control for TempleOS, run inside a pre-loaded TempleOS VM.
+
+usage: hgit [disk.qcow2]     boot the bundle in QEMU and load hgit
+       hgit --version        print the hgit version this bundle ships
+       hgit --help           this text
+
+Once the QEMU window says "Ready", type HolyC at the prompt, e.g.
+    Hgit("version");   Hgit("help");
+Commands can also be sent from another terminal with hgit-type."""
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print(BUNDLE_HELP)
+        return
+    if len(sys.argv) > 1 and sys.argv[1] == "--version":
+        try:
+            print("hgit bundle " + open(os.path.join(HERE, "VERSION")).read().strip())
+        except OSError:
+            print("hgit bundle (unknown version)")
+        return
     disk = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DISK
     if not os.path.isfile(disk):
         sys.exit(f"error: disk image not found: {disk}")
@@ -218,6 +238,10 @@ def main():
         'I64 sz;U8 *b=FileRead("C:/Home/HgitAll.HC",&sz);ExePutS(b);',
     )
     time.sleep(20)
+    # Screen output on, AutoComplete off (see Canon.HC / Hgit("interactive")):
+    # without this a person at the QEMU window sees no hgit output at all.
+    send_text(port, 'Hgit("interactive");')
+    time.sleep(2)
 
     print(
         "Ready. Switch to the QEMU window - hgit is loaded.\n"

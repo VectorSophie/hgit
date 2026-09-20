@@ -104,6 +104,7 @@ loaded) for the same list straight from the live dispatcher.
 | `correct` / `revert` / `reconcile` (+ `...tree` variants) | Typed relations between commits (ADR 0005/0006) — a commit can *point at* another with real semantics, optionally scoped to one tracked entity; the `...tree` forms carry the same relation on a recursive, `offertree`-style offer |
 | `historydoc` / `reconciledoc` / `reconcileoverview` | Executable DolDoc views — real rendered documents (colored, with live `$LK$` links and collapsible `$TR$` trees), not plain text logs |
 | `export` / `import` | Whole-repo portability, own paths and history intact |
+| `interactive` | For a person at the TempleOS console: echo hgit's reports to the screen (normally serial-only) and turn AutoComplete off (v1.8.9) |
 | `help` / `version` / `logo` | Discoverability and a bit of fun |
 
 ## Ignore rules

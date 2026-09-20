@@ -1,3 +1,46 @@
+// --- v1.8.9: optional on-screen output -------------------------------
+// Every hgit command reports through CommPrint, which TempleOS's own
+// Comm.HC sends ONLY to a serial port - fine for the automated test
+// harness (it reads the serial log), but a person typing at the QEMU
+// window saw nothing at all. This redefinition (same signature as
+// Comm.HC's, same serial behavior) additionally echoes to the screen
+// when `hgit_screen_out` is set. Default OFF so the test/dev harness
+// is unchanged; `Hgit("interactive");` turns it on (and AutoComplete
+// off) for a person at the console.
+I64 hgit_screen_out = 0;
+
+// PutS interprets DolDoc `$` commands, so a literal `$` is doubled first.
+U0 HgitScreenPut(U8 *s)
+{
+  U8 *o = MAlloc(StrLen(s)*2 + 2);
+  I64 i, j = 0;
+  for (i=0; s[i]; i++) {
+    o[j++] = s[i];
+    if (s[i] == '$') o[j++] = '$';
+  }
+  o[j] = 0;
+  PutS(o);
+  Free(o);
+}
+
+U0 CommPrint(I64 port, U8 *fmt, ...)
+{
+  U8 *buf = StrPrintJoin(NULL, fmt, argc, argv);
+  CommPutS(port, buf);
+  if (hgit_screen_out) HgitScreenPut(buf);
+  Free(buf);
+}
+
+// FileRead prints a red "File not found" error on the screen when the
+// file is missing - and hgit deliberately probes for missing files (a
+// new repo has no metadata file yet, `init` checks the path is free).
+// Every hgit read goes through this instead: NULL, silently, if absent.
+U8 *HgitFileRead(U8 *name, I64 *size)
+{
+  if (!FileFind(name)) return NULL;
+  return FileRead(name, size);
+}
+
 // Canon.HC — canonical little-endian integer encode/decode for hgit's
 // on-disk formats. This is the first piece of hgit-core: everything
 // persisted (object headers, index entries, archive metadata) goes

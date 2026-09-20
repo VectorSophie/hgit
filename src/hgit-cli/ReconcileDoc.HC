@@ -145,7 +145,7 @@ U0 HgitReconcileDoc(U8 *repo_path, U8 *target_hash, U8 *doc_path)
   for (fi=0; title[fi]; fi++) doc[dlen++] = title[fi];
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) {
     U8 *m1 = "(not a repository)$CR$";
     for (fi=0; m1[fi]; fi++) doc[dlen++] = m1[fi];
@@ -226,7 +226,7 @@ U0 HgitReconcileOverview(U8 *repo_path, U8 *doc_path)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver; U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
 

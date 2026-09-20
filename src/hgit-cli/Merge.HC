@@ -858,7 +858,7 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
 U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;
@@ -1067,7 +1067,7 @@ U0 HgitConflicts(U8 *repo_path)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;
@@ -1167,7 +1167,7 @@ U0 HgitResolve(U8 *repo_path, I64 conflict_index, U8 *which)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;
@@ -1269,7 +1269,7 @@ U0 HgitMergeContinue(U8 *repo_path, U64 timestamp)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); Free(resolution_conflict_hashes); Free(resolution_hashes); return; }
   U16 rver;
   U64 rcount;

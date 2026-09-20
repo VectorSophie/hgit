@@ -84,7 +84,7 @@
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.8.8"
+#define HGIT_VERSION "1.8.9"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -240,6 +240,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD path close <repo_path> <name>\n");
   CommPrint(1, "HELP_CMD export <src_repo_path> <dest_repo_path>\n");
   CommPrint(1, "HELP_CMD import <src_repo_path> <dest_repo_path>\n");
+  CommPrint(1, "HELP_CMD interactive (show hgit's output on the TempleOS screen and turn AutoComplete off - run this first when typing at the console)\n");
   CommPrint(1, "HELP_CMD help\n");
   CommPrint(1, "HELP_CMD version\n");
   CommPrint(1, "HELP_CMD logo\n");
@@ -260,6 +261,13 @@ U0 Hgit(U8 *cmdline)
 
   if (StrCmp(cmd, "") == 0 || StrCmp(cmd, "help") == 0) {
     HgitHelp();
+  } else if (StrCmp(cmd, "interactive") == 0) {
+    // v1.8.9: for a person at the console - echo every hgit report to the
+    // screen (it goes only to the serial port otherwise) and switch off
+    // AutoComplete, whose popup steals digit/F-keys mid-command.
+    hgit_screen_out = 1;
+    AutoComplete(0);
+    CommPrint(1, "INTERACTIVE_ON\n");
   } else if (StrCmp(cmd, "version") == 0) {
     CommPrint(1, "HGIT_VERSION %s\n", HGIT_VERSION);
   } else if (StrCmp(cmd, "logo") == 0) {

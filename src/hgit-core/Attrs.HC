@@ -54,7 +54,7 @@ U0 AttrsRulesLoad(U8 *attrs_path, U8 **out_patterns, U8 **out_kind,
                    U8 **out_sets, U8 **out_values, I64 *out_count)
 {
   I64 fsize;
-  U8 *buf = FileRead(attrs_path, &fsize);
+  U8 *buf = HgitFileRead(attrs_path, &fsize);
   if (buf == NULL) {
     *out_patterns = NULL; *out_kind = NULL;
     *out_sets = NULL; *out_values = NULL; *out_count = 0;

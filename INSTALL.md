@@ -91,6 +91,15 @@ hgit command prints through `CommPrint(1, ...)` — without `CommInit8n1`
 initializing COM1 first (line 2), the very first hgit command you run
 triggers a real kernel General Protection fault, not a graceful error.
 
+hgit's reports go to the COM1 serial port by default (that is what its
+test harness reads) - at the console you would see nothing. Turn on
+on-screen output (and turn off AutoComplete, whose popup steals
+digit/F-keys while typing) with:
+
+```
+Hgit("interactive");
+```
+
 Then use it like any other native TempleOS command:
 
 ```
@@ -110,3 +119,16 @@ kept in sync by hand (`experiments/73-hgit-help/`).
 - No verified network-download path from inside TempleOS itself.
 - No verified physical-media (USB/CD) procedure — see the CD-ROM
   attempt above for what was tried and why it wasn't pursued further.
+
+
+## Package managers (v1.8.9+)
+
+Each wraps the same bundle - QEMU + Python are the only dependencies, hgit
+itself is the TempleOS disk image:
+
+- **apt/dpkg (Debian/Ubuntu)**: `sudo apt install ./hgit_<version>_all.deb`
+  (from the release page), then run `hgit`.
+- **Homebrew**: `brew install VectorSophie/hgit/hgit` (tap: `VectorSophie/homebrew-hgit`).
+- **Chocolatey**: `packaging/chocolatey/` holds the package sources
+  (`choco pack`, then `choco install hgit -s .`); not yet published to the
+  community feed.

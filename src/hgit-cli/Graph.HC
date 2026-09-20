@@ -94,7 +94,7 @@ U0 GraphAppendCommitLine(U8 *doc, I64 *dlen, U8 *hash, U8 *content)
 U0 HgitGraph(U8 *repo_path, U8 *doc_path)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) {
     U8 doc0[64];
     I64 dlen0 = 0;

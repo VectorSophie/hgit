@@ -137,7 +137,7 @@ U0 CheckMarkReachable(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
 U0 HgitCheck(U8 *repo_path)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   if (rbuf == NULL) { CommPrint(1, "CHECK_ERR not_a_repository\n"); return; }
   U16 rver;
   U64 rcount;

@@ -34,7 +34,7 @@ U0 HgitHistory(U8 *repo_path)
   }
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver;
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);

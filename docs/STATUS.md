@@ -157,6 +157,13 @@ designed or started:
   (newer-format rejection, conflict object validation), all covered by
   `tests/full-regression.hc`. Format version 4.
 
+- **v1.8.9 - usable at the console**: before this, a person typing in the QEMU
+  window saw NO hgit output (it goes to a serial port for the test harness).
+  `Hgit("interactive")` echoes it to the screen and turns AutoComplete off; the
+  bundle launcher runs it. Bundle disk refresh is reproducible
+  (`tools/build-bundle.py`, guest-verified by checksum) and packaged as `.deb`,
+  Homebrew formula and Chocolatey sources (`tools/build-dist.sh`).
+
 ## What's genuinely still open (real, not hypothetical)
 
 - **Conflict resolution is deliberately narrow** - v1.8.3-v1.8.4

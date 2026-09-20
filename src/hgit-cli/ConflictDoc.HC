@@ -118,7 +118,7 @@ U0 HgitConflictDoc(U8 *repo_path, U8 *doc_path)
   CdAppend(doc, &dlen, "theirs head: "); CdAppend(doc, &dlen, hh); CdAppend(doc, &dlen, "$CR$$CR$");
 
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver; U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
   U8 *idx_hashes = MAlloc(rcount*64 + 64);

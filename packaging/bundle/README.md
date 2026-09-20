@@ -6,20 +6,13 @@ repos left lying around. Boot it and hgit is one short, scripted load
 away from ready. Full build/verification writeup:
 `experiments/87-bundle-install/` in the main repo.
 
-**⚠️ Stale as of 2026-09-15: `HGIT_VERSION 1.3.0` is baked in, not the
-current release.** `templeos-hgit.qcow2` is a large binary disk image
-(45MB) and is deliberately NOT committed to this git repo (see
-`.gitignore`) — it's attached as a real, downloadable asset on the
-[latest GitHub release](https://github.com/VectorSophie/hgit/releases/latest)
-instead, the same place `HgitAll.HC` itself is attached. A refresh
-attempt (loading the current package onto this same disk) hit a real,
-reproducible, not-yet-solved COM2-transmission reliability issue
-specific to a freshly-booted session — logged honestly in
-`docs/research/failed-approaches.md` (2026-09-15 entry) rather than
-silently shipping a claimed-fresh image that wasn't. The bundle
-*mechanism* below (QEMU + the launch script) is real and working on
-its own terms regardless of which hgit version happens to be loaded on
-the disk.
+The disk image is refreshed for each release with `tools/build-bundle.py`
+(it verifies the package is saved intact inside the guest via size +
+checksum before compressing). `templeos-hgit.qcow2` is a large binary
+(45MB) and is deliberately NOT committed to this git repo (see `.gitignore`)
+- it is attached as a downloadable asset on the release matching the
+`HGIT_VERSION` it carries (`hgit-bundle-<version>.tar.gz`/`.zip` also bundle it
+with the launcher scripts, for the package managers).
 
 ## Getting the disk image
 
@@ -59,7 +52,16 @@ Ready. Switch to the QEMU window - hgit is loaded.
 Try: Hgit("version"); then Hgit("help");
 ```
 
+The loader also runs `Hgit("interactive");` for you: hgit's reports
+normally go only to a serial port (that's what the test harness reads),
+so a person at the QEMU window would otherwise see **nothing** after a
+command. `interactive` echoes them to the TempleOS screen and turns
+off AutoComplete (its popup steals digit/F-keys while you type). If you
+load hgit by hand, run `Hgit("interactive");` first.
+
 From there, it's real TempleOS — type HolyC directly at the prompt.
+Remember there is no shell syntax: the command is `Hgit("history
+C:/Home/Repo.hgs");`, not `hgit history ...`.
 See the main repo's `README.md` for the full command surface, or just
 run `Hgit("help");`.
 
@@ -122,9 +124,8 @@ probe writeup.)
 ## What this is not (yet)
 
 This is a real, working way to run hgit on Windows/Linux/macOS today —
-it is **not** a native `hgit.exe`/`hgit` binary, and not (yet) a
-Chocolatey/Homebrew/apt package. hgit is written in HolyC and only
-runs inside TempleOS; this bundle is that TempleOS instance, pre-
-loaded, plus the one script that gets you to a ready prompt fastest.
-Wrapping this bundle in each platform's own package-manager format is
-real, separate follow-up work, not done here.
+it is **not** a native `hgit.exe`/`hgit` binary. hgit is written in
+HolyC and only runs inside TempleOS; this bundle is that TempleOS
+instance, pre-loaded, plus the script that gets you to a ready prompt
+fastest. The same bundle is also wrapped as a `.deb`, a Homebrew
+formula and a Chocolatey package - see the main `INSTALL.md`.

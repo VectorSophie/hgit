@@ -345,7 +345,7 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
         // HgitOfferWithRelation's own flat loop already uses,
         // parameterized by THIS directory level's own old tree.
         I64 fsize;
-        U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+        U8 *fbuf = HgitFileRead(tmpde->full_name, &fsize);
         U8 file_at_type; U8 file_at_hash[64]; U64 file_at_entity;
         Bool file_already_tracked = (old_tree_content != NULL) &&
           TreeFindEntry(old_tree_content, old_tree_content_len,
@@ -426,7 +426,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
 {
   // Load the existing repo's object section into a working buffer.
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver;
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);
@@ -589,7 +589,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   CDirEntry *tmpde1 = tmpde;
   while (tmpde) {
     I64 fsize;
-    U8 *fbuf = FileRead(tmpde->full_name, &fsize);
+    U8 *fbuf = HgitFileRead(tmpde->full_name, &fsize);
 
     // name = just the filename portion, after the last '/'
     I64 name_start = 0, j;
@@ -782,7 +782,7 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
                              U64 relation_entity_id)
 {
   I64 rsize;
-  U8 *rbuf = FileRead(repo_path, &rsize);
+  U8 *rbuf = HgitFileRead(repo_path, &rsize);
   U16 rver;
   U64 rcount;
   HgsReadHeader(rbuf, &rver, &rcount);

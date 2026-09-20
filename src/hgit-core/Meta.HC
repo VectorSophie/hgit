@@ -193,7 +193,7 @@ Bool MetaReadHead(U8 *repo_path, U8 *name, U8 *hash_out)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
   I64 payload_len;
@@ -211,7 +211,7 @@ U0 MetaWriteHead(U8 *repo_path, U8 *name, U8 *hash)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -231,7 +231,7 @@ Bool MetaPathExists(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
   I64 payload_len;
   return MetaFind(buf, size, name, META_TAG_PATH_DECLARED, &payload_len) >= 0;
@@ -245,7 +245,7 @@ U0 MetaPathDeclare(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -272,7 +272,7 @@ U0 MetaPathUndeclare(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return;
   U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
@@ -289,7 +289,7 @@ U0 MetaPathList(U8 *repo_path)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return;
   I64 pos = 0;
   while (pos < size) {
@@ -322,7 +322,7 @@ I64 MetaPathCount(U8 *repo_path)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return 0;
   I64 pos = 0, n = 0;
   while (pos < size) {
@@ -351,7 +351,7 @@ U0 MetaPathListInto(U8 *repo_path, U8 *out_names, I64 *out_count)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf != NULL) {
     I64 pos = 0;
     while (pos < size) {
@@ -380,7 +380,7 @@ U0 MetaCurrentGet(U8 *repo_path, U8 *out_name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 payload_len;
   I64 payload_off = -1;
   if (buf != NULL) payload_off = MetaFind(buf, size, "", META_TAG_CURRENT, &payload_len);
@@ -400,7 +400,7 @@ U0 MetaCurrentSet(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -482,7 +482,7 @@ U0 MetaOpLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 tim
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -509,7 +509,7 @@ Bool MetaOpLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head_o
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
   U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
@@ -540,7 +540,7 @@ Bool MetaOpLogGet(U8 *repo_path, U8 *name, I64 index, U8 *prev_out, U8 *new_out,
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
   I64 target_len = StrLen(name);
   I64 pos = 0, idx = 0;
@@ -575,7 +575,7 @@ I64 MetaOpLogCount(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return 0;
   I64 target_len = StrLen(name);
   I64 pos = 0, count = 0;
@@ -612,7 +612,7 @@ U0 MetaRedoLogAppend(U8 *repo_path, U8 *name, U8 *prev_head, U8 *new_head, U64 t
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -636,7 +636,7 @@ Bool MetaRedoLogPopLast(U8 *repo_path, U8 *name, U8 *prev_head_out, U8 *new_head
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
   U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
@@ -663,7 +663,7 @@ U0 MetaRedoLogClear(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return;
   U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len;
@@ -699,7 +699,7 @@ U0 MetaMergeStateWrite(U8 *repo_path, U8 *name, U8 *ours_head, U8 *theirs_head, 
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -726,7 +726,7 @@ Bool MetaMergeStateRead(U8 *repo_path, U8 *name, U8 *ours_head_out, U8 *theirs_h
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
   I64 payload_len;
   I64 payload_off = MetaFind(buf, size, name, META_TAG_MERGE_STATE, &payload_len);
@@ -754,7 +754,7 @@ U0 MetaMergeStateClear(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return;
   U8 *scratch = MAlloc(size + META_BUF_HEADROOM);
   I64 scratch_len;
@@ -776,7 +776,7 @@ U0 MetaConflictAppend(U8 *repo_path, U8 *name, U8 *conflict_hash)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   I64 total_old;
   if (buf == NULL) total_old = 0; else total_old = size;
 
@@ -802,7 +802,7 @@ I64 MetaConflictCount(U8 *repo_path, U8 *name)
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return 0;
   I64 target_len = StrLen(name);
   I64 pos = 0, count = 0;
@@ -832,7 +832,7 @@ Bool MetaConflictGetAt(U8 *repo_path, U8 *name, I64 index,
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
   I64 target_len = StrLen(name);
   I64 pos = 0, idx = 0;
@@ -875,7 +875,7 @@ Bool MetaConflictSetResolved(U8 *repo_path, U8 *name, U8 *conflict_hash, U8 *res
   U8 meta_path[256];
   MetaPath(repo_path, meta_path);
   I64 size;
-  U8 *buf = FileRead(meta_path, &size);
+  U8 *buf = HgitFileRead(meta_path, &size);
   if (buf == NULL) return FALSE;
 
   I64 target_len = StrLen(name);
