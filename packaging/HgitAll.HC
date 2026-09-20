@@ -7367,6 +7367,135 @@ I64 MergeCollectNames(U8 *tree_a, I64 tree_a_len, U8 *tree_b, I64 tree_b_len,
   return name_count;
 }
 
+// --- v1.8.5: rename-aware merge via entity IDs (ADR 0004/0009) ---
+//
+// offer carries a file's entity ID forward across a detected rename, so
+// "same entity ID under a different name than in the merge base" IS the
+// evidence of a rename. Rather than teach every branch of
+// MergeTreesRecursive about renames, each side's tree is first
+// NORMALIZED: an unambiguous renamed blob entry is renamed back to its
+// base name in a scratch copy, the existing name-keyed 3-way logic then
+// runs unchanged (so rename+edit, mode, conflicts all just work), and
+// the merged entry is written out under the new name (map_from/map_to).
+// Ambiguity is never guessed at: two sides renaming one entity to
+// DIFFERENT names is refused (merge_rename_refused), not silently
+// merged into two entries sharing one identity.
+// Deliberately out of scope: cross-directory moves (offer's own rename
+// detection is within-directory, so no identity evidence survives them),
+// and rename-vs-delete (the renamed file simply survives, as before).
+I64 merge_rename_refused = 0;
+
+// Number of blob entries in `tree` carrying `entity_id`; name of the
+// first match copied to name_out.
+I64 MergeFindEntityInTree(U8 *tree, U64 entity_id, U8 *name_out)
+{
+  I64 matches = 0;
+  if (tree == NULL) return 0;
+  U32 tc = GetU32LE(tree, 0);
+  I64 pos = 4;
+  U32 te;
+  for (te=0; te<tc; te++) {
+    U8 nl = tree[pos]; pos += 1;
+    U8 *nm = tree + pos; pos += nl;
+    U8 ty = tree[pos]; pos += 1;
+    pos += 64;
+    U64 eid = GetU64LE(tree, pos); pos += 8;
+    if (ty == OBJ_BLOB && eid == entity_id) {
+      if (matches == 0) {
+        I64 ci;
+        for (ci=0; ci<nl; ci++) name_out[ci] = nm[ci];
+        name_out[nl] = 0;
+      }
+      matches++;
+    }
+  }
+  return matches;
+}
+
+// Returns a new (MAlloc'd) copy of `side_tree` with unambiguous renames
+// (relative to `base_tree`) undone, or NULL if none applied. `map_from`/
+// `map_to` (256-byte slots) accumulate base-name -> new-name pairs.
+U8 *MergeNormalizeSide(U8 *base_tree, I64 base_len, U8 *side_tree, I64 side_len,
+                       U8 *other_tree, I64 other_len,
+                       U8 *map_from, U8 *map_to, I64 *map_count, I64 *out_len)
+{
+  if (base_tree == NULL || side_tree == NULL) return NULL;
+  U32 sc = GetU32LE(side_tree, 0);
+  U8 *buf = MAlloc(side_len + sc*256 + 16);
+  I64 blen = 4;
+  U32 kept = 0;
+  Bool applied = FALSE;
+  I64 pos = 4;
+  U32 te;
+  for (te=0; te<sc; te++) {
+    U8 nl = side_tree[pos]; pos += 1;
+    U8 *nm = side_tree + pos; pos += nl;
+    U8 ty = side_tree[pos]; pos += 1;
+    U8 *hs = side_tree + pos; pos += 64;
+    U64 eid = GetU64LE(side_tree, pos); pos += 8;
+
+    U8 use_name[256];
+    I64 use_len = nl;
+    I64 ui;
+    for (ui=0; ui<nl; ui++) use_name[ui] = nm[ui];
+    use_name[nl] = 0;
+
+    if (ty == OBJ_BLOB) {
+      U8 t1; U8 h1[64]; U64 e1;
+      Bool in_base = TreeFindEntry(base_tree, base_len, nm, nl, &t1, h1, &e1);
+      if (!in_base) {
+        U8 bname[256];
+        I64 bmatch = MergeFindEntityInTree(base_tree, eid, bname);
+        U8 sname[256];
+        I64 smatch = MergeFindEntityInTree(side_tree, eid, sname);
+        if (bmatch == 1 && smatch == 1) {
+          I64 bnl = StrLen(bname);
+          U8 t2; U8 h2[64]; U64 e2;
+          Bool side_has_bname = TreeFindEntry(side_tree, side_len, bname, bnl, &t2, h2, &e2);
+          if (!side_has_bname) {
+            Bool other_has_bname = FALSE;
+            if (other_tree != NULL) other_has_bname = TreeFindEntry(other_tree, other_len, bname, bnl, &t2, h2, &e2);
+            Bool ok_to_norm = other_has_bname;
+            if (!other_has_bname) {
+              U8 oname[256];
+              I64 omatch = MergeFindEntityInTree(other_tree, eid, oname);
+              if (omatch == 1) {
+                if (StrCmp(oname, use_name) == 0) ok_to_norm = TRUE; // same rename on both sides
+                else {
+                  CommPrint(1, "MERGE_RENAME_RENAME %s\n", bname);
+                  merge_rename_refused = 1;
+                }
+              }
+            }
+            if (ok_to_norm) {
+              I64 bi;
+              for (bi=0; bi<bnl; bi++) use_name[bi] = bname[bi];
+              use_name[bnl] = 0;
+              use_len = bnl;
+              applied = TRUE;
+              Bool already = FALSE;
+              I64 mi;
+              for (mi=0; mi<*map_count; mi++) if (StrCmp(map_from+mi*256, bname) == 0) already = TRUE;
+              if (!already) {
+                for (bi=0; bi<=bnl; bi++) map_from[(*map_count)*256+bi] = bname[bi];
+                for (bi=0; bi<nl; bi++) map_to[(*map_count)*256+bi] = nm[bi];
+                map_to[(*map_count)*256+nl] = 0;
+                (*map_count)++;
+              }
+            }
+          }
+        }
+      }
+    }
+    TreeEncodeEntry(buf, &blen, use_name, use_len, ty, hs, eid);
+    kept++;
+  }
+  if (!applied) { Free(buf); return NULL; }
+  PutU32LE(buf, 0, kept);
+  *out_len = blen;
+  return buf;
+}
+
 // The real heart of this file: three-way merges ONE tree level (base
 // may be NULL - a real, valid case when a subtree is genuinely new on
 // both sides), writing the merged content into
@@ -7435,6 +7564,21 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
   U32 ours_tcount = 0; if (ours_tree != NULL) ours_tcount = GetU32LE(ours_tree, 0);
   U32 theirs_tcount = 0; if (theirs_tree != NULL) theirs_tcount = GetU32LE(theirs_tree, 0);
   U32 base_tcount = 0; if (base_tree != NULL) base_tcount = GetU32LE(base_tree, 0);
+
+  // v1.8.5: undo unambiguous renames on each side (see the helpers above)
+  // so the name-keyed logic below sees base names; written back under the
+  // new name via out_name.
+  U8 *map_from = MAlloc((ours_tcount+theirs_tcount+1)*256 + 256);
+  U8 *map_to = MAlloc((ours_tcount+theirs_tcount+1)*256 + 256);
+  I64 map_count = 0;
+  I64 ours_norm_len = 0, theirs_norm_len = 0;
+  U8 *ours_norm = MergeNormalizeSide(base_tree, base_tree_len, ours_tree, ours_tree_len,
+                                     theirs_tree, theirs_tree_len, map_from, map_to, &map_count, &ours_norm_len);
+  U8 *theirs_norm = MergeNormalizeSide(base_tree, base_tree_len, theirs_tree, theirs_tree_len,
+                                       ours_tree, ours_tree_len, map_from, map_to, &map_count, &theirs_norm_len);
+  if (ours_norm != NULL) { ours_tree = ours_norm; ours_tree_len = ours_norm_len; }
+  if (theirs_norm != NULL) { theirs_tree = theirs_norm; theirs_tree_len = theirs_norm_len; }
+
   I64 max_names = ours_tcount + theirs_tcount + base_tcount + 1;
   U8 *names = MAlloc(max_names*256 + 256);
   I64 name_count = MergeCollectNames(ours_tree, ours_tree_len, theirs_tree, theirs_tree_len,
@@ -7454,12 +7598,18 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
   for (ni=0; ni<name_count; ni++) {
     U8 *name = names + ni*256;
     I64 name_len = StrLen(name);
+    U8 *out_name = name;
+    I64 out_name_len = name_len;
+    I64 mpi;
+    for (mpi=0; mpi<map_count; mpi++) {
+      if (StrCmp(map_from+mpi*256, name) == 0) { out_name = map_to+mpi*256; out_name_len = StrLen(out_name); }
+    }
 
     U8 full_name[256];
     I64 fi = 0, fj;
     for (fj=0; prefix[fj]; fj++) full_name[fi++] = prefix[fj];
-    I64 fcap = name_len; if (fi+fcap > 254) fcap = 254-fi;
-    for (fj=0; fj<fcap; fj++) full_name[fi++] = name[fj];
+    I64 fcap = out_name_len; if (fi+fcap > 254) fcap = 254-fi;
+    for (fj=0; fj<fcap; fj++) full_name[fi++] = out_name[fj];
     full_name[fi] = 0;
 
     U8 ours_type, ours_hash[64]; U64 ours_entity_id;
@@ -7561,7 +7711,7 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
 
         U64 sub_entity_id;
         if (ours_found) sub_entity_id = ours_entity_id; else sub_entity_id = theirs_entity_id;
-        TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len,
+        TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, out_name, out_name_len,
                         OBJ_TREE, sub_hash, sub_entity_id);
         merged_entry_count++;
       }
@@ -7636,10 +7786,10 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
         if (kc_use_ours) { I64 krj2; for (krj2=0; krj2<64; krj2++) if (ours_hash[krj2] != kc_resolution_hash[krj2]) kc_use_ours = FALSE; }
         if (kc_zero) {
         } else if (kc_use_ours) {
-          TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, ours_type, ours_hash, ours_entity_id);
+          TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, out_name, out_name_len, ours_type, ours_hash, ours_entity_id);
           merged_entry_count++;
         } else {
-          TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, theirs_type, theirs_hash, theirs_entity_id);
+          TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, out_name, out_name_len, theirs_type, theirs_hash, theirs_entity_id);
           merged_entry_count++;
         }
       } else {
@@ -7759,11 +7909,11 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
           if (cc_use_ours) { I64 crj2; for (crj2=0; crj2<64; crj2++) if (ours_hash[crj2] != cc_resolution_hash[crj2]) cc_use_ours = FALSE; }
           if (cc_zero) {
           } else if (cc_use_ours) {
-            TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, ours_type, ours_hash, ours_entity_id);
+            TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, out_name, out_name_len, ours_type, ours_hash, ours_entity_id);
             merged_entry_count++;
             if (ours_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, ours_entity_id, ours_mode);
           } else {
-            TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, theirs_type, theirs_hash, theirs_entity_id);
+            TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, out_name, out_name_len, theirs_type, theirs_hash, theirs_entity_id);
             merged_entry_count++;
             if (theirs_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, theirs_entity_id, theirs_mode);
           }
@@ -7776,12 +7926,12 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
           all_ok = FALSE;
         }
       } else if (take_ours && ours_found) {
-        TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len,
+        TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, out_name, out_name_len,
                         ours_type, ours_hash, ours_entity_id);
         merged_entry_count++;
         if (winning_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, ours_entity_id, winning_mode);
       } else if (take_theirs && theirs_found) {
-        TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len,
+        TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, out_name, out_name_len,
                         theirs_type, theirs_hash, theirs_entity_id);
         merged_entry_count++;
         if (winning_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, theirs_entity_id, winning_mode);
@@ -7794,6 +7944,10 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
 
   PutU32LE(merged_tree_content_out, 0, merged_entry_count);
   Free(names);
+  Free(map_from);
+  Free(map_to);
+  if (ours_norm != NULL) Free(ours_norm);
+  if (theirs_norm != NULL) Free(theirs_norm);
   return all_ok;
 }
 
@@ -8002,6 +8156,7 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   U8 *merged_attrs_content = MAlloc(max_names*9 + 9);
   I64 merged_attrs_len = 4; // room for the U32 count, filled in below
 
+  merge_rename_refused = 0;
   Bool ok = MergeTreesRecursive(rbuf, idx_hashes, idx_offsets, idx_count,
                                 archive, &alen,
                                 base_tree, base_tree_len, ours_tree, ours_tree_len,
@@ -8013,6 +8168,12 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
                                 theirs_attrs, theirs_attrs_len,
                                 merged_attrs_content, &merged_attrs_len,
                                 NULL, NULL, 0); // no resolutions yet - a fresh merge attempt
+
+  if (merge_rename_refused) {
+    CommPrint(1, "MERGE_REFUSED ambiguous_rename_rename - both sides renamed one file differently; nothing changed\n");
+    Free(idx_hashes); Free(idx_offsets); Free(conflict_names); Free(conflict_hashes); Free(archive); Free(merged_attrs_content);
+    return;
+  }
 
   if (!ok) {
     // ADR 0016: a real conflict no longer means "nothing persisted" -
@@ -8548,7 +8709,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.8.4"
+#define HGIT_VERSION "1.8.5"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
