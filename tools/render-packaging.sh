@@ -16,7 +16,6 @@ class Hgit < Formula
   homepage "https://github.com/VectorSophie/hgit"
   url "$REL/hgit-bundle-$VER.tar.gz"
   sha256 "$TGZ"
-  license "Unlicense"
 
   depends_on "python@3"
   depends_on "qemu"
@@ -49,7 +48,6 @@ cat > packaging/chocolatey/hgit.nuspec <<NS
     <title>hgit</title>
     <authors>VectorSophie</authors>
     <projectUrl>https://github.com/VectorSophie/hgit</projectUrl>
-    <licenseUrl>https://unlicense.org/</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectSourceUrl>https://github.com/VectorSophie/hgit</projectSourceUrl>
     <bugTrackerUrl>https://github.com/VectorSophie/hgit/issues</bugTrackerUrl>

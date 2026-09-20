@@ -3,7 +3,6 @@ class Hgit < Formula
   homepage "https://github.com/VectorSophie/hgit"
   url "https://github.com/VectorSophie/hgit/releases/download/v1.8.9/hgit-bundle-1.8.9.tar.gz"
   sha256 "efe7b8430bbe8c7453fcb1af718cc0ee746fc1198fb8cbfd51fdf2b7f761a129"
-  license "Unlicense"
 
   depends_on "python@3"
   depends_on "qemu"

@@ -28,7 +28,7 @@ cp "$P/README.md" "$D/usr/share/doc/hgit/README.md"
 printf '#!/bin/sh\nexec python3 /usr/lib/hgit/hgit-launch.py "$@"\n' > "$D/usr/bin/hgit"
 printf '#!/bin/sh\nexec python3 /usr/lib/hgit/hgit-type.py "$@"\n' > "$D/usr/bin/hgit-type"
 chmod 755 "$D/usr/bin/hgit" "$D/usr/bin/hgit-type"
-printf 'hgit is released into the public domain (Unlicense, see the project LICENSE).\nThe bundled disk image contains TempleOS, also public domain.\nhttps://github.com/VectorSophie/hgit\n' > "$D/usr/share/doc/hgit/copyright"
+printf 'hgit: the project owner has not yet chosen a license (see the repository).\nThe bundled disk image contains TempleOS, which is public domain.\nhttps://github.com/VectorSophie/hgit\n' > "$D/usr/share/doc/hgit/copyright"
 SIZE=$(du -sk "$D" | cut -f1)
 cat > "$D/DEBIAN/control" <<CTRL
 Package: hgit
