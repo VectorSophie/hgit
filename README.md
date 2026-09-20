@@ -263,5 +263,5 @@ full, dated history.
 
 ## License
 
-GNU General Public License v3.0 only - see [`LICENSE`](LICENSE). The bundled
+GNU General Public License, version 3 or (at your option) any later version - see [`LICENSE`](LICENSE). The bundled
 TempleOS disk image is TempleOS, which is public domain.

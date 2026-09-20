@@ -16,7 +16,7 @@ class Hgit < Formula
   homepage "https://github.com/VectorSophie/hgit"
   url "$REL/hgit-bundle-$VER.tar.gz"
   sha256 "$TGZ"
-  license "GPL-3.0-only"
+  license "GPL-3.0-or-later"
 
   depends_on "python@3"
   depends_on "qemu"

@@ -2,8 +2,8 @@ class Hgit < Formula
   desc "Version control for TempleOS, pre-loaded in a TempleOS VM (runs under QEMU)"
   homepage "https://github.com/VectorSophie/hgit"
   url "https://github.com/VectorSophie/hgit/releases/download/v1.8.9/hgit-bundle-1.8.9.tar.gz"
-  sha256 "f6a7a85a131c8f8b8b7b251efa1c471e81016ef45a75acd05ffe0ab2288f94f5"
-  license "GPL-3.0-only"
+  sha256 "01647bcb605ab257f519b407002263f6b2c4caeb61c695d5d3e2d41facce8a34"
+  license "GPL-3.0-or-later"
 
   depends_on "python@3"
   depends_on "qemu"
