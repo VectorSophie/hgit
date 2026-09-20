@@ -119,12 +119,15 @@ U0 CheckMarkReachable(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
     U8 ck_path[256];
     I64 ck_path_len;
     Bool ck_present[3]; U8 ck_type[3], ck_mode[3], ck_hash[192];
-    ConflictDecode(content, &ck_conflict_kind, &ck_entity_id, ck_path, &ck_path_len,
-                   ck_present, ck_type, ck_mode, ck_hash);
-    I64 ck_side;
-    for (ck_side=0; ck_side<3; ck_side++) {
-      if (ck_present[ck_side]) {
-        CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, ck_hash+ck_side*64);
+    U64 ck_rec_len = GetU64LE(rbuf, off);
+    if (ConflictContentValid(content, ck_rec_len - 1)) {
+      ConflictDecode(content, &ck_conflict_kind, &ck_entity_id, ck_path, &ck_path_len,
+                     ck_present, ck_type, ck_mode, ck_hash);
+      I64 ck_side;
+      for (ck_side=0; ck_side<3; ck_side++) {
+        if (ck_present[ck_side]) {
+          CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, ck_hash+ck_side*64);
+        }
       }
     }
   }
@@ -139,7 +142,11 @@ U0 HgitCheck(U8 *repo_path)
   U16 rver;
   U64 rcount;
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
-  if (!hok) { CommPrint(1, "CHECK_ERR bad_header\n"); return; }
+  if (!hok) {
+    if (hgs_unsupported_version) CommPrint(1, "CHECK_ERR unsupported_format_version=%d (this build reads up to %d) - written by a newer hgit\n", hgs_unsupported_version, HGS_MAX_SUPPORTED_VERSION);
+    else CommPrint(1, "CHECK_ERR bad_header\n");
+    return;
+  }
 
   I64 total, ok;
   ArchiveVerify(rbuf+16, rsize-16, &total, &ok);
@@ -223,6 +230,15 @@ U0 HgitCheck(U8 *repo_path)
           broken_refs++;
         }
       }
+    } else if (obj_type == OBJ_CONFLICT) {
+      // v1.8.7: every conflict object in the archive must be well-formed,
+      // whether or not any merge state currently references it.
+      if (!ConflictContentValid(content, rec_len - 1)) {
+        U8 mal_hex[129];
+        HashToHex(rbuf + pos + 9 + rec_len - 1, mal_hex);
+        CommPrint(1, "CHECK_BROKEN_REF conflict_object_malformed %s\n", mal_hex);
+        broken_refs++;
+      }
     } else if (obj_type == OBJ_TREE) {
       U32 tcount = GetU32LE(content, 0);
       I64 tpos = 4;
@@ -284,8 +300,17 @@ U0 HgitCheck(U8 *repo_path)
           U8 *pmc_content = rbuf + pmc_off2 + 9;
           U8 pmc_kind; U64 pmc_entity_id; U8 pmc_path[256]; I64 pmc_path_len;
           Bool pmc_present[3]; U8 pmc_type[3], pmc_mode[3], pmc_hash[192];
-          ConflictDecode(pmc_content, &pmc_kind, &pmc_entity_id, pmc_path, &pmc_path_len,
-                         pmc_present, pmc_type, pmc_mode, pmc_hash);
+          U64 pmc_rec_len = GetU64LE(rbuf, pmc_off2);
+          pmc_present[0] = FALSE; pmc_present[1] = FALSE; pmc_present[2] = FALSE;
+          if (ConflictContentValid(pmc_content, pmc_rec_len - 1)) {
+            ConflictDecode(pmc_content, &pmc_kind, &pmc_entity_id, pmc_path, &pmc_path_len,
+                           pmc_present, pmc_type, pmc_mode, pmc_hash);
+          } else {
+            U8 pmc_bad_hex[129];
+            HashToHex(pmc_ch, pmc_bad_hex);
+            CommPrint(1, "CHECK_BROKEN_REF conflict_malformed %s\n", pmc_bad_hex);
+            broken_refs++;
+          }
           I64 pmc_side;
           for (pmc_side=0; pmc_side<3; pmc_side++) {
             if (pmc_present[pmc_side]) {

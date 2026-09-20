@@ -380,3 +380,13 @@ tag-scoped `Meta.HC` scan already ignores a record tag it doesn't
 recognize, and nothing about existing commit/tree/blob/attrs objects
 changed at all - no reader anywhere branches on the literal
 `format_version` number here either, same as before.
+
+**v1.8.7 (no format change - reading policy)**: a repository whose
+`format_version` is HIGHER than this build supports (`HGS_MAX_SUPPORTED_VERSION`,
+currently 4) is now rejected by `HgsReadHeader` instead of being half-read;
+`check`/`status` say so explicitly (`unsupported_format_version=N ... written
+by a newer hgit`), other commands report a bad header. Older versions (1-3)
+still read unchanged - every bump so far was additive. `check` also validates
+every `OBJ_CONFLICT` object's shape (`ConflictContentValid`) so a corrupt or
+hostile archive is reported (`conflict_object_malformed`) rather than decoded
+blindly.

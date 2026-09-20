@@ -13,7 +13,7 @@ as persistent repository data, and the CLI/DolDoc UX to use all of
 it). v1.8.0 (ignore rules, ADR 0014) and v1.8.1 (tracked file
 attributes/modes, ADR 0015, including status/diff integration) are
 released, as are v1.8.2 (merge's own mode 3-way handling) and v1.8.3
-(conflicts as persistent repository data, ADR 0016, lifecycle completed in v1.8.4, rename-aware merge in v1.8.5 (ADR 0017), conflict DolDoc view in v1.8.6: `merge` now persists
+(conflicts as persistent repository data, ADR 0016, lifecycle completed in v1.8.4, rename-aware merge in v1.8.5 (ADR 0017), conflict DolDoc view in v1.8.6, format/integrity hardening in v1.8.7: `merge` now persists
 real conflicts; `conflicts`/`resolve`/`merge continue`/`merge abort`).
 Read that file before
 picking the next v1.8.x item.

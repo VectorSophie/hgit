@@ -1,0 +1,66 @@
+CommPrint(1, "P127_BEGIN\n");
+U8 h[64]; U8 fake[64]; I64 zi;
+for (zi=0; zi<64; zi++) fake[zi] = 7;
+
+Del("C:/Home/P127A.hgs", FALSE, FALSE, FALSE);
+Del("C:/Home/P127A.hgs.m", FALSE, FALSE, FALSE);
+FileWrite("C:/Home/P127W/a.txt", "hello\n", 6);
+Hgit("init C:/Home/P127A.hgs");
+Hgit("offer C:/Home/P127A.hgs C:/Home/P127W/*.txt one");
+CurrentHeadRead("C:/Home/P127A.hgs", h);
+
+CommPrint(1, "P127_MISSING_DEP\n");
+MetaMergeStateWrite("C:/Home/P127A.hgs", "main", h, h, "other");
+MetaConflictAppend("C:/Home/P127A.hgs", "main", fake);
+Hgit("check C:/Home/P127A.hgs");
+Hgit("merge abort C:/Home/P127A.hgs");
+Hgit("check C:/Home/P127A.hgs");
+
+CommPrint(1, "P127_MALFORMED\n");
+I64 rsize; U8 *rbuf = FileRead("C:/Home/P127A.hgs", &rsize);
+U8 *arch = MAlloc(rsize + 4096);
+I64 zj; for (zj=0; zj<rsize; zj++) arch[zj] = rbuf[zj];
+I64 alen = rsize;
+U8 bad[5]; bad[0]=1; bad[1]=2; bad[2]=3; bad[3]=4; bad[4]=5;
+ObjectPut(arch, &alen, OBJ_CONFLICT, bad, 5);
+U16 vv; U64 cc; HgsReadHeader(rbuf, &vv, &cc);
+HgsWriteHeader(arch, vv, cc+1);
+FileWrite("C:/Home/P127A.hgs", arch, alen);
+U8 tg[8]; tg[0]=OBJ_CONFLICT; for (zj=0; zj<5; zj++) tg[1+zj]=bad[zj];
+U8 bh[64]; B2Hash512Any(tg, 6, bh);
+MetaMergeStateWrite("C:/Home/P127A.hgs", "main", h, h, "other");
+MetaConflictAppend("C:/Home/P127A.hgs", "main", bh);
+Hgit("check C:/Home/P127A.hgs");
+Hgit("conflicts C:/Home/P127A.hgs");
+Hgit("resolve C:/Home/P127A.hgs 0 take-ours");
+Hgit("conflictdoc C:/Home/P127A.hgs C:/Home/P127.DD");
+Hgit("merge abort C:/Home/P127A.hgs");
+Hgit("status C:/Home/P127A.hgs C:/Home/P127W/*.txt C:/Home/P127W/");
+
+CommPrint(1, "P127_NEWER_FORMAT\n");
+Del("C:/Home/P127N.hgs", FALSE, FALSE, FALSE);
+U8 hd[16]; HgsWriteHeader(hd, 9, 0);
+FileWrite("C:/Home/P127N.hgs", hd, 16);
+Hgit("check C:/Home/P127N.hgs");
+Hgit("status C:/Home/P127N.hgs C:/Home/P127W/*.txt C:/Home/P127W/");
+
+CommPrint(1, "P127_CROSSDIR_MOVE\n");
+Del("C:/Home/P127M.hgs", FALSE, FALSE, FALSE);
+Del("C:/Home/P127M.hgs.m", FALSE, FALSE, FALSE);
+FileWrite("C:/Home/P127T/A/f.txt", "moveme_content_here\n", 20);
+FileWrite("C:/Home/P127T/keep.txt", "keep\n", 5);
+Hgit("init C:/Home/P127M.hgs");
+Hgit("offertree C:/Home/P127M.hgs C:/Home/P127T base");
+Hgit("path new C:/Home/P127M.hgs feat");
+Hgit("path go C:/Home/P127M.hgs feat");
+FileWrite("C:/Home/P127T/A/f.txt", "EDITED_content_here\n", 20);
+Hgit("offertree C:/Home/P127M.hgs C:/Home/P127T feat_edits");
+Hgit("path go C:/Home/P127M.hgs main");
+Del("C:/Home/P127T/A/f.txt", FALSE, FALSE, FALSE);
+FileWrite("C:/Home/P127T/B/f.txt", "moveme_content_here\n", 20);
+Hgit("offertree C:/Home/P127M.hgs C:/Home/P127T main_moves");
+Hgit("merge C:/Home/P127M.hgs feat");
+Hgit("conflicts C:/Home/P127M.hgs");
+Hgit("merge abort C:/Home/P127M.hgs");
+Hgit("check C:/Home/P127M.hgs");
+CommPrint(1, "P127_END\n");

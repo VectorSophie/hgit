@@ -926,11 +926,24 @@ U0 HgsWriteHeader(U8 *buf, U16 version, U64 obj_count)
 // Returns FALSE (and leaves *version_out/*obj_count_out unset) if the
 // magic bytes don't match - callers must check this before trusting the
 // rest of the buffer as a .HGS file.
+// v1.8.7: a repository written by a NEWER hgit (format_version above what
+// this build understands) is rejected instead of being half-read - older
+// versions (1..HGS_MAX_SUPPORTED_VERSION) still read fine, every bump so
+// far having been additive (FORMAT.md's "Versioning policy"). The offending
+// version is left in `hgs_unsupported_version` so a caller can say why.
+#define HGS_MAX_SUPPORTED_VERSION 4
+I64 hgs_unsupported_version = 0;
+
 Bool HgsReadHeader(U8 *buf, U16 *version_out, U64 *obj_count_out)
 {
+  hgs_unsupported_version = 0;
   if (buf[0]!='H' || buf[1]!='G' || buf[2]!='S' || buf[3]!='0') return FALSE;
   *version_out = buf[4] | (buf[5] << 8);
   *obj_count_out = GetU64LE(buf, 8);
+  if (*version_out > HGS_MAX_SUPPORTED_VERSION) {
+    hgs_unsupported_version = *version_out;
+    return FALSE;
+  }
   return TRUE;
 }
 
@@ -1099,6 +1112,28 @@ U0 ConflictDecode(U8 *buf, U8 *conflict_kind_out, U64 *entity_id_out,
       mode_out[side] = 0;
     }
   }
+}
+
+// v1.8.7 (adversarial hardening): true only if `buf` (an OBJ_CONFLICT
+// object's content, `len` bytes) is exactly the shape ConflictEncode
+// writes - every length/present field in range, no trailing bytes.
+// ConflictDecode trusts its input, so callers that can meet a corrupt or
+// hostile archive check this first.
+Bool ConflictContentValid(U8 *buf, I64 len)
+{
+  if (len < 10) return FALSE;
+  I64 pos = 10 + buf[9];
+  I64 side;
+  for (side=0; side<3; side++) {
+    if (pos >= len) return FALSE;
+    U8 present = buf[pos]; pos += 1;
+    if (present > 1) return FALSE;
+    if (present) {
+      pos += 66;
+      if (pos > len) return FALSE;
+    }
+  }
+  return pos == len;
 }
 // Tree.HC — tree object content: an entry list mapping name -> child
 // object (type + hash), plus (per ADR 0004) a stable per-entry entity
@@ -3336,7 +3371,11 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   U16 rver;
   U64 rcount;
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
-  if (!hok) { CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path); return; }
+  if (!hok) {
+    if (hgs_unsupported_version) CommPrint(1, "STATUS_ERR unsupported_format_version=%d (this build reads up to %d) %s\n", hgs_unsupported_version, HGS_MAX_SUPPORTED_VERSION, repo_path);
+    else CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path);
+    return;
+  }
 
   // ADR 0016: a real, early check before the usual UNCHANGED/MODIFIED/
   // NEW/DELETED/RENAMED walk - the roadmap's own "hgit status visibly
@@ -4008,7 +4047,11 @@ U0 HgitStatusTree(U8 *repo_path, U8 *dir_path)
   U16 rver;
   U64 rcount;
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
-  if (!hok) { CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path); return; }
+  if (!hok) {
+    if (hgs_unsupported_version) CommPrint(1, "STATUS_ERR unsupported_format_version=%d (this build reads up to %d) %s\n", hgs_unsupported_version, HGS_MAX_SUPPORTED_VERSION, repo_path);
+    else CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path);
+    return;
+  }
 
   // ADR 0016 - see HgitStatus's own identical block for the rationale.
   U8 status_cur_name[HGIT_MAX_PATH_NAME];
@@ -4393,12 +4436,15 @@ U0 CheckMarkReachable(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
     U8 ck_path[256];
     I64 ck_path_len;
     Bool ck_present[3]; U8 ck_type[3], ck_mode[3], ck_hash[192];
-    ConflictDecode(content, &ck_conflict_kind, &ck_entity_id, ck_path, &ck_path_len,
-                   ck_present, ck_type, ck_mode, ck_hash);
-    I64 ck_side;
-    for (ck_side=0; ck_side<3; ck_side++) {
-      if (ck_present[ck_side]) {
-        CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, ck_hash+ck_side*64);
+    U64 ck_rec_len = GetU64LE(rbuf, off);
+    if (ConflictContentValid(content, ck_rec_len - 1)) {
+      ConflictDecode(content, &ck_conflict_kind, &ck_entity_id, ck_path, &ck_path_len,
+                     ck_present, ck_type, ck_mode, ck_hash);
+      I64 ck_side;
+      for (ck_side=0; ck_side<3; ck_side++) {
+        if (ck_present[ck_side]) {
+          CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, ck_hash+ck_side*64);
+        }
       }
     }
   }
@@ -4413,7 +4459,11 @@ U0 HgitCheck(U8 *repo_path)
   U16 rver;
   U64 rcount;
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
-  if (!hok) { CommPrint(1, "CHECK_ERR bad_header\n"); return; }
+  if (!hok) {
+    if (hgs_unsupported_version) CommPrint(1, "CHECK_ERR unsupported_format_version=%d (this build reads up to %d) - written by a newer hgit\n", hgs_unsupported_version, HGS_MAX_SUPPORTED_VERSION);
+    else CommPrint(1, "CHECK_ERR bad_header\n");
+    return;
+  }
 
   I64 total, ok;
   ArchiveVerify(rbuf+16, rsize-16, &total, &ok);
@@ -4497,6 +4547,15 @@ U0 HgitCheck(U8 *repo_path)
           broken_refs++;
         }
       }
+    } else if (obj_type == OBJ_CONFLICT) {
+      // v1.8.7: every conflict object in the archive must be well-formed,
+      // whether or not any merge state currently references it.
+      if (!ConflictContentValid(content, rec_len - 1)) {
+        U8 mal_hex[129];
+        HashToHex(rbuf + pos + 9 + rec_len - 1, mal_hex);
+        CommPrint(1, "CHECK_BROKEN_REF conflict_object_malformed %s\n", mal_hex);
+        broken_refs++;
+      }
     } else if (obj_type == OBJ_TREE) {
       U32 tcount = GetU32LE(content, 0);
       I64 tpos = 4;
@@ -4558,8 +4617,17 @@ U0 HgitCheck(U8 *repo_path)
           U8 *pmc_content = rbuf + pmc_off2 + 9;
           U8 pmc_kind; U64 pmc_entity_id; U8 pmc_path[256]; I64 pmc_path_len;
           Bool pmc_present[3]; U8 pmc_type[3], pmc_mode[3], pmc_hash[192];
-          ConflictDecode(pmc_content, &pmc_kind, &pmc_entity_id, pmc_path, &pmc_path_len,
-                         pmc_present, pmc_type, pmc_mode, pmc_hash);
+          U64 pmc_rec_len = GetU64LE(rbuf, pmc_off2);
+          pmc_present[0] = FALSE; pmc_present[1] = FALSE; pmc_present[2] = FALSE;
+          if (ConflictContentValid(pmc_content, pmc_rec_len - 1)) {
+            ConflictDecode(pmc_content, &pmc_kind, &pmc_entity_id, pmc_path, &pmc_path_len,
+                           pmc_present, pmc_type, pmc_mode, pmc_hash);
+          } else {
+            U8 pmc_bad_hex[129];
+            HashToHex(pmc_ch, pmc_bad_hex);
+            CommPrint(1, "CHECK_BROKEN_REF conflict_malformed %s\n", pmc_bad_hex);
+            broken_refs++;
+          }
           I64 pmc_side;
           for (pmc_side=0; pmc_side<3; pmc_side++) {
             if (pmc_present[pmc_side]) {
@@ -8270,13 +8338,20 @@ U0 HgitConflicts(U8 *repo_path)
     U8 path_out[256];
     I64 path_len;
     U8 conflict_kind = 0;
+    Bool cf_ok = FALSE;
     if (IndexLookup(idx_hashes, idx_offsets, idx_count, conflict_hash, &off_rel)) {
       I64 off = 16 + off_rel;
       U8 *content = rbuf + off + 9;
       U64 entity_id;
       Bool present[3]; U8 type[3], mode[3], hash[192];
-      ConflictDecode(content, &conflict_kind, &entity_id, path_out, &path_len,
-                     present, type, mode, hash);
+      U64 cf_rec = GetU64LE(rbuf, off);
+      if (ConflictContentValid(content, cf_rec - 1)) {
+        cf_ok = TRUE;
+        ConflictDecode(content, &conflict_kind, &entity_id, path_out, &path_len,
+                       present, type, mode, hash);
+      } else {
+        path_out[0] = 0;
+      }
     } else {
       path_out[0] = 0; // real, honest fallback if the object went missing - Check.HC's own job to flag
     }
@@ -8284,7 +8359,7 @@ U0 HgitConflicts(U8 *repo_path)
     U8 *state_word = "UNRESOLVED";
     if (resolved) state_word = "RESOLVED";
     CommPrint(1, "CONFLICT %d %s kind=%d %s\n", idx, state_word, conflict_kind, path_out);
-    if (IndexLookup(idx_hashes, idx_offsets, idx_count, conflict_hash, &off_rel)) {
+    if (cf_ok && IndexLookup(idx_hashes, idx_offsets, idx_count, conflict_hash, &off_rel)) {
       // v1.8.4: base/ours/theirs evidence, first 16 hex chars of each hash.
       I64 doff = 16 + off_rel;
       U8 dkind; U64 dent; U8 dpath[256]; I64 dplen;
@@ -8365,6 +8440,12 @@ U0 HgitResolve(U8 *repo_path, I64 conflict_index, U8 *which)
   U8 path_out[256];
   I64 path_len;
   Bool present[3]; U8 type[3], mode[3], hash[192];
+  U64 rs_rec = GetU64LE(rbuf, off);
+  if (!ConflictContentValid(content, rs_rec - 1)) {
+    CommPrint(1, "RESOLVE_ERR conflict_object_malformed - see hgit check; 'hgit merge abort' recovers\n");
+    Free(idx_hashes); Free(idx_offsets);
+    return;
+  }
   ConflictDecode(content, &conflict_kind, &entity_id, path_out, &path_len,
                  present, type, mode, hash);
 
@@ -8723,7 +8804,12 @@ U0 HgitConflictDoc(U8 *repo_path, U8 *doc_path)
     U8 chash[64], resolved, rhash[64];
     MetaConflictGetAt(repo_path, cur_name, idx, chash, &resolved, rhash);
     I64 coff;
+    Bool cd_valid = FALSE;
     if (IndexLookup(idx_hashes, idx_offsets, idx_count, chash, &coff)) {
+      U64 cd_rec = GetU64LE(rbuf, 16 + coff);
+      cd_valid = ConflictContentValid(rbuf + 16 + coff + 9, cd_rec - 1);
+    }
+    if (cd_valid) {
       I64 off2 = 16 + coff;
       U8 kind; U64 ent; U8 path[256]; I64 plen;
       Bool pres[3]; U8 ty[3], mo[3], hs[192];
@@ -8907,7 +8993,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.8.6"
+#define HGIT_VERSION "1.8.7"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing

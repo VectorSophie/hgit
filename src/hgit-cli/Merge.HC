@@ -1088,13 +1088,20 @@ U0 HgitConflicts(U8 *repo_path)
     U8 path_out[256];
     I64 path_len;
     U8 conflict_kind = 0;
+    Bool cf_ok = FALSE;
     if (IndexLookup(idx_hashes, idx_offsets, idx_count, conflict_hash, &off_rel)) {
       I64 off = 16 + off_rel;
       U8 *content = rbuf + off + 9;
       U64 entity_id;
       Bool present[3]; U8 type[3], mode[3], hash[192];
-      ConflictDecode(content, &conflict_kind, &entity_id, path_out, &path_len,
-                     present, type, mode, hash);
+      U64 cf_rec = GetU64LE(rbuf, off);
+      if (ConflictContentValid(content, cf_rec - 1)) {
+        cf_ok = TRUE;
+        ConflictDecode(content, &conflict_kind, &entity_id, path_out, &path_len,
+                       present, type, mode, hash);
+      } else {
+        path_out[0] = 0;
+      }
     } else {
       path_out[0] = 0; // real, honest fallback if the object went missing - Check.HC's own job to flag
     }
@@ -1102,7 +1109,7 @@ U0 HgitConflicts(U8 *repo_path)
     U8 *state_word = "UNRESOLVED";
     if (resolved) state_word = "RESOLVED";
     CommPrint(1, "CONFLICT %d %s kind=%d %s\n", idx, state_word, conflict_kind, path_out);
-    if (IndexLookup(idx_hashes, idx_offsets, idx_count, conflict_hash, &off_rel)) {
+    if (cf_ok && IndexLookup(idx_hashes, idx_offsets, idx_count, conflict_hash, &off_rel)) {
       // v1.8.4: base/ours/theirs evidence, first 16 hex chars of each hash.
       I64 doff = 16 + off_rel;
       U8 dkind; U64 dent; U8 dpath[256]; I64 dplen;
@@ -1183,6 +1190,12 @@ U0 HgitResolve(U8 *repo_path, I64 conflict_index, U8 *which)
   U8 path_out[256];
   I64 path_len;
   Bool present[3]; U8 type[3], mode[3], hash[192];
+  U64 rs_rec = GetU64LE(rbuf, off);
+  if (!ConflictContentValid(content, rs_rec - 1)) {
+    CommPrint(1, "RESOLVE_ERR conflict_object_malformed - see hgit check; 'hgit merge abort' recovers\n");
+    Free(idx_hashes); Free(idx_offsets);
+    return;
+  }
   ConflictDecode(content, &conflict_kind, &entity_id, path_out, &path_len,
                  present, type, mode, hash);
 

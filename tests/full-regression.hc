@@ -305,6 +305,68 @@ U0 HgitFullRegressionTest()
   Hgit("check C:/Home/TFMergeModeRepo.hgs");
   CommPrint(1, "TFULL_MERGEMODE_CHECK_END_MARKER\n");
 
+  // --- v1.8.3-v1.8.7: persistent conflicts, rename-aware merge, hardening ---
+  Del("C:/Home/TFConfRepo.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFConfRepo.hgs.m", FALSE, FALSE, FALSE);
+  FileWrite("C:/Home/TFConfW/c.txt", "base_c\n", 7);
+  FileWrite("C:/Home/TFConfW/r.txt", "rename_me_content_long\n", 23);
+  Hgit("init C:/Home/TFConfRepo.hgs");
+  Hgit("offer C:/Home/TFConfRepo.hgs C:/Home/TFConfW/*.txt base");
+  Hgit("path new C:/Home/TFConfRepo.hgs cf");
+  Hgit("path go C:/Home/TFConfRepo.hgs cf");
+  FileWrite("C:/Home/TFConfW/c.txt", "feat_c\n", 7);
+  FileWrite("C:/Home/TFConfW/r.txt", "EDITED_me_content_long\n", 23);
+  Hgit("offer C:/Home/TFConfRepo.hgs C:/Home/TFConfW/*.txt cf_edits");
+  Hgit("path go C:/Home/TFConfRepo.hgs main");
+  FileWrite("C:/Home/TFConfW/c.txt", "main_c\n", 7);
+  Del("C:/Home/TFConfW/r.txt", FALSE, FALSE, FALSE);
+  FileWrite("C:/Home/TFConfW/r2.txt", "rename_me_content_long\n", 23);
+  Hgit("offer C:/Home/TFConfRepo.hgs C:/Home/TFConfW/*.txt main_edits_and_renames");
+  CommPrint(1, "TFULL_CONFLICT_MERGE_BEGIN\n");
+  Hgit("merge C:/Home/TFConfRepo.hgs cf");
+  Hgit("conflicts C:/Home/TFConfRepo.hgs");
+  Hgit("merge continue C:/Home/TFConfRepo.hgs");
+  Hgit("resolve C:/Home/TFConfRepo.hgs 0 take-theirs");
+  Hgit("merge continue C:/Home/TFConfRepo.hgs");
+  Hgit("check C:/Home/TFConfRepo.hgs");
+  Hgit("merge abort C:/Home/TFConfRepo.hgs");
+  CommPrint(1, "TFULL_CONFLICT_MERGE_END_MARKER\n");
+
+  CommPrint(1, "TFULL_CONFLICT_ABORT_BEGIN\n");
+  Del("C:/Home/TFConfRepoB.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFConfRepoB.hgs.m", FALSE, FALSE, FALSE);
+  FileWrite("C:/Home/TFConfW/c.txt", "base_c\n", 7);
+  Del("C:/Home/TFConfW/r2.txt", FALSE, FALSE, FALSE);
+  Hgit("init C:/Home/TFConfRepoB.hgs");
+  Hgit("offer C:/Home/TFConfRepoB.hgs C:/Home/TFConfW/*.txt base");
+  Hgit("path new C:/Home/TFConfRepoB.hgs cf");
+  Hgit("path go C:/Home/TFConfRepoB.hgs cf");
+  FileWrite("C:/Home/TFConfW/c.txt", "feat_c\n", 7);
+  Hgit("offer C:/Home/TFConfRepoB.hgs C:/Home/TFConfW/*.txt cf_edit");
+  Hgit("path go C:/Home/TFConfRepoB.hgs main");
+  FileWrite("C:/Home/TFConfW/c.txt", "main_c\n", 7);
+  Hgit("offer C:/Home/TFConfRepoB.hgs C:/Home/TFConfW/*.txt main_edit");
+  Hgit("merge C:/Home/TFConfRepoB.hgs cf");
+  Hgit("status C:/Home/TFConfRepoB.hgs C:/Home/TFConfW/*.txt C:/Home/TFConfW/");
+  Hgit("conflictdoc C:/Home/TFConfRepoB.hgs C:/Home/TFConfDoc.DD");
+  Hgit("merge abort C:/Home/TFConfRepoB.hgs");
+  Hgit("conflicts C:/Home/TFConfRepoB.hgs");
+  CommPrint(1, "TFULL_CONFLICT_ABORT_END_MARKER\n");
+
+  CommPrint(1, "TFULL_HARDEN_BEGIN\n");
+  U8 tf_h[64]; U8 tf_fake[64]; I64 tf_i;
+  for (tf_i=0; tf_i<64; tf_i++) tf_fake[tf_i] = 7;
+  CurrentHeadRead("C:/Home/TFConfRepoB.hgs", tf_h);
+  MetaMergeStateWrite("C:/Home/TFConfRepoB.hgs", "main", tf_h, tf_h, "cf");
+  MetaConflictAppend("C:/Home/TFConfRepoB.hgs", "main", tf_fake);
+  Hgit("check C:/Home/TFConfRepoB.hgs");
+  Hgit("merge abort C:/Home/TFConfRepoB.hgs");
+  U8 tf_hd[16]; HgsWriteHeader(tf_hd, 9, 0);
+  Del("C:/Home/TFConfNewer.hgs", FALSE, FALSE, FALSE);
+  FileWrite("C:/Home/TFConfNewer.hgs", tf_hd, 16);
+  Hgit("check C:/Home/TFConfNewer.hgs");
+  CommPrint(1, "TFULL_HARDEN_END_MARKER\n");
+
   // --- discoverability ---
   Hgit("version");
   Hgit("logo");

@@ -132,7 +132,12 @@ U0 HgitConflictDoc(U8 *repo_path, U8 *doc_path)
     U8 chash[64], resolved, rhash[64];
     MetaConflictGetAt(repo_path, cur_name, idx, chash, &resolved, rhash);
     I64 coff;
+    Bool cd_valid = FALSE;
     if (IndexLookup(idx_hashes, idx_offsets, idx_count, chash, &coff)) {
+      U64 cd_rec = GetU64LE(rbuf, 16 + coff);
+      cd_valid = ConflictContentValid(rbuf + 16 + coff + 9, cd_rec - 1);
+    }
+    if (cd_valid) {
       I64 off2 = 16 + coff;
       U8 kind; U64 ent; U8 path[256]; I64 plen;
       Bool pres[3]; U8 ty[3], mo[3], hs[192];

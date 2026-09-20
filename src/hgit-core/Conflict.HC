@@ -93,3 +93,25 @@ U0 ConflictDecode(U8 *buf, U8 *conflict_kind_out, U64 *entity_id_out,
     }
   }
 }
+
+// v1.8.7 (adversarial hardening): true only if `buf` (an OBJ_CONFLICT
+// object's content, `len` bytes) is exactly the shape ConflictEncode
+// writes - every length/present field in range, no trailing bytes.
+// ConflictDecode trusts its input, so callers that can meet a corrupt or
+// hostile archive check this first.
+Bool ConflictContentValid(U8 *buf, I64 len)
+{
+  if (len < 10) return FALSE;
+  I64 pos = 10 + buf[9];
+  I64 side;
+  for (side=0; side<3; side++) {
+    if (pos >= len) return FALSE;
+    U8 present = buf[pos]; pos += 1;
+    if (present > 1) return FALSE;
+    if (present) {
+      pos += 66;
+      if (pos > len) return FALSE;
+    }
+  }
+  return pos == len;
+}

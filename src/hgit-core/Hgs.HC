@@ -27,11 +27,24 @@ U0 HgsWriteHeader(U8 *buf, U16 version, U64 obj_count)
 // Returns FALSE (and leaves *version_out/*obj_count_out unset) if the
 // magic bytes don't match - callers must check this before trusting the
 // rest of the buffer as a .HGS file.
+// v1.8.7: a repository written by a NEWER hgit (format_version above what
+// this build understands) is rejected instead of being half-read - older
+// versions (1..HGS_MAX_SUPPORTED_VERSION) still read fine, every bump so
+// far having been additive (FORMAT.md's "Versioning policy"). The offending
+// version is left in `hgs_unsupported_version` so a caller can say why.
+#define HGS_MAX_SUPPORTED_VERSION 4
+I64 hgs_unsupported_version = 0;
+
 Bool HgsReadHeader(U8 *buf, U16 *version_out, U64 *obj_count_out)
 {
+  hgs_unsupported_version = 0;
   if (buf[0]!='H' || buf[1]!='G' || buf[2]!='S' || buf[3]!='0') return FALSE;
   *version_out = buf[4] | (buf[5] << 8);
   *obj_count_out = GetU64LE(buf, 8);
+  if (*version_out > HGS_MAX_SUPPORTED_VERSION) {
+    hgs_unsupported_version = *version_out;
+    return FALSE;
+  }
   return TRUE;
 }
 

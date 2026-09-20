@@ -73,7 +73,11 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   U16 rver;
   U64 rcount;
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
-  if (!hok) { CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path); return; }
+  if (!hok) {
+    if (hgs_unsupported_version) CommPrint(1, "STATUS_ERR unsupported_format_version=%d (this build reads up to %d) %s\n", hgs_unsupported_version, HGS_MAX_SUPPORTED_VERSION, repo_path);
+    else CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path);
+    return;
+  }
 
   // ADR 0016: a real, early check before the usual UNCHANGED/MODIFIED/
   // NEW/DELETED/RENAMED walk - the roadmap's own "hgit status visibly
@@ -745,7 +749,11 @@ U0 HgitStatusTree(U8 *repo_path, U8 *dir_path)
   U16 rver;
   U64 rcount;
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
-  if (!hok) { CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path); return; }
+  if (!hok) {
+    if (hgs_unsupported_version) CommPrint(1, "STATUS_ERR unsupported_format_version=%d (this build reads up to %d) %s\n", hgs_unsupported_version, HGS_MAX_SUPPORTED_VERSION, repo_path);
+    else CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path);
+    return;
+  }
 
   // ADR 0016 - see HgitStatus's own identical block for the rationale.
   U8 status_cur_name[HGIT_MAX_PATH_NAME];
