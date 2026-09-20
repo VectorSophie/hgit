@@ -25,7 +25,7 @@
 // full, three-slice design history).
 //
 // Depends on Canon.HC, Blake2b.HC, Archive.HC, Hgs.HC, Object.HC,
-// Commit.HC, Tree.HC, Index.HC, Meta.HC.
+// Commit.HC, Tree.HC, Index.HC, Meta.HC, Conflict.HC (ADR 0016).
 //
 // (experiments/72-check-dangling-objects/): the "does no
 // dangling/unreachable analysis" gap this file's own header comment
@@ -106,6 +106,26 @@ U0 CheckMarkReachable(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_count,
       U8 *child_hash = content + tpos; tpos += 64;
       tpos += 8; // skip entity_id (ADR 0004)
       CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, child_hash);
+    }
+  } else if (obj_type == OBJ_CONFLICT) {
+    // ADR 0016: same pattern as every other real object type here,
+    // extended for this one - a conflict object's own base/ours/
+    // theirs hashes (whichever sides are `present`) are real outgoing
+    // references too, not just inert bytes. Reached via
+    // `HgitCheck`'s own new commit-independent root (every declared
+    // path's in-progress merge conflicts), not from any commit.
+    U8 ck_conflict_kind;
+    U64 ck_entity_id;
+    U8 ck_path[256];
+    I64 ck_path_len;
+    Bool ck_present[3]; U8 ck_type[3], ck_mode[3], ck_hash[192];
+    ConflictDecode(content, &ck_conflict_kind, &ck_entity_id, ck_path, &ck_path_len,
+                   ck_present, ck_type, ck_mode, ck_hash);
+    I64 ck_side;
+    for (ck_side=0; ck_side<3; ck_side++) {
+      if (ck_present[ck_side]) {
+        CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, ck_hash+ck_side*64);
+      }
     }
   }
   // OBJ_BLOB/OBJ_ATTRS: no outgoing references, nothing further to mark.
@@ -230,6 +250,59 @@ U0 HgitCheck(U8 *repo_path)
     pos += 8 + rec_len + 64; // len field + data (incl. type tag) + hash
   }
 
+  I64 path_count = MetaPathCount(repo_path);
+  U8 *path_names = MAlloc((path_count+1)*META_MAX_PATH_NAME);
+  I64 real_path_count;
+  MetaPathListInto(repo_path, path_names, &real_path_count);
+
+  // ADR 0016: every declared path's own in-progress merge conflicts
+  // are a real, separate referential-integrity root - a missing
+  // conflict dependency is exactly the same "missing object" failure
+  // mode as every other real reference checked above, so it folds
+  // into the same `broken_refs` count and report, not a separate
+  // pass/summary.
+  // No `continue` in HolyC (probe 5's own documented quirk) - the
+  // whole per-path body is guarded by `if (MetaMergeStateExists(...))`
+  // instead of an early skip.
+  I64 pmc;
+  for (pmc=0; pmc<real_path_count; pmc++) {
+    U8 *pmc_name = path_names + pmc*META_MAX_PATH_NAME;
+    if (MetaMergeStateExists(repo_path, pmc_name)) {
+      I64 pmc_conflict_total = MetaConflictCount(repo_path, pmc_name);
+      I64 pmc_ci;
+      for (pmc_ci=0; pmc_ci<pmc_conflict_total; pmc_ci++) {
+        U8 pmc_ch[64], pmc_resolved, pmc_rh[64];
+        MetaConflictGetAt(repo_path, pmc_name, pmc_ci, pmc_ch, &pmc_resolved, pmc_rh);
+        I64 pmc_off;
+        if (!IndexLookup(idx_hashes, idx_offsets, idx_count, pmc_ch, &pmc_off)) {
+          U8 pmc_hex[129];
+          HashToHex(pmc_ch, pmc_hex);
+          CommPrint(1, "CHECK_BROKEN_REF conflict_object_missing %s\n", pmc_hex);
+          broken_refs++;
+        } else {
+          I64 pmc_off2 = 16 + pmc_off;
+          U8 *pmc_content = rbuf + pmc_off2 + 9;
+          U8 pmc_kind; U64 pmc_entity_id; U8 pmc_path[256]; I64 pmc_path_len;
+          Bool pmc_present[3]; U8 pmc_type[3], pmc_mode[3], pmc_hash[192];
+          ConflictDecode(pmc_content, &pmc_kind, &pmc_entity_id, pmc_path, &pmc_path_len,
+                         pmc_present, pmc_type, pmc_mode, pmc_hash);
+          I64 pmc_side;
+          for (pmc_side=0; pmc_side<3; pmc_side++) {
+            if (pmc_present[pmc_side]) {
+              I64 pmc_side_off;
+              if (!IndexLookup(idx_hashes, idx_offsets, idx_count, pmc_hash+pmc_side*64, &pmc_side_off)) {
+                U8 pmc_side_hex[129];
+                HashToHex(pmc_hash+pmc_side*64, pmc_side_hex);
+                CommPrint(1, "CHECK_BROKEN_REF conflict_side_missing %s\n", pmc_side_hex);
+                broken_refs++;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   if (broken_refs == 0) {
     CommPrint(1, "CHECK_REFS_OK\n");
   } else {
@@ -242,17 +315,31 @@ U0 HgitCheck(U8 *repo_path)
   I64 zi;
   for (zi=0; zi<idx_count; zi++) reachable[zi] = FALSE;
 
-  I64 path_count = MetaPathCount(repo_path);
-  U8 *path_names = MAlloc((path_count+1)*META_MAX_PATH_NAME);
-  I64 real_path_count;
-  MetaPathListInto(repo_path, path_names, &real_path_count);
-
   I64 pi2; // NOT "pi" - reserved F64 constant, probe 41's own gotcha
   for (pi2=0; pi2<real_path_count; pi2++) {
     U8 *pname = path_names + pi2*META_MAX_PATH_NAME;
     U8 phead_hash[64];
     if (MetaReadHead(repo_path, pname, phead_hash)) {
       CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, phead_hash);
+    }
+  }
+
+  // ADR 0016: a new commit-independent reachability root - an
+  // in-progress merge's own conflict evidence is real, live, actively-
+  // referenced data (from Meta.HC, not the commit graph), not garbage,
+  // so it must not show up as CHECK_DANGLING while unresolved.
+  // No `continue` in HolyC - same guard-the-whole-body pattern as above.
+  I64 pmr;
+  for (pmr=0; pmr<real_path_count; pmr++) {
+    U8 *pmr_name = path_names + pmr*META_MAX_PATH_NAME;
+    if (MetaMergeStateExists(repo_path, pmr_name)) {
+      I64 pmr_conflict_total = MetaConflictCount(repo_path, pmr_name);
+      I64 pmr_ci;
+      for (pmr_ci=0; pmr_ci<pmr_conflict_total; pmr_ci++) {
+        U8 pmr_ch[64], pmr_resolved, pmr_rh[64];
+        MetaConflictGetAt(repo_path, pmr_name, pmr_ci, pmr_ch, &pmr_resolved, pmr_rh);
+        CheckMarkReachable(rbuf, idx_hashes, idx_offsets, idx_count, reachable, pmr_ch);
+      }
     }
   }
 
@@ -296,6 +383,7 @@ U0 HgitCheck(U8 *repo_path)
       if (dtype == OBJ_COMMIT) kind = "commit";
       else if (dtype == OBJ_TREE) kind = "tree";
       else if (dtype == OBJ_ATTRS) kind = "attrs";
+      else if (dtype == OBJ_CONFLICT) kind = "conflict";
       U8 dhex[129];
       HashToHex(idx_hashes + zi*64, dhex);
       CommPrint(1, "CHECK_DANGLING %s %s\n", kind, dhex);

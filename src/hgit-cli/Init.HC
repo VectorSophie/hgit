@@ -37,6 +37,15 @@
 // back correctly with no attrs, with no version branch anywhere -
 // same "no migration mechanism, no evidence one's needed yet" note
 // as the version 2 bump.
+//
+// ADR 0016 (v1.8.3): bumped again, 3 -> 4 - `OBJ_CONFLICT` is a
+// genuinely new object type (tag 5) and Meta.HC gains two new record
+// tags (META_TAG_MERGE_STATE/META_TAG_CONFLICT). Same real story as
+// every bump above: additive, an old reader's own tag-scoped scan
+// already ignores a record tag it doesn't recognize, no migration
+// mechanism needed - bumped for documentation honesty per this
+// project's own standing discipline, not because a version branch is
+// technically required to read old repos correctly.
 
 // Returns TRUE on success, FALSE if a file already exists at `path`
 // (existing repos/files are never overwritten by init).
@@ -46,7 +55,7 @@ Bool HgitInit(U8 *path)
   U8 *existing = FileRead(path, &existing_size);
   if (existing != NULL) return FALSE;
   U8 header[16];
-  HgsWriteHeader(header, 3, 0);
+  HgsWriteHeader(header, 4, 0);
   FileWrite(path, header, 16);
   return TRUE;
 }

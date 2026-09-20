@@ -84,7 +84,7 @@
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.8.2"
+#define HGIT_VERSION "1.8.3"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -208,7 +208,11 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD status <repo_path> <find_mask> <dir_prefix>\n");
   CommPrint(1, "HELP_CMD offer <repo_path> <find_mask> <message>\n");
   CommPrint(1, "HELP_CMD offertree <repo_path> <dir_path> <message> (recursive, ADR 0010)\n");
-  CommPrint(1, "HELP_CMD merge <repo_path> <other_path_name> (real conflicts abort cleanly, no resolution yet)\n");
+  CommPrint(1, "HELP_CMD merge <repo_path> <other_path_name> (a real conflict now persists - see 'conflicts'/'resolve'/'merge continue'/'merge abort', ADR 0016)\n");
+  CommPrint(1, "HELP_CMD merge continue <repo_path> (finish a merge once every conflict is resolved, ADR 0016)\n");
+  CommPrint(1, "HELP_CMD merge abort <repo_path> (discard an in-progress merge's conflicts, ADR 0016)\n");
+  CommPrint(1, "HELP_CMD conflicts <repo_path> (list the current path's in-progress merge conflicts, ADR 0016)\n");
+  CommPrint(1, "HELP_CMD resolve <repo_path> <conflict_index> take-ours|take-theirs (ADR 0016)\n");
   CommPrint(1, "HELP_CMD statustree <repo_path> <dir_path> (recursive status, ADR 0010)\n");
   CommPrint(1, "HELP_CMD history <repo_path>\n");
   CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");
@@ -325,12 +329,45 @@ U0 Hgit(U8 *cmdline)
     // Probes 97/98's own real next step: brings another declared
     // path's history into the current one - see Merge.HC's own header
     // comment for this first slice's real, deliberate scope.
-    U8 merge_repo_path[256], merge_other_path[HGIT_MAX_PATH_NAME];
-    I64 merge_p = 0;
-    merge_p = ExtractToken(rest, merge_p, merge_repo_path, 256);
-    ExtractToken(rest, merge_p, merge_other_path, HGIT_MAX_PATH_NAME);
-    U64 merge_ts = cnts.jiffies;
-    HgitMerge(merge_repo_path, merge_other_path, merge_ts);
+    //
+    // ADR 0016 (v1.8.3): `merge continue`/`merge abort` are real
+    // sub-forms of this same command, not separate top-level commands
+    // - "continue"/"abort" as the first token after "merge" (never a
+    // real repo path, which always starts with a drive letter) picks
+    // between them; anything else is the ordinary two-arg
+    // `merge <repo> <other_path_name>` form, unchanged.
+    U8 merge_first_token[256];
+    I64 merge_peek_p = ExtractToken(rest, 0, merge_first_token, 256);
+    if (StrCmp(merge_first_token, "continue") == 0) {
+      U8 mc_repo_path[256];
+      ExtractToken(rest, merge_peek_p, mc_repo_path, 256);
+      U64 mc_ts = cnts.jiffies;
+      HgitMergeContinue(mc_repo_path, mc_ts);
+    } else if (StrCmp(merge_first_token, "abort") == 0) {
+      U8 ma_repo_path[256];
+      ExtractToken(rest, merge_peek_p, ma_repo_path, 256);
+      HgitMergeAbort(ma_repo_path);
+    } else {
+      U8 merge_repo_path[256], merge_other_path[HGIT_MAX_PATH_NAME];
+      I64 merge_p = 0;
+      merge_p = ExtractToken(rest, merge_p, merge_repo_path, 256);
+      ExtractToken(rest, merge_p, merge_other_path, HGIT_MAX_PATH_NAME);
+      U64 merge_ts = cnts.jiffies;
+      HgitMerge(merge_repo_path, merge_other_path, merge_ts);
+    }
+  } else if (StrCmp(cmd, "conflicts") == 0) {
+    // ADR 0016: lists the current path's in-progress merge conflicts, if any.
+    U8 conf_repo_path[256];
+    ExtractToken(rest, 0, conf_repo_path, 256);
+    HgitConflicts(conf_repo_path);
+  } else if (StrCmp(cmd, "resolve") == 0) {
+    // ADR 0016: `hgit resolve <repo> <conflict-index> take-ours|take-theirs`.
+    U8 res_repo_path[256], res_index_str[32], res_which[32];
+    I64 res_p = 0;
+    res_p = ExtractToken(rest, res_p, res_repo_path, 256);
+    res_p = ExtractToken(rest, res_p, res_index_str, 32);
+    ExtractToken(rest, res_p, res_which, 32);
+    HgitResolve(res_repo_path, ParseI64(res_index_str), res_which);
   } else if (StrCmp(cmd, "statustree") == 0) {
     // ADR 0010's own last remaining item: a separate command, not a
     // change to plain `status`'s find_mask/dir_prefix semantics - see

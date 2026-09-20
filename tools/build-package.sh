@@ -30,6 +30,7 @@ cat \
   src/hgit-core/Archive.HC \
   src/hgit-core/Hgs.HC \
   src/hgit-core/Object.HC \
+  src/hgit-core/Conflict.HC \
   src/hgit-core/Tree.HC \
   src/hgit-core/Commit.HC \
   src/hgit-core/Index.HC \

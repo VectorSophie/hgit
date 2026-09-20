@@ -42,13 +42,28 @@
 //   U8  payload_len
 //   payload_len bytes of payload
 //
-// Tags:
+// Tags (kept up to date here as new ones are added - this list had
+// gone stale once already, missing OPLOG/REDOLOG entirely; fixed
+// 2026-09-15 alongside adding the two ADR 0016 tags below):
 //   META_TAG_HEAD          - payload is the path's 64-byte HEAD hash
 //   META_TAG_PATH_DECLARED - marks a (non-"main") path name as
 //                            existing; payload_len 0, no payload -
 //                            the record's own name IS the data
 //   META_TAG_CURRENT       - name_len 0 (global); payload is the
 //                            current path's name bytes
+//   META_TAG_OPLOG         - one entry per logged operation for the
+//                            path (accumulates); payload is
+//                            timestamp + prev_head + new_head
+//   META_TAG_REDOLOG       - same shape as OPLOG, for undone
+//                            operations available to redo
+//   META_TAG_MERGE_STATE   - ADR 0016: an in-progress merge's own
+//                            ours_head/theirs_head/other_path_name
+//                            for the path it was started on
+//   META_TAG_CONFLICT      - ADR 0016: one entry per real conflict
+//                            found by that in-progress merge
+//                            (accumulates); payload is an
+//                            OBJ_CONFLICT hash + resolved flag +
+//                            resolution hash
 //
 // Every "set" operation splices out any existing record for the same
 // (name, tag) before appending the new one (MetaSpliceOut) - so each
@@ -655,4 +670,251 @@ U0 MetaRedoLogClear(U8 *repo_path, U8 *name)
   MetaSpliceOut(buf, size, name, META_TAG_REDOLOG, new_buf, &new_len);
   FileWrite(meta_path, new_buf, new_len);
   Free(new_buf);
+}
+
+// --- Conflict as repository data (ADR 0016) ---
+//
+// An in-progress merge's own state, scoped to the path it was started
+// on (the same "current path" convention HEAD/oplog already use) -
+// real, live, MUTABLE operation state, not a permanent historical
+// record, so it lives here (Meta.HC) rather than in the immutable
+// object graph. `Portable.HC`'s `hgit export`/`import` preserve both
+// new tags below automatically - they already copy the whole `.m`
+// file as opaque bytes, no per-tag awareness needed there at all.
+
+#define META_TAG_MERGE_STATE 6
+#define META_TAG_CONFLICT 7
+
+// Merge-state payload: ours_head(64) + theirs_head(64) +
+// other_path_name (the rest of the payload, up to META_MAX_PATH_NAME
+// bytes - 128+64=192, safely under payload_len's own U8 255-byte
+// ceiling). `base_head` is deliberately NOT stored - it's
+// deterministically re-derivable via `FindMergeBase(ours_head,
+// theirs_head)` at `merge continue`/`merge abort` time, since the
+// object graph only ever grows between merge-start and then (ADR
+// 0001's own append-only stance) - one fewer 64-byte field to persist
+// and keep in sync.
+U0 MetaMergeStateWrite(U8 *repo_path, U8 *name, U8 *ours_head, U8 *theirs_head, U8 *other_path_name)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  I64 total_old;
+  if (buf == NULL) total_old = 0; else total_old = size;
+
+  U8 payload[192];
+  I64 bi;
+  for (bi=0; bi<64; bi++) payload[bi] = ours_head[bi];
+  for (bi=0; bi<64; bi++) payload[64+bi] = theirs_head[bi];
+  I64 name_len = StrLen(other_path_name);
+  for (bi=0; bi<name_len; bi++) payload[128+bi] = other_path_name[bi];
+
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
+  I64 new_len;
+  MetaSpliceOut(buf, total_old, name, META_TAG_MERGE_STATE, new_buf, &new_len);
+  MetaAppendRecord(new_buf, &new_len, name, META_TAG_MERGE_STATE, payload, 128+name_len);
+  FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
+}
+
+// TRUE (and fills the out params) if path `name` has a real
+// in-progress merge right now - the signal every other real command
+// below checks before acting.
+Bool MetaMergeStateRead(U8 *repo_path, U8 *name, U8 *ours_head_out, U8 *theirs_head_out, U8 *other_path_out)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return FALSE;
+  I64 payload_len;
+  I64 payload_off = MetaFind(buf, size, name, META_TAG_MERGE_STATE, &payload_len);
+  if (payload_off < 0) return FALSE;
+  I64 bi;
+  for (bi=0; bi<64; bi++) ours_head_out[bi] = buf[payload_off+bi];
+  for (bi=0; bi<64; bi++) theirs_head_out[bi] = buf[payload_off+64+bi];
+  I64 name_len = payload_len - 128;
+  for (bi=0; bi<name_len; bi++) other_path_out[bi] = buf[payload_off+128+bi];
+  other_path_out[name_len] = 0;
+  return TRUE;
+}
+
+Bool MetaMergeStateExists(U8 *repo_path, U8 *name)
+{
+  U8 dummy_a[64], dummy_b[64], dummy_c[META_MAX_PATH_NAME];
+  return MetaMergeStateRead(repo_path, name, dummy_a, dummy_b, dummy_c);
+}
+
+// Clears the in-progress-merge state AND every conflict record for
+// `name` in one call - `merge continue`'s own real success and `merge
+// abort` both end an in-progress merge completely, never partially.
+U0 MetaMergeStateClear(U8 *repo_path, U8 *name)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return;
+  U8 *scratch = MAlloc(size + META_BUF_HEADROOM);
+  I64 scratch_len;
+  MetaSpliceOut(buf, size, name, META_TAG_MERGE_STATE, scratch, &scratch_len);
+  U8 *new_buf = MAlloc(scratch_len + META_BUF_HEADROOM);
+  I64 new_len;
+  MetaSpliceOut(scratch, scratch_len, name, META_TAG_CONFLICT, new_buf, &new_len);
+  FileWrite(meta_path, new_buf, new_len);
+  Free(scratch);
+  Free(new_buf);
+}
+
+// Conflict-record payload: conflict_hash(64) + resolved(1) +
+// resolution_hash(64) = 129 bytes. Real conflicts ACCUMULATE (like
+// the oplog above) - one record appended per real conflict found
+// during the merge that started this in-progress state.
+U0 MetaConflictAppend(U8 *repo_path, U8 *name, U8 *conflict_hash)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  I64 total_old;
+  if (buf == NULL) total_old = 0; else total_old = size;
+
+  U8 payload[129];
+  I64 bi;
+  for (bi=0; bi<64; bi++) payload[bi] = conflict_hash[bi];
+  payload[64] = 0; // unresolved
+  for (bi=0; bi<64; bi++) payload[65+bi] = 0; // resolution_hash, meaningless while unresolved
+
+  U8 *new_buf = MAlloc(total_old + META_BUF_HEADROOM);
+  I64 new_len = 0;
+  for (bi=0; bi<total_old; bi++) new_buf[bi] = buf[bi];
+  new_len = total_old;
+  MetaAppendRecord(new_buf, &new_len, name, META_TAG_CONFLICT, payload, 129);
+  FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
+}
+
+// Count of conflict records (resolved and unresolved both) for path
+// `name`'s in-progress merge.
+I64 MetaConflictCount(U8 *repo_path, U8 *name)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return 0;
+  I64 target_len = StrLen(name);
+  I64 pos = 0, count = 0;
+  while (pos < size) {
+    U8 name_len = buf[pos]; pos += 1;
+    U8 *rec_name = buf + pos; pos += name_len;
+    U8 tag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    pos += payload_len;
+    if (tag == META_TAG_CONFLICT && name_len == target_len) {
+      Bool same = TRUE;
+      I64 ki;
+      for (ki=0; ki<name_len; ki++) if (rec_name[ki] != name[ki]) same = FALSE;
+      if (same) count++;
+    }
+  }
+  return count;
+}
+
+// Fills conflict_hash_out(64)/resolved_out(1)/resolution_hash_out(64)
+// for the `index`-th (0-based, real append order) conflict record for
+// path `name`. Returns FALSE if out of range. Read-only, same
+// "position-indexed read" convention `MetaOpLogGet` already uses.
+Bool MetaConflictGetAt(U8 *repo_path, U8 *name, I64 index,
+                       U8 *conflict_hash_out, U8 *resolved_out, U8 *resolution_hash_out)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return FALSE;
+  I64 target_len = StrLen(name);
+  I64 pos = 0, idx = 0;
+  while (pos < size) {
+    U8 name_len = buf[pos]; pos += 1;
+    U8 *rec_name = buf + pos; pos += name_len;
+    U8 tag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    I64 payload_off = pos; pos += payload_len;
+    if (tag == META_TAG_CONFLICT && name_len == target_len) {
+      Bool same = TRUE;
+      I64 gi;
+      for (gi=0; gi<name_len; gi++) if (rec_name[gi] != name[gi]) same = FALSE;
+      if (same) {
+        if (idx == index) {
+          I64 bi;
+          for (bi=0; bi<64; bi++) conflict_hash_out[bi] = buf[payload_off+bi];
+          *resolved_out = buf[payload_off+64];
+          for (bi=0; bi<64; bi++) resolution_hash_out[bi] = buf[payload_off+65+bi];
+          return TRUE;
+        }
+        idx++;
+      }
+    }
+  }
+  return FALSE;
+}
+
+// Marks the conflict record whose own `conflict_hash` matches
+// resolved, recording `resolution_hash` (the content it resolved to -
+// take-ours' or take-theirs' own hash, per ADR 0016's own first
+// slice). Identified by content hash, not position - the same
+// object-addressed convention every other real hgit reference already
+// uses (commits, trees, blobs), so a caller doesn't need to track a
+// fragile positional index across separate `hgit resolve` calls.
+// Returns FALSE (no change) if no conflict record for `name` matches
+// `conflict_hash`.
+Bool MetaConflictSetResolved(U8 *repo_path, U8 *name, U8 *conflict_hash, U8 *resolution_hash)
+{
+  U8 meta_path[256];
+  MetaPath(repo_path, meta_path);
+  I64 size;
+  U8 *buf = FileRead(meta_path, &size);
+  if (buf == NULL) return FALSE;
+
+  I64 target_len = StrLen(name);
+  I64 pos = 0;
+  I64 match_start = -1, match_end = -1;
+  while (pos < size) {
+    I64 entry_start = pos;
+    U8 name_len = buf[pos]; pos += 1;
+    U8 *rec_name = buf + pos; pos += name_len;
+    U8 tag = buf[pos]; pos += 1;
+    U8 payload_len = buf[pos]; pos += 1;
+    I64 payload_off = pos; pos += payload_len;
+    if (tag == META_TAG_CONFLICT && name_len == target_len) {
+      Bool same_name = TRUE;
+      I64 si;
+      for (si=0; si<name_len; si++) if (rec_name[si] != name[si]) same_name = FALSE;
+      if (same_name) {
+        Bool same_hash = TRUE;
+        I64 hi;
+        for (hi=0; hi<64; hi++) if (buf[payload_off+hi] != conflict_hash[hi]) same_hash = FALSE;
+        if (same_hash) { match_start = entry_start; match_end = pos; }
+      }
+    }
+  }
+  if (match_start < 0) return FALSE;
+
+  U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
+  I64 new_len = 0, ci;
+  for (ci=0; ci<match_start; ci++) new_buf[new_len++] = buf[ci];
+  for (ci=match_end; ci<size; ci++) new_buf[new_len++] = buf[ci];
+
+  U8 payload[129];
+  I64 bi;
+  for (bi=0; bi<64; bi++) payload[bi] = conflict_hash[bi];
+  payload[64] = 1; // resolved
+  for (bi=0; bi<64; bi++) payload[65+bi] = resolution_hash[bi];
+  MetaAppendRecord(new_buf, &new_len, name, META_TAG_CONFLICT, payload, 129);
+
+  FileWrite(meta_path, new_buf, new_len);
+  Free(new_buf);
+  return TRUE;
 }

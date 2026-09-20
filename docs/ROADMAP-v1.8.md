@@ -1,6 +1,6 @@
 # hgit v1.8.x — the usability series
 
-**Status: in progress - v1.8.0 through v1.8.2 shipped, see this
+**Status: in progress - v1.8.0 through v1.8.3 shipped, see this
 document's own "Version sequence" section below for exactly what.**
 This is the project owner's own written brief for this phase of work,
 recorded here verbatim (reorganized only for headings) so it survives
@@ -265,7 +265,8 @@ v1.8.1  tracked attributes/modes, text/binary policy, AND status/    [shipped]
 v1.8.2  merge's own mode 3-way handling (a real, separate slice of   [shipped]
         the "complete three-way merge" item below - the rest of
         that item, plus the persistent conflict model, still ahead)
-v1.8.3  persistent conflict object/model
+v1.8.3  persistent conflict object/model + the resolve/continue/abort   [shipped]
+        lifecycle's first slice (ADR 0016; take-ours/take-theirs only)
 v1.8.4  conflict lifecycle: inspect, resolve, continue and abort
 v1.8.5  remaining rename-, move-, delete-aware three-way merge gaps
 v1.8.6  DolDoc and CLI diff/merge UX

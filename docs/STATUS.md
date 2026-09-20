@@ -12,8 +12,10 @@ rules, minimal attributes/modes, a complete three-way merge, conflicts
 as persistent repository data, and the CLI/DolDoc UX to use all of
 it). v1.8.0 (ignore rules, ADR 0014) and v1.8.1 (tracked file
 attributes/modes, ADR 0015, including status/diff integration) are
-released; merge's own mode 3-way handling (ADR 0011/0015, probe 121)
-is done and pending its own v1.8.2 release. Read that file before
+released, as are v1.8.2 (merge's own mode 3-way handling) and v1.8.3
+(conflicts as persistent repository data, ADR 0016: `merge` now persists
+real conflicts; `conflicts`/`resolve`/`merge continue`/`merge abort`).
+Read that file before
 picking the next v1.8.x item.
 
 ## The one-paragraph version
@@ -26,8 +28,7 @@ mechanism (v1.8.0), and (as of v1.8.1) a real `.hgitattributes`/file-
 mode mechanism surfaced in status/diff and validated by check - all
 implemented in native HolyC, verified on real (QEMU-hosted) TempleOS,
 not simulated or assumed. Tagged releases exist from v0.10.0 through
-v1.8.1 (v1.8.2, merge's own mode 3-way handling, pending its own
-release), 15 ADRs document real,
+v1.8.3 (persistent conflicts, ADR 0016), 16 ADRs document real,
 evidence-backed architectural decisions, and 120+ numbered probes
 (`experiments/`) each pair one concrete question with a real, captured
 answer. M0 through M4 are functionally complete by their own original

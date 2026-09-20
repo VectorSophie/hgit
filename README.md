@@ -89,11 +89,12 @@ loaded) for the same list straight from the live dispatcher.
 | `offer` | Snapshot matching files as a new commit (hgit's own name for git's "commit") — honors `.hgitignore` (ADR 0014): an ignore rule only ever hides a genuinely untracked name, never an already-tracked one |
 | `offertree` / `statustree` | Real subdirectory support (ADR 0010) — `offer`/`status`, recursing into nested directories, as separate commands rather than changing `offer`/`status`'s own flat semantics; also honor `.hgitignore` (ADR 0014), including a whole ignored subdirectory (`build/`) never even being recursed into |
 | `status` | Compare the working directory against HEAD — new/modified/deleted, **and renamed** (exact-content match, ADR 0009) |
-| `merge` | A real three-way merge between two named paths (ADR 0011), content and file mode (ADR 0015) both merged independently — a genuine conflict (content or mode) aborts the whole merge, zero side effects; no resolution mechanism yet |
+| `merge` | A real three-way merge between two named paths (ADR 0011), content and file mode (ADR 0015) both merged independently — a genuine conflict (content or mode) now **persists as real repository data** instead of vanishing (ADR 0016, v1.8.3): the merge commit/HEAD still don't move until every conflict is resolved, but the conflict evidence survives a restart |
+| `conflicts` / `resolve` / `merge continue` / `merge abort` | The conflict lifecycle (ADR 0016): list an in-progress merge's conflicts, resolve one (`take-ours`/`take-theirs`), finish the merge once every conflict is resolved, or discard the whole in-progress merge and restore the exact pre-merge state |
 | `history` | Walk the current path's commit chain |
 | `graph` | Render the entire commit history across every path as a real, collapsible DolDoc tree — see below |
 | `see` / `diff` | Show one commit's tree/message/relation, or what changed relative to its parent — both recurse into nested trees |
-| `check` | Repo integrity: hash verification, referential integrity (`git fsck`-style missing-object check), **and dangling/unreachable-object detection** — all correctly recurse into nested trees too |
+| `check` | Repo integrity: hash verification, referential integrity (`git fsck`-style missing-object check), **and dangling/unreachable-object detection** — all correctly recurse into nested trees too, and now also cover in-progress merge conflicts (ADR 0016) as a real reachability root, not just the commit graph |
 | `undo` / `redo` | Step through the operation log — reversible, not destructive |
 | `operation history` / `operation restore` | Full operation-log vocabulary — jump to any past point |
 | `path list` / `new` / `go` / `close` | Named, branch-like alternate histories sharing one object store |

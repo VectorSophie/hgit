@@ -31,37 +31,44 @@
 // mode - the file is gone in the merge result either way, so nothing
 // is silently lost, but a real chmod-vs-delete race isn't flagged.
 //
+// Conflict now PERSISTS as real repository data instead of vanishing
+// on abort (ADR 0016, v1.8.3 - docs/adr/0016-conflict-as-repository-data.md):
+// on a real conflict, at any depth, this file still never creates the
+// merge commit and never moves HEAD - that part of the original "zero
+// side effects" stance is unchanged - but it now WRITES every real
+// `OBJ_CONFLICT` evidence object (Conflict.HC) plus Meta.HC's own
+// in-progress-merge-state/conflict records, so the conflict survives a
+// restart and can be inspected/resolved with `hgit conflicts`/`hgit
+// resolve`/`hgit merge continue`/`hgit merge abort` instead of forcing
+// a full manual redo. See ADR 0016 for the complete lifecycle; this
+// file only implements the detection + evidence-object + persistence
+// side of it.
+//
 // Scope of THIS slice (real, testable, honestly limited - see
 // docs/adr/0011-merge.md, experiments/99-hgit-merge/README.md, and
 // experiments/100-merge-nested-trees/README.md for the full account):
 //
-//   - No conflict RESOLUTION exists yet - a real conflict of any kind,
-//     at any depth, aborts the ENTIRE merge with zero side effects (no
-//     commit created, no HEAD moved) - the same non-destructive stance
-//     every other real hgit command already takes. A user resolves
-//     manually outside hgit (edit the working directory to what it
-//     should be) and re-offers - there is no conflict-marker blob
-//     format or resolution command yet.
 //   - Trivial cases (`theirs` already an ancestor of `ours` - nothing
 //     to do; `ours` unchanged since the merge base - a real
 //     fast-forward, just moving the current path's HEAD) are detected
 //     and handled without a merge commit, matching every real VCS's
 //     own standard fast-forward behavior.
-//   - A real, honest trade-off from recursing: this project's own
-//     established "no side effects on abort" stance still holds for
-//     anything that matters (no commit is ever created, HEAD never
-//     moves, the real repo file is never touched unless the WHOLE
-//     merge succeeds) - but a successful nested subtree discovered
-//     before a conflict elsewhere in the tree may already have been
-//     written into the in-memory `archive` scratch buffer by the time
-//     the conflict is found. That buffer is simply `Free()`'d, never
-//     written to the real file, on any abort - so this is invisible to
-//     any real caller, not a correctness gap, just documented honestly
-//     rather than silently relied upon.
+//   - A real, honest trade-off from recursing: a successful nested
+//     subtree discovered before a conflict elsewhere in the tree may
+//     already have been written into the in-memory `archive` scratch
+//     buffer by the time the conflict is found - previously this
+//     buffer was simply `Free()`'d and never written to the real file
+//     on any abort; now (ADR 0016) the whole `archive`, subtrees and
+//     conflict evidence together, IS written for real once a conflict
+//     is found and persisted, so a stray unreferenced subtree object
+//     can genuinely end up in the archive after a conflicted merge -
+//     the same already-accepted `CHECK_DANGLING` tradeoff `undo`
+//     already leaves behind (ADR 0013), not a new kind of problem.
 //
 // Depends on Canon.HC, Blake2b.HC, Hgs.HC, Object.HC, Tree.HC,
 // Commit.HC, Index.HC, MergeBase.HC, Meta.HC, Paths.HC, OpLog.HC,
-// Attrs.HC (ADR 0015 follow-up: real mode 3-way merge).
+// Attrs.HC (ADR 0015 follow-up: real mode 3-way merge), Conflict.HC
+// (ADR 0016: OBJ_CONFLICT evidence objects).
 
 #define MERGE_ARCHIVE_HEADROOM 20000
 #define MERGE_ARCHIVE_SANITY_MAX 1000000000
@@ -200,7 +207,16 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
                          U8 *theirs_tree, I64 theirs_tree_len,
                          U8 *prefix,
                          U8 *merged_tree_content_out, I64 *merged_tree_len_out,
-                         U8 *conflict_names_out, I64 *conflict_count_out,
+                         // ADR 0016: conflict_hashes_out is a parallel
+                         // array to conflict_names_out (64 bytes per
+                         // entry, same index) - the real OBJ_CONFLICT
+                         // object hash for that conflict, already
+                         // written into `archive` by the time this
+                         // returns. Names alone (the pre-ADR-0016
+                         // shape) were only ever for CLI display; the
+                         // hash is what Meta.HC's conflict records
+                         // actually reference.
+                         U8 *conflict_names_out, U8 *conflict_hashes_out, I64 *conflict_count_out,
                          // ADR 0015 follow-up: each side's own commit-level
                          // OBJ_ATTRS content (NULL/0 if that commit has none -
                          // every entity's mode then implicitly 0), and ONE
@@ -213,7 +229,30 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
                          U8 *base_attrs, I64 base_attrs_len,
                          U8 *ours_attrs, I64 ours_attrs_len,
                          U8 *theirs_attrs, I64 theirs_attrs_len,
-                         U8 *merged_attrs_content_out, I64 *merged_attrs_len_out)
+                         U8 *merged_attrs_content_out, I64 *merged_attrs_len_out,
+                         // ADR 0016, `hgit merge continue`'s own real
+                         // mechanism: an optional resolution table
+                         // (resolution_count==0 for a normal first
+                         // attempt - every other caller passes 0/NULL/
+                         // NULL). Parallel arrays, 64 bytes each:
+                         // resolution_conflict_hashes[i] is a conflict
+                         // object hash already resolved (Meta.HC),
+                         // resolution_hashes[i] is what it resolved TO
+                         // (ours_hash or theirs_hash, whichever side
+                         // `hgit resolve` picked). Since OBJ_CONFLICT
+                         // is content-addressed, re-running this exact
+                         // same algorithm against the same
+                         // ours_head/theirs_head/base_head reproduces
+                         // the IDENTICAL conflict hash at the same
+                         // site - so a site whose freshly-recomputed
+                         // conflict hash appears in this table is now
+                         // resolved: it takes the matching side's
+                         // entry (type+hash+entity_id+mode together,
+                         // not content and mode separately) instead of
+                         // recording a conflict, exactly like the
+                         // ordinary take_ours/take_theirs path already
+                         // does for a non-conflicting entry.
+                         U8 *resolution_conflict_hashes, U8 *resolution_hashes, I64 resolution_count)
 {
   U32 ours_tcount = 0; if (ours_tree != NULL) ours_tcount = GetU32LE(ours_tree, 0);
   U32 theirs_tcount = 0; if (theirs_tree != NULL) theirs_tcount = GetU32LE(theirs_tree, 0);
@@ -304,13 +343,16 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
                                                               // names than
                                                               // this whole
                                                               // level does
+      U8 *sub_conflict_hashes = MAlloc(name_count*64 + 64); // ADR 0016:
+                                                             // parallel to
+                                                             // sub_conflict_names
       I64 sub_conflict_count;
       Bool sub_ok = MergeTreesRecursive(rbuf, idx_hashes, idx_offsets, idx_count,
                                         archive, alen,
                                         base_sub, base_sub_len, ours_sub, ours_sub_len,
                                         theirs_sub, theirs_sub_len, sub_prefix,
                                         sub_merged_content, &sub_merged_len,
-                                        sub_conflict_names, &sub_conflict_count,
+                                        sub_conflict_names, sub_conflict_hashes, &sub_conflict_count,
                                         // same shared top-level attrs
                                         // buffers/output at every depth -
                                         // see this function's own signature
@@ -318,7 +360,8 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
                                         base_attrs, base_attrs_len,
                                         ours_attrs, ours_attrs_len,
                                         theirs_attrs, theirs_attrs_len,
-                                        merged_attrs_content_out, merged_attrs_len_out);
+                                        merged_attrs_content_out, merged_attrs_len_out,
+                                        resolution_conflict_hashes, resolution_hashes, resolution_count);
       if (!sub_ok) {
         all_ok = FALSE;
         I64 sci;
@@ -326,6 +369,7 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
           I64 scap = StrLen(sub_conflict_names+sci*256); if (scap > 254) scap = 254;
           for (ci=0; ci<scap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = sub_conflict_names[sci*256+ci];
           conflict_names_out[(*conflict_count_out)*256+scap] = 0;
+          for (ci=0; ci<64; ci++) conflict_hashes_out[(*conflict_count_out)*64+ci] = sub_conflict_hashes[sci*64+ci];
           (*conflict_count_out)++;
         }
       } else {
@@ -344,6 +388,7 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
         merged_entry_count++;
       }
       Free(sub_conflict_names);
+      Free(sub_conflict_hashes);
     } else if (any_is_tree) {
       // A real kind mismatch (file on one side, directory on
       // another, at the same name) - a genuine, honest conflict, not
@@ -359,10 +404,68 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
                                           // reported "SubB/" instead
                                           // of "SubB/z.txt" before
                                           // this fix)
-      for (ci=0; ci<cap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = full_name[ci];
-      conflict_names_out[(*conflict_count_out)*256+cap] = 0;
-      (*conflict_count_out)++;
-      all_ok = FALSE;
+      // ADR 0016: this conflict's real, persistent evidence object,
+      // built FIRST (before deciding conflict vs. already-resolved) -
+      // OBJ_CONFLICT is content-addressed, so this is the same real
+      // lookup key `hgit resolve` recorded against, on a normal first
+      // attempt or a `merge continue` re-walk alike. Mode is left 0
+      // for every side here - a kind mismatch (tree vs blob) makes
+      // "mode" not meaningfully comparable the way it is for two
+      // blobs, and nothing upstream computed a mode for this branch
+      // anyway; a real, deliberately narrower scope than the
+      // content/mode branch below, not an oversight.
+      Bool kc_present[3]; U8 kc_type[3]; U8 kc_mode[3]; U8 kc_hash[192];
+      kc_present[0] = base_found2; kc_present[1] = ours_found; kc_present[2] = theirs_found;
+      kc_mode[0] = 0; kc_mode[1] = 0; kc_mode[2] = 0;
+      if (base_found2) { kc_type[0] = base_type; for (ci=0; ci<64; ci++) kc_hash[0*64+ci] = base_hash[ci]; }
+      if (ours_found) { kc_type[1] = ours_type; for (ci=0; ci<64; ci++) kc_hash[1*64+ci] = ours_hash[ci]; }
+      if (theirs_found) { kc_type[2] = theirs_type; for (ci=0; ci<64; ci++) kc_hash[2*64+ci] = theirs_hash[ci]; }
+      U64 kc_entity_id;
+      if (ours_found) kc_entity_id = ours_entity_id;
+      else if (theirs_found) kc_entity_id = theirs_entity_id;
+      else kc_entity_id = base_entity_id;
+
+      U8 kc_content[512];
+      I64 kc_len = 0;
+      ConflictEncode(kc_content, &kc_len, CONFLICT_KIND_TYPE, kc_entity_id, full_name, cap,
+                     kc_present, kc_type, kc_mode, kc_hash);
+      U8 kc_tagged[513];
+      kc_tagged[0] = OBJ_CONFLICT;
+      for (ci=0; ci<kc_len; ci++) kc_tagged[1+ci] = kc_content[ci];
+      U8 kc_object_hash[64];
+      B2Hash512Any(kc_tagged, kc_len+1, kc_object_hash);
+
+      // `hgit merge continue`'s own real mechanism: a matching entry
+      // in the resolution table means this exact conflict was already
+      // resolved - take the matching side's entry whole (type+hash+
+      // entity_id together) instead of recording a conflict.
+      Bool kc_resolved = FALSE;
+      U8 kc_resolution_hash[64];
+      I64 kri;
+      for (kri=0; kri<resolution_count; kri++) {
+        Bool kc_same = TRUE;
+        I64 krj;
+        for (krj=0; krj<64; krj++) if (resolution_conflict_hashes[kri*64+krj] != kc_object_hash[krj]) kc_same = FALSE;
+        if (kc_same) { kc_resolved = TRUE; for (krj=0; krj<64; krj++) kc_resolution_hash[krj] = resolution_hashes[kri*64+krj]; }
+      }
+
+      if (kc_resolved) {
+        Bool kc_use_ours = ours_found;
+        if (kc_use_ours) { I64 krj2; for (krj2=0; krj2<64; krj2++) if (ours_hash[krj2] != kc_resolution_hash[krj2]) kc_use_ours = FALSE; }
+        if (kc_use_ours) {
+          TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, ours_type, ours_hash, ours_entity_id);
+        } else {
+          TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, theirs_type, theirs_hash, theirs_entity_id);
+        }
+        merged_entry_count++;
+      } else {
+        ObjectPut(archive, alen, OBJ_CONFLICT, kc_content, kc_len);
+        for (ci=0; ci<cap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = full_name[ci];
+        conflict_names_out[(*conflict_count_out)*256+cap] = 0;
+        for (ci=0; ci<64; ci++) conflict_hashes_out[(*conflict_count_out)*64+ci] = kc_object_hash[ci];
+        (*conflict_count_out)++;
+        all_ok = FALSE;
+      }
     } else {
       // The original flat-blob decision (unchanged from probe 99):
       // unchanged-from-base on one side takes the other side's value;
@@ -424,10 +527,67 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
                                             // not name_len - see the
                                             // sibling branch above for
                                             // why this matters
-        for (ci=0; ci<cap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = full_name[ci];
-        conflict_names_out[(*conflict_count_out)*256+cap] = 0;
-        (*conflict_count_out)++;
-        all_ok = FALSE;
+
+        // ADR 0016: this conflict's real, persistent evidence object -
+        // content and/or mode, whichever combination of is_conflict/
+        // mode_conflict actually fired (a real file can conflict on
+        // both at once, per the ADR's own conflict_kind bitmask). Same
+        // "build first, then check resolution" order as the kind-
+        // mismatch branch above - see its own comment for why.
+        U8 cc_kind = 0;
+        if (is_conflict) cc_kind = cc_kind | CONFLICT_KIND_CONTENT;
+        if (mode_conflict) cc_kind = cc_kind | CONFLICT_KIND_MODE;
+
+        Bool cc_present[3]; U8 cc_type[3]; U8 cc_mode[3]; U8 cc_hash[192];
+        cc_present[0] = base_found2; cc_present[1] = ours_found; cc_present[2] = theirs_found;
+        if (base_found2) { cc_type[0] = OBJ_BLOB; cc_mode[0] = base_mode; for (ci=0; ci<64; ci++) cc_hash[0*64+ci] = base_hash[ci]; }
+        if (ours_found) { cc_type[1] = OBJ_BLOB; cc_mode[1] = ours_mode; for (ci=0; ci<64; ci++) cc_hash[1*64+ci] = ours_hash[ci]; }
+        if (theirs_found) { cc_type[2] = OBJ_BLOB; cc_mode[2] = theirs_mode; for (ci=0; ci<64; ci++) cc_hash[2*64+ci] = theirs_hash[ci]; }
+        U64 cc_entity_id;
+        if (ours_found) cc_entity_id = ours_entity_id;
+        else if (theirs_found) cc_entity_id = theirs_entity_id;
+        else cc_entity_id = base_entity_id;
+
+        U8 cc_content[512];
+        I64 cc_len = 0;
+        ConflictEncode(cc_content, &cc_len, cc_kind, cc_entity_id, full_name, cap,
+                       cc_present, cc_type, cc_mode, cc_hash);
+        U8 cc_tagged[513];
+        cc_tagged[0] = OBJ_CONFLICT;
+        for (ci=0; ci<cc_len; ci++) cc_tagged[1+ci] = cc_content[ci];
+        U8 cc_object_hash[64];
+        B2Hash512Any(cc_tagged, cc_len+1, cc_object_hash);
+
+        Bool cc_resolved = FALSE;
+        U8 cc_resolution_hash[64];
+        I64 cri;
+        for (cri=0; cri<resolution_count; cri++) {
+          Bool cc_same = TRUE;
+          I64 crj;
+          for (crj=0; crj<64; crj++) if (resolution_conflict_hashes[cri*64+crj] != cc_object_hash[crj]) cc_same = FALSE;
+          if (cc_same) { cc_resolved = TRUE; for (crj=0; crj<64; crj++) cc_resolution_hash[crj] = resolution_hashes[cri*64+crj]; }
+        }
+
+        if (cc_resolved) {
+          Bool cc_use_ours = ours_found;
+          if (cc_use_ours) { I64 crj2; for (crj2=0; crj2<64; crj2++) if (ours_hash[crj2] != cc_resolution_hash[crj2]) cc_use_ours = FALSE; }
+          if (cc_use_ours) {
+            TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, ours_type, ours_hash, ours_entity_id);
+            merged_entry_count++;
+            if (ours_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, ours_entity_id, ours_mode);
+          } else {
+            TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, theirs_type, theirs_hash, theirs_entity_id);
+            merged_entry_count++;
+            if (theirs_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, theirs_entity_id, theirs_mode);
+          }
+        } else {
+          ObjectPut(archive, alen, OBJ_CONFLICT, cc_content, cc_len);
+          for (ci=0; ci<cap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = full_name[ci];
+          conflict_names_out[(*conflict_count_out)*256+cap] = 0;
+          for (ci=0; ci<64; ci++) conflict_hashes_out[(*conflict_count_out)*64+ci] = cc_object_hash[ci];
+          (*conflict_count_out)++;
+          all_ok = FALSE;
+        }
       } else if (take_ours && ours_found) {
         TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len,
                         ours_type, ours_hash, ours_entity_id);
@@ -450,6 +610,80 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
   return all_ok;
 }
 
+// The real "write the merge commit" tail, shared between a normal
+// conflict-free `HgitMerge` and `HgitMergeContinue` (ADR 0016) once
+// every conflict is resolved - identical logic either way, just
+// pulled out so it isn't duplicated. Takes ownership of `archive`
+// (frees it here); `merged_attrs_content` stays the caller's, freed
+// there like every other caller-owned buffer in this file.
+U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
+                      U8 *ours_head, U8 *theirs_head,
+                      U8 *merged_tree_content, I64 merged_tree_len,
+                      U8 *merged_attrs_content, I64 merged_attrs_len,
+                      U8 *other_path_name, U64 timestamp)
+{
+  I64 i;
+  U8 merged_tree_tagged[4096];
+  merged_tree_tagged[0] = OBJ_TREE;
+  for (i=0; i<merged_tree_len; i++) merged_tree_tagged[1+i] = merged_tree_content[i];
+  U8 merged_tree_hash[64];
+  B2Hash512Any(merged_tree_tagged, merged_tree_len+1, merged_tree_hash);
+  ObjectPut(archive, &alen, OBJ_TREE, merged_tree_content, merged_tree_len);
+
+  Bool merge_has_attrs = (merged_attrs_len > 4);
+  U8 merged_attrs_hash[64];
+  if (merge_has_attrs) {
+    PutU32LE(merged_attrs_content, 0, (merged_attrs_len-4)/9);
+    U8 *merged_attrs_tagged = MAlloc(merged_attrs_len+1);
+    merged_attrs_tagged[0] = OBJ_ATTRS;
+    for (i=0; i<merged_attrs_len; i++) merged_attrs_tagged[1+i] = merged_attrs_content[i];
+    B2Hash512Any(merged_attrs_tagged, merged_attrs_len+1, merged_attrs_hash);
+    Free(merged_attrs_tagged);
+    ObjectPut(archive, &alen, OBJ_ATTRS, merged_attrs_content, merged_attrs_len);
+  }
+
+  U8 merge_parents[128];
+  for (i=0; i<64; i++) merge_parents[i] = ours_head[i];
+  for (i=0; i<64; i++) merge_parents[64+i] = theirs_head[i];
+
+  U8 msg[256];
+  I64 mi = 0;
+  U8 *prefix = "merge ";
+  I64 pj;
+  for (pj=0; prefix[pj]; pj++) msg[mi++] = prefix[pj];
+  I64 onl = StrLen(other_path_name);
+  for (pj=0; pj<onl; pj++) msg[mi++] = other_path_name[pj];
+
+  U8 commit_content[512];
+  I64 clen = 0;
+  CommitEncode(commit_content, &clen, merged_tree_hash, merge_parents, 2,
+              timestamp, msg, mi, REL_NONE, NULL, 0, merge_has_attrs, merged_attrs_hash);
+  U8 commit_tagged[512];
+  commit_tagged[0] = OBJ_COMMIT;
+  for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
+  U8 merge_commit_hash[64];
+  B2Hash512Any(commit_tagged, clen+1, merge_commit_hash);
+  ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
+
+  I64 max_possible_objects = alen/73 + 1;
+  U8 *final_idx_hashes = MAlloc(max_possible_objects*64 + 64);
+  I64 *final_idx_offsets = MAlloc((max_possible_objects+1)*8);
+  I64 final_idx_count;
+  IndexBuild(archive+16, alen-16, final_idx_hashes, final_idx_offsets, &final_idx_count);
+  Free(final_idx_hashes);
+  Free(final_idx_offsets);
+
+  HgsWriteHeader(archive, rver, final_idx_count);
+  FileWrite(repo_path, archive, alen);
+
+  OpLogAppend(repo_path, ours_head, merge_commit_hash, timestamp);
+  CurrentHeadWrite(repo_path, merge_commit_hash);
+
+  CommPrint(1, "MERGE_OK\n");
+
+  Free(archive);
+}
+
 U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
 {
   I64 rsize;
@@ -459,6 +693,18 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   U64 rcount;
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
   if (!hok) { CommPrint(1, "MERGE_ERR bad_header\n"); return; }
+
+  // ADR 0016: a real conflict now persists as in-progress merge
+  // state (Meta.HC), which starting a SECOND overlapping merge on
+  // the same path would silently clobber or orphan - refuse, same
+  // honest-refusal stance every other real hgit command already
+  // takes rather than guessing.
+  U8 mc_cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, mc_cur_name);
+  if (MetaMergeStateExists(repo_path, mc_cur_name)) {
+    CommPrint(1, "MERGE_ERR conflicts_already_in_progress - resolve them ('hgit conflicts'/'hgit resolve') then 'hgit merge continue', or 'hgit merge abort' first\n");
+    return;
+  }
 
   U8 ours_head[64];
   if (!CurrentHeadRead(repo_path, ours_head)) {
@@ -555,6 +801,7 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   if (base_tree != NULL) base_tcount = GetU32LE(base_tree, 0);
   I64 max_names = ours_tcount + theirs_tcount + base_tcount + 1;
   U8 *conflict_names = MAlloc(max_names*256 + 256);
+  U8 *conflict_hashes = MAlloc(max_names*64 + 64); // ADR 0016: parallel to conflict_names
   I64 conflict_count;
   U8 merged_tree_content[4096];
   I64 merged_tree_len;
@@ -570,93 +817,347 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
                                 base_tree, base_tree_len, ours_tree, ours_tree_len,
                                 theirs_tree, theirs_tree_len, root_prefix,
                                 merged_tree_content, &merged_tree_len,
-                                conflict_names, &conflict_count,
+                                conflict_names, conflict_hashes, &conflict_count,
                                 base_attrs, base_attrs_len,
                                 ours_attrs, ours_attrs_len,
                                 theirs_attrs, theirs_attrs_len,
-                                merged_attrs_content, &merged_attrs_len);
+                                merged_attrs_content, &merged_attrs_len,
+                                NULL, NULL, 0); // no resolutions yet - a fresh merge attempt
 
   if (!ok) {
+    // ADR 0016: a real conflict no longer means "nothing persisted" -
+    // every OBJ_CONFLICT object MergeTreesRecursive already built into
+    // `archive` above gets written for real (the object tree/commit
+    // itself is still untouched - HEAD doesn't move, no merge commit
+    // exists - only the conflict evidence and in-progress merge state
+    // are new), then Meta.HC records the in-progress merge so `hgit
+    // conflicts`/`hgit resolve`/`hgit merge continue`/`hgit merge
+    // abort` can pick it up later, even across a restart.
+    I64 fail_max_objects = alen/73 + 1;
+    U8 *fail_idx_hashes = MAlloc(fail_max_objects*64 + 64);
+    I64 *fail_idx_offsets = MAlloc((fail_max_objects+1)*8);
+    I64 fail_idx_count;
+    IndexBuild(archive+16, alen-16, fail_idx_hashes, fail_idx_offsets, &fail_idx_count);
+    HgsWriteHeader(archive, rver, fail_idx_count);
+    FileWrite(repo_path, archive, alen);
+    Free(fail_idx_hashes); Free(fail_idx_offsets);
+
+    MetaMergeStateWrite(repo_path, mc_cur_name, ours_head, theirs_head, other_path_name);
     I64 ci2;
     for (ci2=0; ci2<conflict_count; ci2++) {
       CommPrint(1, "MERGE_CONFLICT %s\n", conflict_names+ci2*256);
+      MetaConflictAppend(repo_path, mc_cur_name, conflict_hashes+ci2*64);
     }
     CommPrint(1, "MERGE_ABORTED conflicts=%d\n", conflict_count);
-    Free(idx_hashes); Free(idx_offsets); Free(conflict_names); Free(archive); Free(merged_attrs_content);
+    CommPrint(1, "MERGE_CONFLICTS_PERSISTED - see 'hgit conflicts', 'hgit resolve', 'hgit merge continue'/'hgit merge abort'\n");
+    Free(idx_hashes); Free(idx_offsets); Free(conflict_names); Free(conflict_hashes); Free(archive); Free(merged_attrs_content);
     return;
   }
 
-  U8 merged_tree_tagged[4096];
-  merged_tree_tagged[0] = OBJ_TREE;
-  for (i=0; i<merged_tree_len; i++) merged_tree_tagged[1+i] = merged_tree_content[i];
-  U8 merged_tree_hash[64];
-  B2Hash512Any(merged_tree_tagged, merged_tree_len+1, merged_tree_hash);
-  ObjectPut(archive, &alen, OBJ_TREE, merged_tree_content, merged_tree_len);
+  // ADR 0015 follow-up (mode carried in the merge commit) and ADR
+  // 0016 (this tail shared with `HgitMergeContinue`) both live in
+  // `MergeFinishSuccess` now - see its own comment.
+  MergeFinishSuccess(repo_path, archive, alen, rver, ours_head, theirs_head,
+                     merged_tree_content, merged_tree_len,
+                     merged_attrs_content, merged_attrs_len,
+                     other_path_name, timestamp);
 
-  // ADR 0015 follow-up: build the merged OBJ_ATTRS object (if any
-  // entity ended up with a non-default mode) the same way Offer.HC
-  // does - `merged_attrs_len` is already the real content length
-  // (U32 count header + entries), only the count field itself still
-  // needs filling in now that every entry is known.
-  Bool merge_has_attrs = (merged_attrs_len > 4);
-  U8 merged_attrs_hash[64];
-  if (merge_has_attrs) {
-    PutU32LE(merged_attrs_content, 0, (merged_attrs_len-4)/9);
-    U8 *merged_attrs_tagged = MAlloc(merged_attrs_len+1);
-    merged_attrs_tagged[0] = OBJ_ATTRS;
-    for (i=0; i<merged_attrs_len; i++) merged_attrs_tagged[1+i] = merged_attrs_content[i];
-    B2Hash512Any(merged_attrs_tagged, merged_attrs_len+1, merged_attrs_hash);
-    Free(merged_attrs_tagged);
-    ObjectPut(archive, &alen, OBJ_ATTRS, merged_attrs_content, merged_attrs_len);
-  }
-
-  U8 merge_parents[128];
-  for (i=0; i<64; i++) merge_parents[i] = ours_head[i];
-  for (i=0; i<64; i++) merge_parents[64+i] = theirs_head[i];
-
-  U8 msg[256];
-  I64 mi = 0;
-  U8 *prefix = "merge ";
-  I64 pj;
-  for (pj=0; prefix[pj]; pj++) msg[mi++] = prefix[pj];
-  I64 onl = StrLen(other_path_name);
-  for (pj=0; pj<onl; pj++) msg[mi++] = other_path_name[pj];
-
-  U8 commit_content[512];
-  I64 clen = 0;
-  // ADR 0015 follow-up: mode is now really 3-way merged (see
-  // `MergeTreesRecursive`'s own attrs handling above), so the merge
-  // commit carries real attrs whenever any entity ended up with a
-  // non-default mode - the "deliberately not carried forward yet" gap
-  // this comment used to describe is closed.
-  CommitEncode(commit_content, &clen, merged_tree_hash, merge_parents, 2,
-              timestamp, msg, mi, REL_NONE, NULL, 0, merge_has_attrs, merged_attrs_hash);
-  U8 commit_tagged[512];
-  commit_tagged[0] = OBJ_COMMIT;
-  for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
-  U8 merge_commit_hash[64];
-  B2Hash512Any(commit_tagged, clen+1, merge_commit_hash);
-  ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
-
-  I64 max_possible_objects = alen/73 + 1;
-  U8 *final_idx_hashes = MAlloc(max_possible_objects*64 + 64);
-  I64 *final_idx_offsets = MAlloc((max_possible_objects+1)*8);
-  I64 final_idx_count;
-  IndexBuild(archive+16, alen-16, final_idx_hashes, final_idx_offsets, &final_idx_count);
-  Free(final_idx_hashes);
-  Free(final_idx_offsets);
-
-  HgsWriteHeader(archive, rver, final_idx_count);
-  FileWrite(repo_path, archive, alen);
-
-  OpLogAppend(repo_path, ours_head, merge_commit_hash, timestamp);
-  CurrentHeadWrite(repo_path, merge_commit_hash);
-
-  CommPrint(1, "MERGE_OK\n");
-
-  Free(archive);
   Free(idx_hashes);
   Free(idx_offsets);
   Free(conflict_names);
+  Free(conflict_hashes);
   Free(merged_attrs_content);
+}
+
+// --- ADR 0016 lifecycle commands: conflicts / resolve / merge continue / merge abort ---
+
+// `hgit conflicts <repo>`: lists every real conflict record (resolved
+// and unresolved both, ADR 0016's own "resolving doesn't erase
+// evidence" requirement) for the current path's in-progress merge, if
+// any. Numbered 0-based in real append order - that same number is
+// what `hgit resolve` takes as its own conflict selector, a real,
+// simple CLI convenience layered on top of `MetaConflictSetResolved`'s
+// own hash-keyed identification underneath (see Meta.HC's own comment
+// for why the storage itself is hash-keyed, not position-keyed).
+U0 HgitConflicts(U8 *repo_path)
+{
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  if (!MetaMergeStateExists(repo_path, cur_name)) {
+    CommPrint(1, "CONFLICTS_NONE\n");
+    return;
+  }
+
+  I64 rsize;
+  U8 *rbuf = FileRead(repo_path, &rsize);
+  if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); return; }
+  U16 rver;
+  U64 rcount;
+  HgsReadHeader(rbuf, &rver, &rcount);
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
+  I64 idx_count;
+  IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
+
+  I64 count = MetaConflictCount(repo_path, cur_name);
+  CommPrint(1, "CONFLICTS_COUNT %d\n", count);
+  I64 idx;
+  for (idx=0; idx<count; idx++) {
+    U8 conflict_hash[64], resolved, resolution_hash[64];
+    MetaConflictGetAt(repo_path, cur_name, idx, conflict_hash, &resolved, resolution_hash);
+
+    I64 off_rel;
+    U8 path_out[256];
+    I64 path_len;
+    U8 conflict_kind = 0;
+    if (IndexLookup(idx_hashes, idx_offsets, idx_count, conflict_hash, &off_rel)) {
+      I64 off = 16 + off_rel;
+      U8 *content = rbuf + off + 9;
+      U64 entity_id;
+      Bool present[3]; U8 type[3], mode[3], hash[192];
+      ConflictDecode(content, &conflict_kind, &entity_id, path_out, &path_len,
+                     present, type, mode, hash);
+    } else {
+      path_out[0] = 0; // real, honest fallback if the object went missing - Check.HC's own job to flag
+    }
+
+    U8 *state_word = "UNRESOLVED";
+    if (resolved) state_word = "RESOLVED";
+    CommPrint(1, "CONFLICT %d %s kind=%d %s\n", idx, state_word, conflict_kind, path_out);
+  }
+
+  Free(idx_hashes);
+  Free(idx_offsets);
+}
+
+// `hgit resolve <repo> <conflict-index> take-ours|take-theirs`: marks
+// one conflict resolved (ADR 0016's own deliberately narrow first
+// slice - no arbitrary replacement content yet). `which` must be
+// exactly "take-ours" or "take-theirs".
+U0 HgitResolve(U8 *repo_path, I64 conflict_index, U8 *which)
+{
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  if (!MetaMergeStateExists(repo_path, cur_name)) {
+    CommPrint(1, "RESOLVE_ERR no_merge_in_progress\n");
+    return;
+  }
+
+  U8 conflict_hash[64], resolved, old_resolution_hash[64];
+  if (!MetaConflictGetAt(repo_path, cur_name, conflict_index, conflict_hash, &resolved, old_resolution_hash)) {
+    CommPrint(1, "RESOLVE_ERR conflict_not_found %d\n", conflict_index);
+    return;
+  }
+
+  I64 rsize;
+  U8 *rbuf = FileRead(repo_path, &rsize);
+  if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); return; }
+  U16 rver;
+  U64 rcount;
+  HgsReadHeader(rbuf, &rver, &rcount);
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
+  I64 idx_count;
+  IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
+
+  I64 off_rel;
+  if (!IndexLookup(idx_hashes, idx_offsets, idx_count, conflict_hash, &off_rel)) {
+    CommPrint(1, "RESOLVE_ERR conflict_object_missing\n");
+    Free(idx_hashes); Free(idx_offsets);
+    return;
+  }
+  I64 off = 16 + off_rel;
+  U8 *content = rbuf + off + 9;
+  U8 conflict_kind;
+  U64 entity_id;
+  U8 path_out[256];
+  I64 path_len;
+  Bool present[3]; U8 type[3], mode[3], hash[192];
+  ConflictDecode(content, &conflict_kind, &entity_id, path_out, &path_len,
+                 present, type, mode, hash);
+
+  Bool want_ours = (StrCmp(which, "take-ours") == 0);
+  Bool want_theirs = (StrCmp(which, "take-theirs") == 0);
+  if (!want_ours && !want_theirs) {
+    CommPrint(1, "RESOLVE_ERR unknown_selector %s (use take-ours or take-theirs)\n", which);
+    Free(idx_hashes); Free(idx_offsets);
+    return;
+  }
+  I64 side = 1; if (want_theirs) side = 2; // 0=base,1=ours,2=theirs, ADR 0016's own fixed order
+  if (!present[side]) {
+    CommPrint(1, "RESOLVE_ERR side_not_present %s\n", which);
+    Free(idx_hashes); Free(idx_offsets);
+    return;
+  }
+  U8 resolution_hash[64];
+  I64 ri;
+  for (ri=0; ri<64; ri++) resolution_hash[ri] = hash[side*64+ri];
+
+  MetaConflictSetResolved(repo_path, cur_name, conflict_hash, resolution_hash);
+  CommPrint(1, "RESOLVE_OK %d %s\n", conflict_index, path_out);
+
+  Free(idx_hashes);
+  Free(idx_offsets);
+}
+
+// `hgit merge continue <repo>`: only proceeds once every real conflict
+// for the current path's in-progress merge is resolved (ADR 0016).
+// Re-runs the identical three-way merge (same ours_head/theirs_head,
+// base_head re-derived - the object graph only ever grows between
+// merge-start and now, ADR 0001, so this is deterministic) with the
+// accumulated resolution table this time, so every previously-
+// conflicting site now resolves via `MergeTreesRecursive`'s own
+// resolution-lookup path instead of recording a conflict again.
+U0 HgitMergeContinue(U8 *repo_path, U64 timestamp)
+{
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  if (!MetaMergeStateExists(repo_path, cur_name)) {
+    CommPrint(1, "MERGE_ERR no_merge_in_progress\n");
+    return;
+  }
+
+  U8 ours_head[64], theirs_head[64];
+  U8 other_path_name[HGIT_MAX_PATH_NAME];
+  MetaMergeStateRead(repo_path, cur_name, ours_head, theirs_head, other_path_name);
+
+  I64 conflict_total = MetaConflictCount(repo_path, cur_name);
+  U8 *resolution_conflict_hashes = MAlloc(conflict_total*64 + 64);
+  U8 *resolution_hashes = MAlloc(conflict_total*64 + 64);
+  I64 resolution_count = 0;
+  I64 idx;
+  I64 unresolved_count = 0;
+  for (idx=0; idx<conflict_total; idx++) {
+    U8 conflict_hash[64], resolved, resolution_hash[64];
+    MetaConflictGetAt(repo_path, cur_name, idx, conflict_hash, &resolved, resolution_hash);
+    if (!resolved) {
+      CommPrint(1, "MERGE_ERR conflict_unresolved %d\n", idx);
+      unresolved_count++;
+    } else {
+      I64 ri;
+      for (ri=0; ri<64; ri++) resolution_conflict_hashes[resolution_count*64+ri] = conflict_hash[ri];
+      for (ri=0; ri<64; ri++) resolution_hashes[resolution_count*64+ri] = resolution_hash[ri];
+      resolution_count++;
+    }
+  }
+  if (unresolved_count > 0) {
+    CommPrint(1, "MERGE_ERR conflicts_still_unresolved count=%d\n", unresolved_count);
+    Free(resolution_conflict_hashes); Free(resolution_hashes);
+    return;
+  }
+
+  I64 rsize;
+  U8 *rbuf = FileRead(repo_path, &rsize);
+  if (rbuf == NULL) { CommPrint(1, "MERGE_ERR not_a_repository\n"); Free(resolution_conflict_hashes); Free(resolution_hashes); return; }
+  U16 rver;
+  U64 rcount;
+  HgsReadHeader(rbuf, &rver, &rcount);
+  U8 *idx_hashes = MAlloc(rcount*64 + 64);
+  I64 *idx_offsets = MAlloc((rcount+1)*8);
+  I64 idx_count;
+  IndexBuild(rbuf+16, rsize-16, idx_hashes, idx_offsets, &idx_count);
+
+  U8 base_head[64];
+  Bool base_found = FindMergeBase(rbuf, idx_hashes, idx_offsets, idx_count,
+                                  ours_head, theirs_head, base_head);
+  if (!base_found) {
+    CommPrint(1, "MERGE_ERR no_common_ancestor\n");
+    Free(idx_hashes); Free(idx_offsets); Free(resolution_conflict_hashes); Free(resolution_hashes);
+    return;
+  }
+
+  U8 *ours_tree = NULL; I64 ours_tree_len = 0;
+  U8 *theirs_tree = NULL; I64 theirs_tree_len = 0;
+  U8 *base_tree = NULL; I64 base_tree_len = 0;
+  MergeResolveCommitTree(rbuf, idx_hashes, idx_offsets, idx_count, ours_head, &ours_tree, &ours_tree_len);
+  MergeResolveCommitTree(rbuf, idx_hashes, idx_offsets, idx_count, theirs_head, &theirs_tree, &theirs_tree_len);
+  Bool base_tree_ok = MergeResolveCommitTree(rbuf, idx_hashes, idx_offsets, idx_count, base_head, &base_tree, &base_tree_len);
+  if (!base_tree_ok) base_tree = NULL;
+
+  U8 *ours_attrs = NULL; I64 ours_attrs_len = 0;
+  U8 *theirs_attrs = NULL; I64 theirs_attrs_len = 0;
+  U8 *base_attrs = NULL; I64 base_attrs_len = 0;
+  MergeResolveCommitAttrs(rbuf, idx_hashes, idx_offsets, idx_count, ours_head, &ours_attrs, &ours_attrs_len);
+  MergeResolveCommitAttrs(rbuf, idx_hashes, idx_offsets, idx_count, theirs_head, &theirs_attrs, &theirs_attrs_len);
+  MergeResolveCommitAttrs(rbuf, idx_hashes, idx_offsets, idx_count, base_head, &base_attrs, &base_attrs_len);
+
+  I64 archive_cap = rsize + MERGE_ARCHIVE_HEADROOM;
+  U8 *archive = MAlloc(archive_cap);
+  I64 alen;
+  I64 i;
+  for (i=0; i<rsize-16; i++) archive[16+i] = rbuf[16+i];
+  alen = rsize;
+
+  U32 ours_tcount = 0; if (ours_tree != NULL) ours_tcount = GetU32LE(ours_tree, 0);
+  U32 theirs_tcount = 0; if (theirs_tree != NULL) theirs_tcount = GetU32LE(theirs_tree, 0);
+  U32 base_tcount = 0; if (base_tree != NULL) base_tcount = GetU32LE(base_tree, 0);
+  I64 max_names = ours_tcount + theirs_tcount + base_tcount + 1;
+  U8 *conflict_names = MAlloc(max_names*256 + 256);
+  U8 *conflict_hashes = MAlloc(max_names*64 + 64);
+  I64 conflict_count;
+  U8 merged_tree_content[4096];
+  I64 merged_tree_len;
+  U8 root_prefix[1]; root_prefix[0] = 0;
+  U8 *merged_attrs_content = MAlloc(max_names*9 + 9);
+  I64 merged_attrs_len = 4;
+
+  Bool ok = MergeTreesRecursive(rbuf, idx_hashes, idx_offsets, idx_count,
+                                archive, &alen,
+                                base_tree, base_tree_len, ours_tree, ours_tree_len,
+                                theirs_tree, theirs_tree_len, root_prefix,
+                                merged_tree_content, &merged_tree_len,
+                                conflict_names, conflict_hashes, &conflict_count,
+                                base_attrs, base_attrs_len,
+                                ours_attrs, ours_attrs_len,
+                                theirs_attrs, theirs_attrs_len,
+                                merged_attrs_content, &merged_attrs_len,
+                                resolution_conflict_hashes, resolution_hashes, resolution_count);
+
+  if (!ok) {
+    // Should not happen - every conflict was confirmed resolved above,
+    // and OBJ_CONFLICT hashes are deterministic given the same
+    // ours_head/theirs_head/base_head. A real, honest defensive report
+    // rather than silently mis-merging if it somehow does.
+    CommPrint(1, "MERGE_ERR internal_still_conflicted_after_resolution count=%d\n", conflict_count);
+    Free(idx_hashes); Free(idx_offsets); Free(conflict_names); Free(conflict_hashes);
+    Free(archive); Free(merged_attrs_content); Free(resolution_conflict_hashes); Free(resolution_hashes);
+    return;
+  }
+
+  MergeFinishSuccess(repo_path, archive, alen, rver, ours_head, theirs_head,
+                     merged_tree_content, merged_tree_len,
+                     merged_attrs_content, merged_attrs_len,
+                     other_path_name, timestamp);
+
+  // The in-progress merge is over - clear it. The OBJ_CONFLICT objects
+  // themselves stay in the archive forever (content-addressed, now
+  // unreferenced - a real, honest CHECK_DANGLING, the same already-
+  // accepted tradeoff `undo` leaves behind, ADR 0013).
+  MetaMergeStateClear(repo_path, cur_name);
+
+  Free(idx_hashes);
+  Free(idx_offsets);
+  Free(conflict_names);
+  Free(conflict_hashes);
+  Free(merged_attrs_content);
+  Free(resolution_conflict_hashes);
+  Free(resolution_hashes);
+}
+
+// `hgit merge abort <repo>`: discards the in-progress merge state
+// (ADR 0016). The OBJ_CONFLICT objects themselves are left in the
+// archive, unreferenced - same real, honest CHECK_DANGLING tradeoff as
+// above. Nothing about the object tree or HEAD was ever touched by a
+// conflicting merge attempt in the first place, so this restores the
+// exact pre-merge repository state with no further work needed.
+U0 HgitMergeAbort(U8 *repo_path)
+{
+  U8 cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, cur_name);
+  if (!MetaMergeStateExists(repo_path, cur_name)) {
+    CommPrint(1, "MERGE_ERR no_merge_in_progress\n");
+    return;
+  }
+  MetaMergeStateClear(repo_path, cur_name);
+  CommPrint(1, "MERGE_ABORT_OK\n");
 }

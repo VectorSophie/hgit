@@ -75,6 +75,26 @@ U0 HgitStatus(U8 *repo_path, U8 *find_mask, U8 *dir_prefix)
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
   if (!hok) { CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path); return; }
 
+  // ADR 0016: a real, early check before the usual UNCHANGED/MODIFIED/
+  // NEW/DELETED/RENAMED walk - the roadmap's own "hgit status visibly
+  // reports [conflicts]" requirement, satisfied at the top of the
+  // existing output rather than a separate command a user has to
+  // remember to run.
+  U8 status_cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, status_cur_name);
+  if (MetaMergeStateExists(repo_path, status_cur_name)) {
+    I64 status_conflict_total = MetaConflictCount(repo_path, status_cur_name);
+    I64 status_unresolved = 0;
+    I64 status_ci;
+    for (status_ci=0; status_ci<status_conflict_total; status_ci++) {
+      U8 status_ch[64], status_resolved, status_rh[64];
+      MetaConflictGetAt(repo_path, status_cur_name, status_ci, status_ch, &status_resolved, status_rh);
+      if (!status_resolved) status_unresolved++;
+    }
+    CommPrint(1, "STATUS_MERGE_IN_PROGRESS conflicts=%d unresolved=%d - see 'hgit conflicts'\n",
+              status_conflict_total, status_unresolved);
+  }
+
   if (rcount == 0) {
     CommPrint(1, "STATUS_NO_OFFERINGS_YET\n");
     WorkDirList();
@@ -726,6 +746,22 @@ U0 HgitStatusTree(U8 *repo_path, U8 *dir_path)
   U64 rcount;
   Bool hok = HgsReadHeader(rbuf, &rver, &rcount);
   if (!hok) { CommPrint(1, "STATUS_ERR bad_header %s\n", repo_path); return; }
+
+  // ADR 0016 - see HgitStatus's own identical block for the rationale.
+  U8 status_cur_name[HGIT_MAX_PATH_NAME];
+  CurrentPathGet(repo_path, status_cur_name);
+  if (MetaMergeStateExists(repo_path, status_cur_name)) {
+    I64 status_conflict_total = MetaConflictCount(repo_path, status_cur_name);
+    I64 status_unresolved = 0;
+    I64 status_ci;
+    for (status_ci=0; status_ci<status_conflict_total; status_ci++) {
+      U8 status_ch[64], status_resolved, status_rh[64];
+      MetaConflictGetAt(repo_path, status_cur_name, status_ci, status_ch, &status_resolved, status_rh);
+      if (!status_resolved) status_unresolved++;
+    }
+    CommPrint(1, "STATUS_MERGE_IN_PROGRESS conflicts=%d unresolved=%d - see 'hgit conflicts'\n",
+              status_conflict_total, status_unresolved);
+  }
 
   if (rcount == 0) {
     CommPrint(1, "STATUS_NO_OFFERINGS_YET\n");

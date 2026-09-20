@@ -1,13 +1,14 @@
-# hgit `.HGS` archive format — version 3 (draft)
+# hgit `.HGS` archive format — version 4 (draft)
 
 **Status: draft, still not frozen.** Implemented and verified
 end-to-end on real TempleOS (`src/hgit-core/Hgs.HC`,
 `src/hgit-core/Archive.HC`, `experiments/06-hgs-format/`), and by now
 carries M0 through v1.8.x's real, tested command surface (offer/merge/
-relations/nested trees/ignore rules/file attributes and more) - well
-past the M0-only scope this line originally described. Now on version
-3 (bumped from 2, itself bumped from 1 - see "Versioning policy"
-below, `experiments/113-check-format-version/`, ADR 0015) - no
+relations/nested trees/ignore rules/file attributes/persistent
+conflicts and more) - well past the M0-only scope this line originally
+described. Now on version 4 (bumped from 3, itself bumped from 2,
+itself bumped from 1 - see "Versioning policy" below,
+`experiments/113-check-format-version/`, ADR 0015, ADR 0016) - no
 repository written with this format should be treated as durable
 across format changes until this document says a version is stable
 (see ADR 0001).
@@ -27,7 +28,7 @@ across format changes until this document says a version is stable
 | Offset | Size | Field | Meaning |
 |---|---|---|---|
 | 0 | 4 | magic | ASCII bytes `H` `G` `S` `0` (0x48 0x47 0x53 0x30) |
-| 4 | 2 | format_version | `U16`, currently `3` (bumped from 2, itself bumped from 1 - see "Versioning policy" below) |
+| 4 | 2 | format_version | `U16`, currently `4` (bumped from 3, itself bumped from 2, itself bumped from 1 - see "Versioning policy" below) |
 | 6 | 2 | reserved | Must be written as `0`. Readers must not reject a nonzero value (no meaning assigned yet) but must not assume anything about it either. |
 | 8 | 8 | object_count | `U64`, number of object records that follow |
 
@@ -79,6 +80,7 @@ before the content is hashed and stored (`src/hgit-core/Object.HC`,
 | 2 | `OBJ_TREE` |
 | 3 | `OBJ_COMMIT` (hgit's own vocabulary calls the real, wired-in command `hgit offer` — the mapping this row once called "not yet designed" is now the whole real CLI command surface: `offer`/`correct`/`revert`/`reconcile`/`merge` and their `...tree` variants all produce real `OBJ_COMMIT` objects) |
 | 4 | `OBJ_ATTRS` (ADR 0015, v1.8.1 - a commit's own `entity_id -> mode` list, see "Attrs object content" below) |
+| 5 | `OBJ_CONFLICT` (ADR 0016, v1.8.3 - one merge conflict's persistent base/ours/theirs evidence, see "Conflict object content" below) |
 
 The tag participates in the BLAKE2b hash (matching Git's
 `"<type> <size>\0<content>"` header-in-hash approach) specifically so
@@ -227,6 +229,44 @@ matching this format's existing "trees are full snapshots"
 philosophy - mode is recomputed fresh every offer, same as content
 hash.
 
+## Conflict object content
+
+An `OBJ_CONFLICT` object's content (`src/hgit-core/Conflict.HC`, ADR
+0016, v1.8.3) is one real merge conflict's full, persistent evidence -
+content-addressed like every other object, so it participates in
+`hgit check`'s own referential-integrity walk and `hgit export`/
+`import` for free, and is never silently lost even after the conflict
+it documents is resolved:
+
+```
+U8  conflict_kind      (bitmask: 0x01 = content differs, 0x02 = mode
+                        differs, 0x04 = kind mismatch - a tree on one
+                        side, a blob on another. Combinable.)
+U64 entity_id          (0 if no single shared identity applies)
+U8  path_len
+path_len bytes of path
+for each of base/ours/theirs, in that fixed order:
+  U8 present            (0 = absent on this side)
+  if present:
+    U8  type            (OBJ_BLOB or OBJ_TREE)
+    U8  mode             (ADR 0015 - 0 if not applicable/not a blob)
+    64 bytes hash
+```
+
+Referenced from `Meta.HC`'s own mutable, per-path in-progress-merge
+records (`META_TAG_MERGE_STATE`/`META_TAG_CONFLICT`, see `Meta.HC`'s
+own header comment for their exact payload shape) - the same real
+split this project already uses everywhere between immutable
+content-addressed objects and mutable per-repo metadata (ADR 0003).
+Once a merge completes (`hgit merge continue`) or is abandoned (`hgit
+merge abort`), those `Meta.HC` records are cleared, but the
+`OBJ_CONFLICT` objects themselves stay in the archive forever - a
+real, honest `CHECK_DANGLING` afterward, the same already-accepted
+tradeoff `undo` leaves behind (ADR 0013). See
+`docs/adr/0016-conflict-as-repository-data.md` for the full design and
+lifecycle (`hgit merge`/`conflicts`/`resolve`/`merge continue`/`merge
+abort`).
+
 ## What this format deliberately does NOT have yet
 
 - ~~No merge commits tested~~ **Resolved** (`docs/adr/0011-merge.md`,
@@ -328,3 +368,15 @@ no room for the field at all, correctly detected via a real bounds
 check (`CommitHasAttrs`) rather than a version branch - no reader
 anywhere branches on the literal `format_version` number here either,
 same as before.
+
+**v1.8.3 / ADR 0016** (`docs/adr/0016-conflict-as-repository-data.md`):
+`format_version` bumped again, 3 -> 4, same discipline, at the point
+of the change. The real change: a genuinely new object type
+(`OBJ_CONFLICT`, tag 5, `Conflict.HC` - see "Conflict object content"
+above) and two new `Meta.HC` record tags (`META_TAG_MERGE_STATE`/
+`META_TAG_CONFLICT`). Additive and backward-compatible in both
+directions, same story as every bump above: an old reader's own
+tag-scoped `Meta.HC` scan already ignores a record tag it doesn't
+recognize, and nothing about existing commit/tree/blob/attrs objects
+changed at all - no reader anywhere branches on the literal
+`format_version` number here either, same as before.
