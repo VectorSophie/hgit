@@ -169,3 +169,5 @@ All three wrap the same bundle (`tools/build-bundle.py` -> `tools/build-dist.sh`
   API key plus moderation.
 - The launcher itself opens a GUI QEMU window; what a person sees was verified headlessly
   with `tools/verify-bundle.py` (same typed sequence, screenshot in experiments/126).
+
+- **License (2026-09-20)**: the owner chose the GPL; `LICENSE` is the official GPLv3 text and packaging metadata says `GPL-3.0-only` ("GPL" was unspecified - `-or-later` is a one-word change if wanted). The gap flagged above is closed; releases v0.3.0-v1.8.9 predate it and stay as shipped, except the v1.8.9 packages, rebuilt to include LICENSE.

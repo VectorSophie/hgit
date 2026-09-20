@@ -16,7 +16,7 @@
   <a href="docs/research/01-templeos-holyc.md"><img src="https://img.shields.io/badge/language-HolyC-8B0000" alt="written in HolyC"></a>
   <a href="docs/research/08-qemu-testing.md"><img src="https://img.shields.io/badge/platform-TempleOS-000000" alt="native TempleOS"></a>
   <a href="docs/research/08-qemu-testing.md"><img src="https://img.shields.io/badge/tested-real%20QEMU-brightgreen" alt="tested on real QEMU"></a>
-  <a href="INSTALL.md"><img src="https://img.shields.io/badge/install-single%20%23include-lightgrey" alt="install: single include"></a>
+  <a href="INSTALL.md"><img src="https://img.shields.io/badge/install-deb%20%7C%20brew%20%7C%20%23include-lightgrey" alt="install: deb, brew or include"></a>
 </p>
 
 <p align="center">
@@ -64,7 +64,13 @@ Hgit("offer C:/Home/P80Repo.hgs P80File.txt offer_on_feature");
 Hgit("path go C:/Home/P80Repo.hgs main");
 
 Hgit("graph C:/Home/P80Repo.hgs C:/Home/P80Graph.DD");
+Ed("C:/Home/P80Graph.DD");   // open the rendered document (Esc to leave)
 ```
+
+(Everything is typed as HolyC function calls, `Hgit("...")` - TempleOS has no
+shell syntax, so `hgit graph ...` typed bare does nothing. Run
+`Hgit("interactive");` first when typing at the console, so hgit's replies
+show on screen.)
 
 Real output from that exact sequence (`experiments/81-hgit-graph/`):
 
@@ -82,7 +88,7 @@ DISPATCH_OK graph
 ## What hgit actually does
 
 Every command below is real, dispatched, and independently verified
-on TempleOS under QEMU — not a design sketch. Run `hgit help` (once
+on TempleOS under QEMU — not a design sketch. Run `Hgit("help");` (once
 loaded) for the same list straight from the live dispatcher.
 
 | Command | What it does |
@@ -168,7 +174,8 @@ swallow every ancestor's own label the moment you expanded deep enough
 see `experiments/81-hgit-graph/`). Every other path attaches its own
 branch node at the exact commit it forked from. Reformatted for
 readability, the document produced by the sequence above looks like
-this:
+this (its first line, `hgit history graph`, is just the document's own
+title - not a command you type):
 
 ```
 hgit history graph
@@ -253,3 +260,8 @@ Windows/Linux/macOS without your own TempleOS install — see
 `packaging/bundle/README.md`. See the
 [Releases page](https://github.com/VectorSophie/hgit/releases) for the
 full, dated history.
+
+## License
+
+GNU General Public License v3.0 only - see [`LICENSE`](LICENSE). The bundled
+TempleOS disk image is TempleOS, which is public domain.

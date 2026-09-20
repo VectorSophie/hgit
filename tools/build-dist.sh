@@ -12,7 +12,7 @@ STAGE=$(mktemp -d); trap 'rm -rf "$STAGE"' EXIT
 # common payload
 P="$STAGE/hgit-$VER"; mkdir -p "$P"
 cp packaging/bundle/hgit-launch.py packaging/bundle/hgit-type.py packaging/bundle/README.md "$P/"
-cp packaging/HgitAll.HC "$P/"; cp "$QCOW" "$P/templeos-hgit.qcow2"; echo "$VER" > "$P/VERSION"
+cp LICENSE packaging/HgitAll.HC "$P/"; cp "$QCOW" "$P/templeos-hgit.qcow2"; echo "$VER" > "$P/VERSION"
 (cd "$STAGE" && tar czf "$OUT/hgit-bundle-$VER.tar.gz" "hgit-$VER")
 (cd "$STAGE" && python3 -c "
 import zipfile,os,sys
@@ -24,11 +24,11 @@ z.close()")
 # .deb
 D="$STAGE/deb"; mkdir -p "$D/DEBIAN" "$D/usr/lib/hgit" "$D/usr/bin" "$D/usr/share/doc/hgit"
 cp "$P"/hgit-launch.py "$P"/hgit-type.py "$P"/templeos-hgit.qcow2 "$P"/HgitAll.HC "$P"/VERSION "$D/usr/lib/hgit/"
-cp "$P/README.md" "$D/usr/share/doc/hgit/README.md"
+cp "$P/README.md" "$P/LICENSE" "$D/usr/share/doc/hgit/"
 printf '#!/bin/sh\nexec python3 /usr/lib/hgit/hgit-launch.py "$@"\n' > "$D/usr/bin/hgit"
 printf '#!/bin/sh\nexec python3 /usr/lib/hgit/hgit-type.py "$@"\n' > "$D/usr/bin/hgit-type"
 chmod 755 "$D/usr/bin/hgit" "$D/usr/bin/hgit-type"
-printf 'hgit: the project owner has not yet chosen a license (see the repository).\nThe bundled disk image contains TempleOS, which is public domain.\nhttps://github.com/VectorSophie/hgit\n' > "$D/usr/share/doc/hgit/copyright"
+printf 'hgit is licensed under the GNU GPL version 3 only; the full text is /usr/share/doc/hgit/LICENSE.\nThe bundled disk image contains TempleOS, which is public domain.\nhttps://github.com/VectorSophie/hgit\n' > "$D/usr/share/doc/hgit/copyright"
 SIZE=$(du -sk "$D" | cut -f1)
 cat > "$D/DEBIAN/control" <<CTRL
 Package: hgit
