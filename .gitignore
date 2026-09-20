@@ -11,3 +11,5 @@ experiments/templeos-devkit/
 experiments/*/build/
 .claude/
 dist/
+.env
+*.nupkg

@@ -7,9 +7,13 @@
     <authors>VectorSophie</authors>
     <projectUrl>https://github.com/VectorSophie/hgit</projectUrl>
     <licenseUrl>https://www.gnu.org/licenses/gpl-3.0.html</licenseUrl>
+    <iconUrl>https://raw.githubusercontent.com/VectorSophie/hgit/main/docs/brand/hgitlogo.png</iconUrl>
+    <copyright>GPL-3.0-or-later</copyright>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectSourceUrl>https://github.com/VectorSophie/hgit</projectSourceUrl>
     <bugTrackerUrl>https://github.com/VectorSophie/hgit/issues</bugTrackerUrl>
+    <packageSourceUrl>https://github.com/VectorSophie/hgit/tree/main/packaging/chocolatey</packageSourceUrl>
+    <releaseNotes>https://github.com/VectorSophie/hgit/releases/tag/v1.8.9</releaseNotes>
     <tags>hgit vcs templeos holyc qemu</tags>
     <summary>Version control for TempleOS, pre-loaded in a TempleOS VM</summary>
     <description>hgit is a version-control system written in HolyC that runs inside TempleOS. This package ships a TempleOS disk image with hgit already loaded, plus the hgit command (boots it in QEMU) and hgit-type (sends commands to it).</description>
