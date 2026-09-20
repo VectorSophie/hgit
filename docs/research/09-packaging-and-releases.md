@@ -148,3 +148,24 @@ ordinary releases.
   approach already matches TempleOS's own `#include`-a-file convention
   natively; this was already the right design, just under-documented
   as "not started" here.
+
+
+## Distribution status (2026-09-20, v1.8.9) - what is real and what is not
+
+All three wrap the same bundle (`tools/build-bundle.py` -> `tools/build-dist.sh` ->
+`tools/render-packaging.sh`); each release carries `hgit_<v>_all.deb`,
+`hgit-bundle-<v>.tar.gz`/`.zip`, `SHA256SUMS`, `templeos-hgit.qcow2`.
+
+- **Debian/Ubuntu**: `.deb` built and attached to the release; payload extracted and the
+  launcher's `--version`/`--help` run from it. NOT done: an actual apt repository
+  (`apt install hgit` from a sources line) - that needs a hosting place and a signing-key
+  decision that is the owner's; `apt install ./hgit_<v>_all.deb` works meanwhile. Not
+  installed with `dpkg -i` here (no root).
+- **Homebrew**: tap `VectorSophie/homebrew-hgit` published (`brew install
+  VectorSophie/hgit/hgit`). Formula checksum matches the uploaded tarball. NOT run: no
+  macOS/Homebrew host here, so `brew install`/`brew test` are unexercised.
+- **Chocolatey**: sources in `packaging/chocolatey/` (nuspec + install/uninstall scripts).
+  NOT built or published: no Windows/choco here, and the community feed needs the owner's
+  API key plus moderation.
+- The launcher itself opens a GUI QEMU window; what a person sees was verified headlessly
+  with `tools/verify-bundle.py` (same typed sequence, screenshot in experiments/126).
