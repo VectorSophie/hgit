@@ -30,14 +30,18 @@ the exported copy) → `import` (+`check` on the imported copy) →
 support - a real nested edit, then a real relation carried on a
 nested offer) → `merge` (ADR 0011: a real non-conflicting merge
 between two diverged paths, then a real fast-forward against a
-never-diverged one) → `help`/`version`/`logo`.
+never-diverged one) → `.hgitignore` and `.hgitattributes` cases (ADR 0014/
+0015) → persistent conflicts (ADR 0016/0017): a merge that both auto-renames
+and conflicts, `conflicts`/`merge continue` refusing while unresolved,
+`resolve`, `merge continue`, an abort with `status`/`conflictdoc`, a
+missing-conflict-dependency `check`, and newer-format rejection →
+`help`/`version`/`logo`.
 
 Deliberately not exhaustive: `revert`/`reconcile` and
 `reverttree`/`reconciletree` share `correct`/`correcttree`'s own
 underlying code path (`HgitOfferRelatedCmd`/`HgitOfferTreeRelatedCmd`,
 differing only in which `REL_*` tag is passed) and aren't separately
-re-tested here. A real merge CONFLICT isn't exercised in this suite
-(only the two non-conflicting/trivial outcomes) - a real, separate
+re-tested here. (Merge conflicts, by contrast, ARE exercised - see above - as of v1.8.7.) The remaining
 scoping choice to keep this one already-long sequence's own repo
 state simple and deterministic; probes 99/100 already cover the
 conflict-abort path directly and thoroughly. `path close` and

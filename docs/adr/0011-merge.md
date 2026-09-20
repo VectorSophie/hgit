@@ -1,5 +1,7 @@
 # ADR 0011 — `hgit merge`: scope for a first real slice
 
+> **Update (v1.8.3-v1.8.5):** the "any conflict aborts everything with zero side effects" behavior described below was superseded in part by ADR 0016 (conflicts now persist and are resolvable) and ADR 0017 (rename-aware). The text below is the original decision record and is left as written.
+
 ## Status
 
 **Implemented (first slice).** This ADR exists because probes 97 and

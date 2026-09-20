@@ -32,8 +32,10 @@ M0 through M4 of the milestone plan are complete and independently
 verified on real TempleOS under QEMU — object storage, the full
 command surface, stable entity identity across renames, and executable
 DolDoc reconciliation views. Real subdirectory support (`offertree`/
-`statustree`, ADR 0010) and a real three-way `merge` command (ADR
-0011) have since shipped too. See `docs/STATUS.md` for a current
+`statustree`, ADR 0010), a rename-aware three-way `merge` (ADR 0011/
+0017) with persistent, resolvable conflicts (ADR 0016), `.hgitignore`
+(ADR 0014) and `.hgitattributes` file modes (ADR 0015) have since
+shipped too (the v1.8.x series). See `docs/STATUS.md` for a current
 top-level snapshot (what's solid, what's genuinely still open) or
 `docs/research/10-product-proposal.md` for the live, dated,
 self-correcting record of what's actually built — nothing here is

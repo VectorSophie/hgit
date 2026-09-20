@@ -73,10 +73,9 @@ designed or started:
   `docs/research/04-vcs-comparison.md`).
 - GitButler-style simultaneous multi-path file assignment.
 - Mercurial-style "phases" (protecting shared history).
-- A real conflict-resolution mechanism for `hgit merge` (currently: a
-  real conflict aborts the whole merge, zero side effects, by design -
-  ADR 0011's own central open decision, deliberately not designed
-  further without real evidence of need).
+- Conflict resolution with arbitrary REPLACEMENT content, and textual
+  conflict-marker materialization (v1.8.3+ resolves by `take-ours`/
+  `take-theirs`/deletion only, ADR 0016).
 - Real criss-cross merge-base handling (`FindMergeBase`'s own
   documented remaining limitation, distinct from the real bug it *did*
   fix - see below).
@@ -138,7 +137,8 @@ designed or started:
   change independently, each surviving entity's mode resolved
   base/ours/theirs the same way content already is, and a genuine
   mode-only conflict (both sides changed mode, differently) is
-  reported and aborts the whole merge exactly like a content conflict,
+  reported as a persisted conflict (ADR 0016, v1.8.3 - previously an
+  abort of the whole merge) exactly like a content conflict,
   not silently guessed. Closes `docs/ROADMAP-v1.8.md`'s own
   "mode-only changes" gap and the real TODO `Merge.HC`'s own header
   comment used to carry. One real, honest, narrower limitation
@@ -150,13 +150,24 @@ designed or started:
   `tools/lint-package.sh` catch real errors (including HolyC's own
   reserved-name quirks) before anything reaches QEMU.
 
+- **v1.8.x usability series complete (v1.8.0-v1.8.8)**: ignore rules,
+  attributes/modes, mode-aware and rename-aware three-way merge,
+  persistent conflicts with a full lifecycle (`conflicts`/`resolve`/
+  `merge continue`/`merge abort`/`conflictdoc`), integrity hardening
+  (newer-format rejection, conflict object validation), all covered by
+  `tests/full-regression.hc`. Format version 4.
+
 ## What's genuinely still open (real, not hypothetical)
 
-- **No conflict-resolution mechanism for `hgit merge`** - a real
-  conflict still aborts the whole merge. The single most consequential
-  open design question in the whole project (ADR 0011's own words),
-  deliberately not designed without real evidence a total abort is a
-  practical burden.
+- **Conflict resolution is deliberately narrow** - v1.8.3-v1.8.4
+  (ADR 0016) persist conflicts and resolve them by `take-ours`/
+  `take-theirs`/deletion; supplying new replacement content, marker-
+  text materialization, and rename/rename resolution (currently
+  refused, ADR 0017) are not built.
+- **Cross-directory moves** carry no identity evidence (`offer`'s rename
+  detection is within-directory, ADR 0010), so a move vs an edit
+  surfaces as a persisted edit/delete conflict plus a new file - safe,
+  not smart (probe 125).
 - **Genuine criss-cross merge-base ambiguity** (multiple real lowest
   common ancestors, no single correct answer) - `FindMergeBase`'s
   fixed version is a real ancestor-set BFS, a genuine improvement, but

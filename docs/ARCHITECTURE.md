@@ -21,11 +21,12 @@ flowchart TB
         MergeBase["MergeBase.HC<br/>lowest-common-ancestor search"]
         Ignore["Ignore.HC<br/>.hgitignore matching (ADR 0014)"]
         Attrs["Attrs.HC<br/>.hgitattributes + file modes (ADR 0015)"]
+        Conflict["Conflict.HC<br/>OBJ_CONFLICT evidence object (ADR 0016)"]
     end
     subgraph cli["src/hgit-cli — command surface"]
         Hgit["Hgit.HC<br/>the one dispatcher, Hgit(cmdline)"]
         Offer["Offer.HC / Status.HC / History.HC / See.HC / Diff.HC<br/>(each recurses into nested trees, ADR 0010;<br/>Offer.HC/Status.HC also honor Ignore.HC, ADR 0014;<br/>Offer.HC/Status.HC/Diff.HC also honor Attrs.HC, ADR 0015)"]
-        Merge["Merge.HC<br/>real three-way merge (ADR 0011)"]
+        Merge["Merge.HC / ConflictDoc.HC<br/>rename-aware three-way merge (ADR 0011/0017), persistent conflicts + lifecycle + DolDoc view (ADR 0016)"]
         Check["Check.HC<br/>integrity + dangling-object detection"]
         Paths["Paths.HC<br/>named paths"]
         OpLog["OpLog.HC<br/>undo/redo stack"]
@@ -127,12 +128,12 @@ cleanly on any genuine conflict rather than attempting resolution.
   separate, real decision; see `docs/adr/0008-fossil-delta-format-prototype.md`),
   `MergeBase.HC` (lowest-common-ancestor search, ADR 0011), `Ignore.HC`
   (`.hgitignore` matching, ADR 0014), `Attrs.HC` (`.hgitattributes` +
-  file modes, ADR 0015).
+  file modes, ADR 0015), `Conflict.HC` (`OBJ_CONFLICT` object, ADR 0016).
 - `src/hgit-cli/` — the command surface: `Init.HC`, `Check.HC`,
   `WorkDir.HC`, `Paths.HC`, `Offer.HC` (+ its own `HgitOfferTree` for
   real subdirectory support, ADR 0010), `Status.HC` (+ `StatusTreeWalk`
   for the same), `History.HC`, `See.HC`, `Diff.HC`, `Merge.HC` (ADR
-  0011's own real three-way merge), `Hex.HC`, `HistoryDoc.HC`,
+  0011's three-way merge, rename-aware per ADR 0017, plus the ADR 0016 conflict lifecycle), `ConflictDoc.HC` (DolDoc conflict view), `Hex.HC`, `HistoryDoc.HC`,
   `ReconcileDoc.HC`, `Graph.HC`, `OpLog.HC`, `Portable.HC`, `Logo.HC`,
   and `Hgit.HC` — the real entry point (`Hgit(cmdline)`) composing all
   of the above behind one dispatcher.

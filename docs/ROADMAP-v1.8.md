@@ -1,6 +1,6 @@
 # hgit v1.8.x — the usability series
 
-**Status: in progress - v1.8.0 through v1.8.7 shipped, see this
+**Status: in progress - v1.8.0 through v1.8.8 shipped (series complete), see this
 document's own "Version sequence" section below for exactly what.**
 This is the project owner's own written brief for this phase of work,
 recorded here verbatim (reorganized only for headings) so it survives
@@ -271,7 +271,7 @@ v1.8.4  conflict lifecycle: inspect, resolve, continue and abort     [shipped]
 v1.8.5  rename-aware three-way merge via entity IDs (ADR 0017)         [shipped]
 v1.8.6  DolDoc and CLI diff/merge UX (conflictdoc, MERGE_AUTO lines)    [shipped]
 v1.8.7  recovery, export/import, integrity and adversarial hardening  [shipped]
-v1.8.8  full usability regression and documentation-accuracy sweep
+v1.8.8  full usability regression and documentation-accuracy sweep   [shipped]
 ```
 
 This ordering is provisional. Move a feature earlier when it is a
