@@ -7628,14 +7628,20 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
       }
 
       if (kc_resolved) {
+        // All-zero resolution hash = resolved to "absent" (v1.8.4):
+        // the entry is simply omitted, a real deletion.
+        Bool kc_zero = TRUE;
+        I64 kzi; for (kzi=0; kzi<64; kzi++) if (kc_resolution_hash[kzi] != 0) kc_zero = FALSE;
         Bool kc_use_ours = ours_found;
         if (kc_use_ours) { I64 krj2; for (krj2=0; krj2<64; krj2++) if (ours_hash[krj2] != kc_resolution_hash[krj2]) kc_use_ours = FALSE; }
-        if (kc_use_ours) {
+        if (kc_zero) {
+        } else if (kc_use_ours) {
           TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, ours_type, ours_hash, ours_entity_id);
+          merged_entry_count++;
         } else {
           TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, theirs_type, theirs_hash, theirs_entity_id);
+          merged_entry_count++;
         }
-        merged_entry_count++;
       } else {
         ObjectPut(archive, alen, OBJ_CONFLICT, kc_content, kc_len);
         for (ci=0; ci<cap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = full_name[ci];
@@ -7747,9 +7753,12 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
         }
 
         if (cc_resolved) {
+          Bool cc_zero = TRUE;
+          I64 czi; for (czi=0; czi<64; czi++) if (cc_resolution_hash[czi] != 0) cc_zero = FALSE;
           Bool cc_use_ours = ours_found;
           if (cc_use_ours) { I64 crj2; for (crj2=0; crj2<64; crj2++) if (ours_hash[crj2] != cc_resolution_hash[crj2]) cc_use_ours = FALSE; }
-          if (cc_use_ours) {
+          if (cc_zero) {
+          } else if (cc_use_ours) {
             TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, name, name_len, ours_type, ours_hash, ours_entity_id);
             merged_entry_count++;
             if (ours_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, ours_entity_id, ours_mode);
@@ -7798,7 +7807,7 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
                       U8 *ours_head, U8 *theirs_head,
                       U8 *merged_tree_content, I64 merged_tree_len,
                       U8 *merged_attrs_content, I64 merged_attrs_len,
-                      U8 *other_path_name, U64 timestamp)
+                      U8 *other_path_name, U8 *msg_suffix, U64 timestamp)
 {
   I64 i;
   U8 merged_tree_tagged[4096];
@@ -7831,6 +7840,9 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
   for (pj=0; prefix[pj]; pj++) msg[mi++] = prefix[pj];
   I64 onl = StrLen(other_path_name);
   for (pj=0; pj<onl; pj++) msg[mi++] = other_path_name[pj];
+  // v1.8.4: resolution provenance - which conflicts were resolved and
+  // how, inspectable afterward via history/see (message capped, 255).
+  for (pj=0; msg_suffix[pj] && mi<254; pj++) msg[mi++] = msg_suffix[pj];
 
   U8 commit_content[512];
   I64 clen = 0;
@@ -8038,7 +8050,7 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   MergeFinishSuccess(repo_path, archive, alen, rver, ours_head, theirs_head,
                      merged_tree_content, merged_tree_len,
                      merged_attrs_content, merged_attrs_len,
-                     other_path_name, timestamp);
+                     other_path_name, "", timestamp);
 
   Free(idx_hashes);
   Free(idx_offsets);
@@ -8102,6 +8114,38 @@ U0 HgitConflicts(U8 *repo_path)
     U8 *state_word = "UNRESOLVED";
     if (resolved) state_word = "RESOLVED";
     CommPrint(1, "CONFLICT %d %s kind=%d %s\n", idx, state_word, conflict_kind, path_out);
+    if (IndexLookup(idx_hashes, idx_offsets, idx_count, conflict_hash, &off_rel)) {
+      // v1.8.4: base/ours/theirs evidence, first 16 hex chars of each hash.
+      I64 doff = 16 + off_rel;
+      U8 dkind; U64 dent; U8 dpath[256]; I64 dplen;
+      Bool dpres[3]; U8 dtype[3], dmode[3], dhash[192];
+      ConflictDecode(rbuf + doff + 9, &dkind, &dent, dpath, &dplen, dpres, dtype, dmode, dhash);
+      U8 *side_names[3];
+      side_names[0] = "base"; side_names[1] = "ours"; side_names[2] = "theirs";
+      I64 ds;
+      for (ds=0; ds<3; ds++) {
+        if (dpres[ds]) {
+          U8 dhex[129];
+          HashToHex(dhash+ds*64, dhex);
+          dhex[16] = 0;
+          CommPrint(1, "  %s type=%d mode=%d hash=%s\n", side_names[ds], dtype[ds], dmode[ds], dhex);
+        } else {
+          CommPrint(1, "  %s ABSENT\n", side_names[ds]);
+        }
+      }
+      if (resolved) {
+        Bool rzero = TRUE;
+        I64 rzi; for (rzi=0; rzi<64; rzi++) if (resolution_hash[rzi] != 0) rzero = FALSE;
+        U8 *rword = "custom";
+        if (rzero) rword = "deleted";
+        else {
+          Bool rours = dpres[1];
+          if (rours) for (rzi=0; rzi<64; rzi++) if (dhash[64+rzi] != resolution_hash[rzi]) rours = FALSE;
+          if (rours) rword = "take-ours"; else rword = "take-theirs";
+        }
+        CommPrint(1, "  resolved: %s\n", rword);
+      }
+    }
   }
 
   Free(idx_hashes);
@@ -8162,14 +8206,13 @@ U0 HgitResolve(U8 *repo_path, I64 conflict_index, U8 *which)
     return;
   }
   I64 side = 1; if (want_theirs) side = 2; // 0=base,1=ours,2=theirs, ADR 0016's own fixed order
-  if (!present[side]) {
-    CommPrint(1, "RESOLVE_ERR side_not_present %s\n", which);
-    Free(idx_hashes); Free(idx_offsets);
-    return;
-  }
+  // An absent side (a deletion) is a valid thing to resolve TO (v1.8.4):
+  // recorded as an all-zero hash, which `merge continue` reads as "omit
+  // this entry".
   U8 resolution_hash[64];
   I64 ri;
-  for (ri=0; ri<64; ri++) resolution_hash[ri] = hash[side*64+ri];
+  for (ri=0; ri<64; ri++) resolution_hash[ri] = 0;
+  if (present[side]) for (ri=0; ri<64; ri++) resolution_hash[ri] = hash[side*64+ri];
 
   MetaConflictSetResolved(repo_path, cur_name, conflict_hash, resolution_hash);
   CommPrint(1, "RESOLVE_OK %d %s\n", conflict_index, path_out);
@@ -8259,6 +8302,43 @@ U0 HgitMergeContinue(U8 *repo_path, U64 timestamp)
   MergeResolveCommitAttrs(rbuf, idx_hashes, idx_offsets, idx_count, theirs_head, &theirs_attrs, &theirs_attrs_len);
   MergeResolveCommitAttrs(rbuf, idx_hashes, idx_offsets, idx_count, base_head, &base_attrs, &base_attrs_len);
 
+  // v1.8.4 provenance suffix: " [resolved path=take-ours ...]"
+  U8 prov[200];
+  I64 pvn = 0;
+  prov[0] = 0;
+  {
+    U8 *pv_open = " [resolved";
+    I64 pvj;
+    for (pvj=0; pv_open[pvj]; pvj++) prov[pvn++] = pv_open[pvj];
+    I64 pvk;
+    for (pvk=0; pvk<resolution_count; pvk++) {
+      I64 poff;
+      if (IndexLookup(idx_hashes, idx_offsets, idx_count, resolution_conflict_hashes+pvk*64, &poff)) {
+        I64 poff2 = 16 + poff;
+        U8 pkind; U64 pent; U8 ppath[256]; I64 pplen;
+        Bool ppres[3]; U8 ptype[3], pmode[3], phash[192];
+        ConflictDecode(rbuf + poff2 + 9, &pkind, &pent, ppath, &pplen, ppres, ptype, pmode, phash);
+        Bool pzero = TRUE;
+        for (pvj=0; pvj<64; pvj++) if (resolution_hashes[pvk*64+pvj] != 0) pzero = FALSE;
+        U8 *pw = "theirs";
+        if (pzero) pw = "deleted";
+        else {
+          Bool pours = ppres[1];
+          if (pours) for (pvj=0; pvj<64; pvj++) if (phash[64+pvj] != resolution_hashes[pvk*64+pvj]) pours = FALSE;
+          if (pours) pw = "ours";
+        }
+        if (pvn < 150) {
+          prov[pvn++] = ' ';
+          for (pvj=0; ppath[pvj] && pvn<170; pvj++) prov[pvn++] = ppath[pvj];
+          prov[pvn++] = '=';
+          for (pvj=0; pw[pvj]; pvj++) prov[pvn++] = pw[pvj];
+        }
+      }
+    }
+    prov[pvn++] = ']';
+    prov[pvn] = 0;
+  }
+
   I64 archive_cap = rsize + MERGE_ARCHIVE_HEADROOM;
   U8 *archive = MAlloc(archive_cap);
   I64 alen;
@@ -8305,7 +8385,7 @@ U0 HgitMergeContinue(U8 *repo_path, U64 timestamp)
   MergeFinishSuccess(repo_path, archive, alen, rver, ours_head, theirs_head,
                      merged_tree_content, merged_tree_len,
                      merged_attrs_content, merged_attrs_len,
-                     other_path_name, timestamp);
+                     other_path_name, prov, timestamp);
 
   // The in-progress merge is over - clear it. The OBJ_CONFLICT objects
   // themselves stay in the archive forever (content-addressed, now
@@ -8468,7 +8548,7 @@ U0 HgitLogo()
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.8.3"
+#define HGIT_VERSION "1.8.4"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -8596,7 +8676,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD merge continue <repo_path> (finish a merge once every conflict is resolved, ADR 0016)\n");
   CommPrint(1, "HELP_CMD merge abort <repo_path> (discard an in-progress merge's conflicts, ADR 0016)\n");
   CommPrint(1, "HELP_CMD conflicts <repo_path> (list the current path's in-progress merge conflicts, ADR 0016)\n");
-  CommPrint(1, "HELP_CMD resolve <repo_path> <conflict_index> take-ours|take-theirs (ADR 0016)\n");
+  CommPrint(1, "HELP_CMD resolve <repo_path> <conflict_index> take-ours|take-theirs (an absent side = resolve to deletion; ADR 0016)\n");
   CommPrint(1, "HELP_CMD statustree <repo_path> <dir_path> (recursive status, ADR 0010)\n");
   CommPrint(1, "HELP_CMD history <repo_path>\n");
   CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");

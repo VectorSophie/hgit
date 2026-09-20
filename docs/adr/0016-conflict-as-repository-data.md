@@ -293,3 +293,19 @@ correctly.
 - Real usage showing textual conflict markers are wanted after all
   (e.g. because more people expect Git's own familiar in-file marker
   workflow than expected) - the strongest trigger for the second.
+
+## Addendum (v1.8.4): lifecycle completion
+
+- `resolve` may pick an ABSENT side (delete-vs-edit): the resolution hash is
+  recorded all-zero and `merge continue` omits the entry.
+- `conflicts` now prints base/ours/theirs evidence (type/mode/hash prefix or
+  ABSENT) and how a resolved conflict was resolved.
+- The finished merge commit's message carries resolution provenance
+  (`merge <path> [resolved <file>=ours|theirs|deleted ...]`) - the open
+  question above was settled the cheap way (message, not a new commit field);
+  the OBJ_CONFLICT objects stay in the archive.
+- Verified on real QEMU (probe 122): undo/redo while a merge is in progress
+  leaves the conflicts intact; `export` preserves them; `continue` refuses
+  while any conflict is unresolved.
+- Still not done: arbitrary replacement content, textual materialization,
+  rename/move-aware detection (v1.8.5).

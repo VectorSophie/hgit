@@ -84,7 +84,7 @@
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.8.3"
+#define HGIT_VERSION "1.8.4"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -212,7 +212,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD merge continue <repo_path> (finish a merge once every conflict is resolved, ADR 0016)\n");
   CommPrint(1, "HELP_CMD merge abort <repo_path> (discard an in-progress merge's conflicts, ADR 0016)\n");
   CommPrint(1, "HELP_CMD conflicts <repo_path> (list the current path's in-progress merge conflicts, ADR 0016)\n");
-  CommPrint(1, "HELP_CMD resolve <repo_path> <conflict_index> take-ours|take-theirs (ADR 0016)\n");
+  CommPrint(1, "HELP_CMD resolve <repo_path> <conflict_index> take-ours|take-theirs (an absent side = resolve to deletion; ADR 0016)\n");
   CommPrint(1, "HELP_CMD statustree <repo_path> <dir_path> (recursive status, ADR 0010)\n");
   CommPrint(1, "HELP_CMD history <repo_path>\n");
   CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");
