@@ -905,14 +905,18 @@ Bool MetaConflictSetResolved(U8 *repo_path, U8 *name, U8 *conflict_hash, U8 *res
   U8 *new_buf = MAlloc(size + META_BUF_HEADROOM);
   I64 new_len = 0, ci;
   for (ci=0; ci<match_start; ci++) new_buf[new_len++] = buf[ci];
-  for (ci=match_end; ci<size; ci++) new_buf[new_len++] = buf[ci];
 
+  // Rewritten IN PLACE (v1.8.6): the updated record takes the old one's
+  // position, so conflict indices `hgit conflicts` prints stay stable
+  // across `hgit resolve` calls instead of the resolved one jumping to
+  // the end.
   U8 payload[129];
   I64 bi;
   for (bi=0; bi<64; bi++) payload[bi] = conflict_hash[bi];
   payload[64] = 1; // resolved
   for (bi=0; bi<64; bi++) payload[65+bi] = resolution_hash[bi];
   MetaAppendRecord(new_buf, &new_len, name, META_TAG_CONFLICT, payload, 129);
+  for (ci=match_end; ci<size; ci++) new_buf[new_len++] = buf[ci];
 
   FileWrite(meta_path, new_buf, new_len);
   Free(new_buf);

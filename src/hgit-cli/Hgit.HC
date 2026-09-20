@@ -84,7 +84,7 @@
 // changes" instinct semver itself recommends, applied deliberately
 // here rather than left as an accident of this project's own
 // iteration cadence.
-#define HGIT_VERSION "1.8.5"
+#define HGIT_VERSION "1.8.6"
 
 // Extracts the next token from `s` starting at `pos`. A token wrapped
 // in double quotes (`"like this"`) is read up to the matching closing
@@ -213,6 +213,7 @@ U0 HgitHelp()
   CommPrint(1, "HELP_CMD merge abort <repo_path> (discard an in-progress merge's conflicts, ADR 0016)\n");
   CommPrint(1, "HELP_CMD conflicts <repo_path> (list the current path's in-progress merge conflicts, ADR 0016)\n");
   CommPrint(1, "HELP_CMD resolve <repo_path> <conflict_index> take-ours|take-theirs (an absent side = resolve to deletion; ADR 0016)\n");
+  CommPrint(1, "HELP_CMD conflictdoc <repo_path> <dest.DD> (DolDoc view of the in-progress merge's conflicts)\n");
   CommPrint(1, "HELP_CMD statustree <repo_path> <dir_path> (recursive status, ADR 0010)\n");
   CommPrint(1, "HELP_CMD history <repo_path>\n");
   CommPrint(1, "HELP_CMD see <repo_path> <commit_hex>\n");
@@ -360,6 +361,13 @@ U0 Hgit(U8 *cmdline)
     U8 conf_repo_path[256];
     ExtractToken(rest, 0, conf_repo_path, 256);
     HgitConflicts(conf_repo_path);
+  } else if (StrCmp(cmd, "conflictdoc") == 0) {
+    // v1.8.6: DolDoc view of the in-progress merge's conflicts.
+    U8 cd_repo_path[256], cd_doc_path[256];
+    I64 cd_p = 0;
+    cd_p = ExtractToken(rest, cd_p, cd_repo_path, 256);
+    ExtractToken(rest, cd_p, cd_doc_path, 256);
+    HgitConflictDoc(cd_repo_path, cd_doc_path);
   } else if (StrCmp(cmd, "resolve") == 0) {
     // ADR 0016: `hgit resolve <repo> <conflict-index> take-ours|take-theirs`.
     U8 res_repo_path[256], res_index_str[32], res_which[32];

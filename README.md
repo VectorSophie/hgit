@@ -91,6 +91,7 @@ loaded) for the same list straight from the live dispatcher.
 | `status` | Compare the working directory against HEAD — new/modified/deleted, **and renamed** (exact-content match, ADR 0009) |
 | `merge` | A real, rename-aware (ADR 0017: entity-ID based; ambiguous rename/rename is refused) three-way merge between two named paths (ADR 0011), content and file mode (ADR 0015) both merged independently — a genuine conflict (content or mode) now **persists as real repository data** instead of vanishing (ADR 0016, v1.8.3): the merge commit/HEAD still don't move until every conflict is resolved, but the conflict evidence survives a restart |
 | `conflicts` / `resolve` / `merge continue` / `merge abort` | The conflict lifecycle (ADR 0016): list an in-progress merge's conflicts, resolve one (`take-ours`/`take-theirs`), finish the merge once every conflict is resolved, or discard the whole in-progress merge and restore the exact pre-merge state |
+| `conflictdoc` | A DolDoc view of the in-progress merge's conflicts (v1.8.6): per conflict a collapsible node with entity identity, kind, and base/ours/theirs shown structurally — text lines, `(binary, N bytes)`, directory, or absent — with the `resolve` options suggested but never chosen for you |
 | `history` | Walk the current path's commit chain |
 | `graph` | Render the entire commit history across every path as a real, collapsible DolDoc tree — see below |
 | `see` / `diff` | Show one commit's tree/message/relation, or what changed relative to its parent — both recurse into nested trees |

@@ -427,6 +427,8 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
       if (StrCmp(map_from+mpi*256, name) == 0) { out_name = map_to+mpi*256; out_name_len = StrLen(out_name); }
     }
 
+    if (out_name != name) CommPrint(1, "MERGE_AUTO renamed %s%s -> %s\n", prefix, name, out_name);
+
     U8 full_name[256];
     I64 fi = 0, fj;
     for (fj=0; prefix[fj]; fj++) full_name[fi++] = prefix[fj];
@@ -753,10 +755,13 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
         merged_entry_count++;
         if (winning_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, ours_entity_id, winning_mode);
       } else if (take_theirs && theirs_found) {
+        CommPrint(1, "MERGE_AUTO took-theirs %s\n", full_name);
         TreeEncodeEntry(merged_tree_content_out, merged_tree_len_out, out_name, out_name_len,
                         theirs_type, theirs_hash, theirs_entity_id);
         merged_entry_count++;
         if (winning_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, theirs_entity_id, winning_mode);
+      } else {
+        CommPrint(1, "MERGE_AUTO deleted %s\n", full_name);
       }
       // else: a real deletion survived cleanly (removed on the
       // winning side, unchanged on the other) - correctly omitted
