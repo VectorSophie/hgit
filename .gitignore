@@ -10,3 +10,4 @@ experiments/templeos-devkit/
 # Per-experiment scratch output (pids, sockets, serial logs)
 experiments/*/build/
 .claude/
+dist/

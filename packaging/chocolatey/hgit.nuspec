@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>hgit</id>
+    <version>1.8.9</version>
+    <title>hgit</title>
+    <authors>VectorSophie</authors>
+    <projectUrl>https://github.com/VectorSophie/hgit</projectUrl>
+    <licenseUrl>https://unlicense.org/</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/VectorSophie/hgit</projectSourceUrl>
+    <bugTrackerUrl>https://github.com/VectorSophie/hgit/issues</bugTrackerUrl>
+    <tags>hgit vcs templeos holyc qemu</tags>
+    <summary>Version control for TempleOS, pre-loaded in a TempleOS VM</summary>
+    <description>hgit is a version-control system written in HolyC that runs inside TempleOS. This package ships a TempleOS disk image with hgit already loaded, plus the hgit command (boots it in QEMU) and hgit-type (sends commands to it).</description>
+    <dependencies>
+      <dependency id="qemu" />
+      <dependency id="python" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

@@ -55,7 +55,7 @@ cat > packaging/chocolatey/hgit.nuspec <<NS
     <bugTrackerUrl>https://github.com/VectorSophie/hgit/issues</bugTrackerUrl>
     <tags>hgit vcs templeos holyc qemu</tags>
     <summary>Version control for TempleOS, pre-loaded in a TempleOS VM</summary>
-    <description>hgit is a version-control system written in HolyC that runs inside TempleOS. This package ships a TempleOS disk image with hgit already loaded, plus `hgit` (boots it in QEMU) and `hgit-type` (sends commands to it).</description>
+    <description>hgit is a version-control system written in HolyC that runs inside TempleOS. This package ships a TempleOS disk image with hgit already loaded, plus the hgit command (boots it in QEMU) and hgit-type (sends commands to it).</description>
     <dependencies>
       <dependency id="qemu" />
       <dependency id="python" />
