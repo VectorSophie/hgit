@@ -2,7 +2,7 @@
 
 ## Status
 
-**Implemented.** Per `docs/ROADMAP-v1.8.md`'s v1.8.0 scope. Written
+**Implemented.** Per the removed v1.8 roadmap's v1.8.0 scope. Written
 before implementation (unlike most of this project's ADRs, which
 followed real probes) because the roadmap itself demands the semantics
 be defined and documented first - there is no ambiguity to resolve
@@ -148,7 +148,7 @@ which candidate names ever reach `TreeBuildRecursive`/
   `statustree`. Whether ignore/attribute rules should affect merge
   when they differ between the two sides being merged is real,
   separate scope for a later item in this same v1.8.x series (see
-  `docs/ROADMAP-v1.8.md`'s "merge behavior when ignore or attribute
+  the removed v1.8 roadmap's "merge behavior when ignore or attribute
   rules differ between sides").
 
 ## What would justify revisiting this

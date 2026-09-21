@@ -1,6 +1,6 @@
 # Probe 120 — mode changes surfaced in `status`/`diff`, and a real `Check.HC` gap closed
 
-Status: **PASS**. Closes two more items from `docs/ROADMAP-v1.8.md`'s
+Status: **PASS**. Closes two more items from the removed v1.8 roadmap's
 v1.8.1 scope: "mode/type changes surfaced in status and diff" and
 "metadata participates in tree identity and integrity checking."
 

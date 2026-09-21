@@ -28,6 +28,12 @@
   <a href="docs/adr/">ADRs</a>
 </p>
 
+> **Native port:** hgit also runs as a normal executable on Windows, macOS and
+> Linux, with no TempleOS or VM: [hgit-native](https://github.com/VectorSophie/hgit-native)
+> (in development). It shares this project's `.hgs` format and is tested
+> against golden fixtures generated here (`fixtures/`, tag `contract-1.8.9`).
+> This repository is feature-frozen apart from that contract.
+
 M0 through M4 of the milestone plan are complete and independently
 verified on real TempleOS under QEMU — object storage, the full
 command surface, stable entity identity across renames, and executable

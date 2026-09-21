@@ -2,7 +2,7 @@
 
 ## Status
 
-**Implemented.** Per `docs/ROADMAP-v1.8.md`'s v1.8.1 scope. Written
+**Implemented.** Per the removed v1.8 roadmap's v1.8.1 scope. Written
 before implementation, per the roadmap's own explicit instruction to
 determine the real TempleOS filesystem semantics first, then design a
 portable representation - not invent Unix behavior TempleOS cannot

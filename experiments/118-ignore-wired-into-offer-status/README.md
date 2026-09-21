@@ -1,7 +1,7 @@
 # Probe 118 — `.hgitignore` wired into `offer`/`offertree`/`status`/`statustree`
 
 Status: **PASS**. Closes v1.8.0's own 3 required experiments
-(`docs/ROADMAP-v1.8.md`), building on probe 117's standalone
+(the removed v1.8 roadmap), building on probe 117's standalone
 primitive. Per ADR 0014 (`docs/adr/0014-ignore-rules.md`): ignore
 rules are consulted per-candidate, only for names NOT already tracked
 by exact name in the parent tree - never for already-tracked names.

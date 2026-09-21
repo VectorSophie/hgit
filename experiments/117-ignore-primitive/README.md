@@ -1,6 +1,6 @@
 # Probe 117 — `Ignore.HC`: the `.hgitignore` matching primitive, verified standalone
 
-Status: **PASS**. v1.8.0's first real piece, per `docs/ROADMAP-v1.8.md`
+Status: **PASS**. v1.8.0's first real piece, per the removed v1.8 roadmap
 and `docs/adr/0014-ignore-rules.md` (read that ADR first - this probe
 only verifies what it already decided). Built and verified standalone
 before being wired into any real command - the same "primitive first,

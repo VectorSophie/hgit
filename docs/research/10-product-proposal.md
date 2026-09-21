@@ -2045,12 +2045,12 @@ confirmed to leave the ORIGINAL repo's own HEAD completely unaffected
 - a real, independent copy, not a shared reference. No source change
 needed.
 
-## v1.8.x — the usability series (`docs/ROADMAP-v1.8.md`)
+## v1.8.x — the usability series (the removed v1.8 roadmap)
 
 The project owner's own scoped brief for the next real phase: ignore
 rules, minimal attributes/modes, a complete three-way merge, conflicts
 as persistent repository data, and the CLI/DolDoc UX to use all of it.
-Recorded verbatim in `docs/ROADMAP-v1.8.md`; this section logs what
+Recorded verbatim in the removed v1.8 roadmap; this section logs what
 actually happened, probe by probe, same convention as everything
 above.
 

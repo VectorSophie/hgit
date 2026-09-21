@@ -1,7 +1,7 @@
 # Probe 121 — `hgit merge`'s own real 3-way mode merge
 
 Status: **PASS**. Closes the "mode-only changes" gap
-`docs/ROADMAP-v1.8.md`'s section 3 ("Complete three-way merge") lists,
+the removed v1.8 roadmap's section 3 ("Complete three-way merge") lists,
 and satisfies its own required experiment #5 ("Mode-only change round
 trip"). `Merge.HC`'s own header comment used to document this
 explicitly as deferred (citing ADR 0011's own precedent for shipping

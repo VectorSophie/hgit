@@ -157,7 +157,7 @@ established incremental-ADR pattern (ADR 0010's own precedent):**
   scope ADR 0009's own rename detection has for `status`/`diff`
   independently, not combined here.
 - ~~Carry file mode (ADR 0015) through a merge~~ **Closed** (probe
-  121, `experiments/121-merge-mode-3way/`, `docs/ROADMAP-v1.8.md`'s own
+  121, `experiments/121-merge-mode-3way/`, the removed v1.8 roadmap's own
   "mode-only changes" gap): mode is now a wholly separate 3-way
   decision from content inside `MergeTreesRecursive` - a file's bytes
   and its mode can each change independently, each surviving entity's

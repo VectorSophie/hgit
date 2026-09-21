@@ -2,7 +2,7 @@
 
 ## Status
 
-Adopted. `docs/ROADMAP-v1.8.md`'s own "Conflict as repository data"
+Adopted. the removed v1.8 roadmap's own "Conflict as repository data"
 section (item 4) requires this ADR be written before the persisted
 representation freezes - written here, before implementation, per that
 rule and this project's own "no ADR before its supporting evidence

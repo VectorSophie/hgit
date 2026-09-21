@@ -10,6 +10,10 @@ TempleOS machine and loading it — see step 3 for the exact, real,
 verified sequence (it's not a plain `#include` — that fails for a file
 this size; `experiments/87-bundle-install/` has the full story).
 
+> Want hgit on Windows, macOS or Linux **without** TempleOS? See the native port,
+> [hgit-native](https://github.com/VectorSophie/hgit-native) (in development, not
+> yet installable). This document covers the TempleOS version.
+
 ## Fastest path: the pre-built bundle
 
 Don't have a TempleOS machine yet? `packaging/bundle/` (built from
