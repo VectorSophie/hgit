@@ -374,6 +374,51 @@ U0 HgitFullRegressionTest()
   Hgit("help");
   CommPrint(1, "TFULL_HELP_END_MARKER\n");
 
+  // --- 1.9 (ADR 0019 section 1): objects are stored once. Two files
+  // with identical content in one offer store one blob (a record appended
+  // earlier by the same command counts); re-offering unchanged content
+  // adds only the new commit (blob and tree already stored). Expect
+  // objects=3, then objects=4. ---
+  Del("C:/Home/TFDedupRepo.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFDedupRepo.hgs.m", FALSE, FALSE, FALSE);
+  Hgit("init C:/Home/TFDedupRepo.hgs");
+  FileWrite("C:/Home/TFDedupA.txt", "same content", 12);
+  FileWrite("C:/Home/TFDedupB.txt", "same content", 12);
+  CommPrint(1, "TFULL_DEDUP_BEGIN\n");
+  Hgit("offer C:/Home/TFDedupRepo.hgs C:/Home/TFDedup*.txt dedup_first");
+  Hgit("check C:/Home/TFDedupRepo.hgs");
+  Hgit("offer C:/Home/TFDedupRepo.hgs C:/Home/TFDedup*.txt dedup_second");
+  Hgit("check C:/Home/TFDedupRepo.hgs");
+  CommPrint(1, "TFULL_DEDUP_END_MARKER\n");
+
+  // --- 1.9 (ADR 0019 section 3): a torn tail. TFTornCopy is the repo as
+  // committed after torn_first (export snapshot, so its .m still points
+  // at torn_first), then overwritten with the NEXT offer's file cut 40
+  // bytes into its first new record - what an interrupted write leaves.
+  // check must warn torn_tail (and, the header being the newer one,
+  // object_count_mismatch) and read nothing past it; history must still
+  // show the committed part. ---
+  Del("C:/Home/TFTornRepo.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFTornRepo.hgs.m", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFTornCopy.hgs", FALSE, FALSE, FALSE);
+  Del("C:/Home/TFTornCopy.hgs.m", FALSE, FALSE, FALSE);
+  Hgit("init C:/Home/TFTornRepo.hgs");
+  FileWrite("C:/Home/TFTornA.txt", "torn v1", 7);
+  Hgit("offer C:/Home/TFTornRepo.hgs C:/Home/TFTornA.txt torn_first");
+  Hgit("export C:/Home/TFTornRepo.hgs C:/Home/TFTornCopy.hgs");
+  FileWrite("C:/Home/TFTornA.txt", "torn v2 interrupted", 19);
+  Hgit("offer C:/Home/TFTornRepo.hgs C:/Home/TFTornA.txt torn_second");
+  I64 tt_full_sz, tt_snap_sz;
+  U8 *tt_full = FileRead("C:/Home/TFTornRepo.hgs", &tt_full_sz);
+  U8 *tt_snap = FileRead("C:/Home/TFTornCopy.hgs", &tt_snap_sz);
+  FileWrite("C:/Home/TFTornCopy.hgs", tt_full, tt_snap_sz + 40);
+  Free(tt_full);
+  Free(tt_snap);
+  CommPrint(1, "TFULL_TORN_BEGIN\n");
+  Hgit("check C:/Home/TFTornCopy.hgs");
+  Hgit("history C:/Home/TFTornCopy.hgs");
+  CommPrint(1, "TFULL_TORN_END_MARKER\n");
+
   CommPrint(1, "TFULL_END\n");
 }
 HgitFullRegressionTest;

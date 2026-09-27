@@ -1,0 +1,326 @@
+TFULL_BEGIN
+DISPATCH_OK init C:/Home/TFullRepo.hgs
+DISPATCH_OK offer
+TFULL_STATUS_BEGIN
+STATUS_UNCHANGED TFStays.txt
+STATUS_MODIFIED TFToModify.txt
+STATUS_RENAMED TFOrig.txt -> TFRenamed.txt
+STATUS_NEW TFGenuinelyNew.txt
+STATUS_DELETED TFToDelete.txt
+STATUS_END
+TFULL_STATUS_END_MARKER
+DISPATCH_OK offer
+TFULL_HISTORY_BEGIN
+commit ts=360776 msg=second_offer
+commit ts=357053 msg=first_offer
+HISTORY_END shown=2
+TFULL_HISTORY_END_MARKER
+TFULL_SEE_BEGIN
+SEE_COMMIT ts=360776 parents=1 msg=second_offer
+SEE_PARENT 02d1f22f1c1b897e3fa79f7208331d6038ca230424c10d8a6489a1a201a6f488558a4f9b16dc0ccd20199de4459c04eb92442e2f4eba20f34f65cd0ee06c2829
+SEE_TREE entries=4
+  entry type=1 id=93b70a4f95e76723 name=TFGenuinelyNew.txt
+  entry type=1 id=3ba77f0085be6be3 name=TFRenamed.txt
+  entry type=1 id=eb8a8f2f1df5005c name=TFStays.txt
+  entry type=1 id=bbe3523ecf671c3f name=TFToModify.txt
+SEE_END
+TFULL_SEE_END_MARKER
+TFULL_DIFF_BEGIN
+DIFF_MODIFIED TFToModify.txt
+DIFF_RENAMED TFOrig.txt -> TFRenamed.txt
+DIFF_NEW TFGenuinelyNew.txt
+DIFF_DELETED TFToDelete.txt
+DIFF_END
+TFULL_DIFF_END_MARKER
+TFULL_CHECK_BEGIN
+CHECK_OK objects=12 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_CHECK_END_MARKER
+DISPATCH_OK undo
+TFULL_CHECK_AFTER_UNDO_BEGIN
+CHECK_OK objects=12 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING blob 362e53f95bf807c3c8e3be67e6a37d36348d95f8ba5da892832201313299f8d1072e89467b489166656a18b406a3147ef125bb3ca2ebfc383ea94c920b36eaf9
+CHECK_DANGLING blob ac4925b6204a332bd6469f2e679a6d796ec640c6a7570a866588de99b2d8da78523c93ef8ef40626f83cc3ce2732f2583426ee9408aad301e8e47e99d83b8099
+CHECK_DANGLING blob a0e4c80c6a818305d8950d67cbc85999f6e2a15007566dbae86f40ca82282fce88422d83ab3aa44fb78b82e0a9303fb2c27ad44d7455bc1719ae6ca7ae099277
+CHECK_DANGLING tree 771c66d48f24d4594591a04fe50f68458bdabded30ec3c672f155acd2adc04c05b914fe3a40032e0aeccbc831c4751c2d2119b195c8ab8a0d49c9843e5df9fb7
+CHECK_DANGLING commit 80a1c50fff85602c5041835b09719e5b3262e753227d6e69552b034f3e20a9a44132836e9c572bc1b32edf34cf0e988283ab376020dac772d7ae49544179c0e6
+CHECK_DANGLING_COUNT 5
+TFULL_CHECK_AFTER_UNDO_END_MARKER
+DISPATCH_OK redo
+TFULL_OPHISTORY_BEGIN
+OP 0 ts=357053 prev=00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 new=02d1f22f1c1b897e3fa79f7208331d6038ca230424c10d8a6489a1a201a6f488558a4f9b16dc0ccd20199de4459c04eb92442e2f4eba20f34f65cd0ee06c2829
+OP 1 ts=360776 prev=02d1f22f1c1b897e3fa79f7208331d6038ca230424c10d8a6489a1a201a6f488558a4f9b16dc0ccd20199de4459c04eb92442e2f4eba20f34f65cd0ee06c2829 new=80a1c50fff85602c5041835b09719e5b3262e753227d6e69552b034f3e20a9a44132836e9c572bc1b32edf34cf0e988283ab376020dac772d7ae49544179c0e6
+DISPATCH_OK operation_history
+TFULL_OPHISTORY_END_MARKER
+DISPATCH_OK path_new feature
+DISPATCH_OK path_go feature
+DISPATCH_OK offer
+TFULL_PATHLIST_BEGIN
+PATH main
+PATH feature
+DISPATCH_OK path_list
+TFULL_PATHLIST_END_MARKER
+DISPATCH_OK path_go main
+DISPATCH_OK correct
+TFULL_SEE_CORRECT_BEGIN
+SEE_COMMIT ts=403149 parents=1 msg=correcting_offer
+SEE_PARENT 80a1c50fff85602c5041835b09719e5b3262e753227d6e69552b034f3e20a9a44132836e9c572bc1b32edf34cf0e988283ab376020dac772d7ae49544179c0e6
+SEE_RELATION tag=2 target=80a1c50fff85602c5041835b09719e5b3262e753227d6e69552b034f3e20a9a44132836e9c572bc1b32edf34cf0e988283ab376020dac772d7ae49544179c0e6 entity=0000000000000000
+SEE_TREE entries=1
+  entry type=1 id=bbe3523ecf671c3f name=TFToModify.txt
+SEE_END
+TFULL_SEE_CORRECT_END_MARKER
+DISPATCH_OK historydoc
+DISPATCH_OK reconciledoc
+DISPATCH_OK reconcileoverview
+DISPATCH_OK graph
+DISPATCH_OK export
+TFULL_CHECK_EXPORTED_BEGIN
+CHECK_OK objects=18 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_CHECK_EXPORTED_END_MARKER
+DISPATCH_OK import
+TFULL_CHECK_IMPORTED_BEGIN
+CHECK_OK objects=18 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_CHECK_IMPORTED_END_MARKER
+DISPATCH_OK init C:/Home/TFullTreeRepo.hgs
+DISPATCH_OK offertree
+TFULL_STATUSTREE_BEGIN
+STATUS_MODIFIED SubA/inner.txt
+STATUS_END
+DISPATCH_OK statustree
+TFULL_STATUSTREE_END_MARKER
+DISPATCH_OK offertree
+DISPATCH_OK correcttree
+TFULL_CHECK_TREE_BEGIN
+CHECK_OK objects=10 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_CHECK_TREE_END_MARKER
+DISPATCH_OK init C:/Home/TFullMergeRepo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new merge_feature
+DISPATCH_OK path_go merge_feature
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+TFULL_MERGE_BEGIN
+MERGE_AUTO took-theirs TFMergeFileB.txt
+MERGE_OK
+TFULL_MERGE_END_MARKER
+TFULL_CHECK_MERGED_BEGIN
+CHECK_OK objects=13 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_CHECK_MERGED_END_MARKER
+DISPATCH_OK path_new merge_ff_target
+DISPATCH_OK offer
+DISPATCH_OK path_go merge_ff_target
+TFULL_MERGE_FF_BEGIN
+MERGE_FASTFORWARD
+TFULL_MERGE_FF_END_MARKER
+DISPATCH_OK init C:/Home/TFIgnoreRepo.hgs
+TFULL_IGNORE_BEGIN
+OFFER_IGNORED C:/Home/TFIgnoreRoot/x.tmp
+DISPATCH_OK offertree
+TFULL_IGNORE_END_MARKER
+TFULL_IGNORE_CHECK_BEGIN
+CHECK_OK objects=4 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_IGNORE_CHECK_END_MARKER
+DISPATCH_OK init C:/Home/TFAttrsRepo.hgs
+DISPATCH_OK offer
+TFULL_ATTRS_STATUS_BEGIN
+STATUS_UNCHANGED TFAttrsScript.txt
+STATUS_MODE_CHANGED TFAttrsScript.txt 0 -> 2
+STATUS_END
+TFULL_ATTRS_STATUS_END_MARKER
+DISPATCH_OK offer
+TFULL_ATTRS_DIFF_BEGIN
+DIFF_MODE_CHANGED TFAttrsScript.txt 0 -> 2
+DIFF_END
+TFULL_ATTRS_DIFF_END_MARKER
+TFULL_ATTRS_CHECK_BEGIN
+CHECK_OK objects=5 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_ATTRS_CHECK_END_MARKER
+DISPATCH_OK init C:/Home/TFMergeModeRepo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new mm_feature
+DISPATCH_OK path_go mm_feature
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+TFULL_MERGEMODE_MERGE_BEGIN
+MERGE_OK
+TFULL_MERGEMODE_MERGE_END_MARKER
+TFULL_MERGEMODE_DIFF_BEGIN
+DIFF_MODE_CHANGED TFMM_a.txt 0 -> 2
+DIFF_END
+TFULL_MERGEMODE_DIFF_END_MARKER
+TFULL_MERGEMODE_CHECK_BEGIN
+CHECK_OK objects=10 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_MERGEMODE_CHECK_END_MARKER
+DISPATCH_OK init C:/Home/TFConfRepo.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new cf
+DISPATCH_OK path_go cf
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+TFULL_CONFLICT_MERGE_BEGIN
+MERGE_AUTO renamed r.txt -> r2.txt
+MERGE_AUTO took-theirs r2.txt
+MERGE_CONFLICT c.txt
+MERGE_ABORTED conflicts=1
+MERGE_CONFLICTS_PERSISTED - see 'hgit conflicts', 'hgit resolve', 'hgit merge continue'/'hgit merge abort'
+CONFLICTS_COUNT 1
+CONFLICT 0 UNRESOLVED kind=1 c.txt
+  base type=1 mode=0 hash=5077dff9ccca1b7f
+  ours type=1 mode=0 hash=da6801af8852b35c
+  theirs type=1 mode=0 hash=febfd96c41bfff57
+MERGE_ERR conflict_unresolved 0
+MERGE_ERR conflicts_still_unresolved count=1
+RESOLVE_OK 0 c.txt
+MERGE_AUTO renamed r.txt -> r2.txt
+MERGE_AUTO took-theirs r2.txt
+MERGE_OK
+CHECK_OK objects=14 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING conflict be250d73a832e23ffee59eaaf6be5670e056d661fa8b2f33df0f039891caf18c95028a95a926317c7c8a1c8587d7fe824b96c6089e141b988adc7b586811e56c
+CHECK_DANGLING_COUNT 1
+MERGE_ERR no_merge_in_progress
+TFULL_CONFLICT_MERGE_END_MARKER
+TFULL_CONFLICT_ABORT_BEGIN
+DISPATCH_OK init C:/Home/TFConfRepoB.hgs
+DISPATCH_OK offer
+DISPATCH_OK path_new cf
+DISPATCH_OK path_go cf
+DISPATCH_OK offer
+DISPATCH_OK path_go main
+DISPATCH_OK offer
+MERGE_CONFLICT c.txt
+MERGE_ABORTED conflicts=1
+MERGE_CONFLICTS_PERSISTED - see 'hgit conflicts', 'hgit resolve', 'hgit merge continue'/'hgit merge abort'
+STATUS_MERGE_IN_PROGRESS conflicts=1 unresolved=1 - see 'hgit conflicts'
+STATUS_UNCHANGED c.txt
+STATUS_END
+CONFLICTDOC_OK conflicts=1
+MERGE_ABORT_OK
+CONFLICTS_NONE
+TFULL_CONFLICT_ABORT_END_MARKER
+TFULL_HARDEN_BEGIN
+CHECK_OK objects=10 format_version=4
+CHECK_BROKEN_REF conflict_object_missing 07070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707070707
+CHECK_REFS_FAIL broken=1
+CHECK_DANGLING conflict 265a1bce18bfaaf688bad96a88f37de6a7fad94f7c964162ea60f7834c445e853d3a60808a8d8308aba2a8228931b08cbc2d899714690d66f77030b8f1c0a7d4
+CHECK_DANGLING_COUNT 1
+MERGE_ABORT_OK
+CHECK_ERR unsupported_format_version=9 (this build reads up to 4) - written by a newer hgit
+TFULL_HARDEN_END_MARKER
+HGIT_VERSION 1.8.9
+                                      @@@                                      
+                                    @@@@@@@                                    
+                                  @@@@@@@@@@@                                  
+                                @@@@@@@ @@@@@@@                                
+                              @@@@@@@@  @@@@@@@@@                              
+                            @@@@@@@@@  @@%@@@@@@@@@                            
+                          @@@@@@@@@@%  %@% @@@@@@@@@                           
+                         @@@@@@@@@@@@@  %@@%@@@@@@@@@@                         
+                       @@@@@@@@@% %@@@@   @@@@ @@@@@@@@%                       
+                     @@@@@@*@@@@%   %@@  @@@@% @@@@@@@@@@%                     
+                   @@@@@@@@ @@@@@@  %@@ %@@%  @@@@@@@@@@@@@@                   
+                 @@@@@@@@@@ @@@%@@%%@%  @@@  @@@%@@ %@@@@@@@@%                 
+                @@@@@@@@%@@@@@@%@@@@@%  @@@@ @@@ @@% @@@@@@@@@@                
+               %@@@@@@@@@@@@@@%  @@@@@%  %@@@@@@ %@@@%@@@@@@@@@%               
+                @@@@@@@@ %@%@@@%    %@@@  @@@@   @@@@@@%@@@@@@%                
+                  @@@@@@@@@ %@@@@@@%  @@  @%   %@@@@@% @@@@@@                  
+                    @@@@@@@%    %@@@  %%    %@@@@@ @@%@@@@@                    
+                      @@@@@@@@@% %@@@%%%  %@@@*   %@@@@@@                      
+                       %@@@@@%@%   %@@@#  @@   #%@@@@@@%                       
+                         @@@@@@%%%#  %@       %@@@@@@%                         
+                           @@@@@@@@@%     %@@@@@@@@@                           
+                             @@@@@@@@@   %@@@@@@@@                             
+                               @@@@@@@   %@@@@@@                               
+                                 @@@%  %% %@@@                                 
+                                   @@@@@@@@@                                   
+                                    @@@@@@%                                    
+TFULL_HELP_BEGIN
+HELP_BEGIN
+HELP_VERSION 1.8.9
+HELP_CMD init <repo_path>
+HELP_CMD status <repo_path> <find_mask> <dir_prefix>
+HELP_CMD offer <repo_path> <find_mask> <message>
+HELP_CMD offertree <repo_path> <dir_path> <message> (recursive, ADR 0010)
+HELP_CMD merge <repo_path> <other_path_name> (a real conflict now persists - see 'conflicts'/'resolve'/'merge continue'/'merge abort', ADR 0016)
+HELP_CMD merge continue <repo_path> (finish a merge once every conflict is resolved, ADR 0016)
+HELP_CMD merge abort <repo_path> (discard an in-progress merge's conflicts, ADR 0016)
+HELP_CMD conflicts <repo_path> (list the current path's in-progress merge conflicts, ADR 0016)
+HELP_CMD resolve <repo_path> <conflict_index> take-ours|take-theirs (an absent side = resolve to deletion; ADR 0016)
+HELP_CMD conflictdoc <repo_path> <dest.DD> (DolDoc view of the in-progress merge's conflicts)
+HELP_CMD statustree <repo_path> <dir_path> (recursive status, ADR 0010)
+HELP_CMD history <repo_path>
+HELP_CMD see <repo_path> <commit_hex>
+HELP_CMD diff <repo_path> <commit_hex>
+HELP_CMD check <repo_path>
+HELP_CMD historydoc <repo_path> <dest.DD>
+HELP_CMD reconciledoc <repo_path> <commit_hex> <dest.DD>
+HELP_CMD reconcileoverview <repo_path> <dest.DD>
+HELP_CMD graph <repo_path> <dest.DD>
+HELP_CMD correct <repo_path> <target_hex> <entity_hex> <find_mask> <message>
+HELP_CMD revert <repo_path> <target_hex> <entity_hex> <find_mask> <message>
+HELP_CMD reconcile <repo_path> <target_hex> <entity_hex> <find_mask> <message>
+HELP_CMD correcttree <repo_path> <target_hex> <entity_hex> <dir_path> <message> (recursive, ADR 0010)
+HELP_CMD reverttree <repo_path> <target_hex> <entity_hex> <dir_path> <message> (recursive, ADR 0010)
+HELP_CMD reconciletree <repo_path> <target_hex> <entity_hex> <dir_path> <message> (recursive, ADR 0010)
+HELP_CMD   (entity_hex: 0000000000000000 for none, ADR 0006)
+HELP_CMD undo <repo_path>
+HELP_CMD redo <repo_path>
+HELP_CMD operation history <repo_path>
+HELP_CMD operation restore <repo_path> <op_index>
+HELP_CMD path list <repo_path>
+HELP_CMD path new <repo_path> <name>
+HELP_CMD path go <repo_path> <name>
+HELP_CMD path close <repo_path> <name>
+HELP_CMD export <src_repo_path> <dest_repo_path>
+HELP_CMD import <src_repo_path> <dest_repo_path>
+HELP_CMD interactive (show hgit's output on the TempleOS screen and turn AutoComplete off - run this first when typing at the console)
+HELP_CMD help
+HELP_CMD version
+HELP_CMD logo
+HELP_END
+TFULL_HELP_END_MARKER
+DISPATCH_OK init C:/Home/TFDedupRepo.hgs
+TFULL_DEDUP_BEGIN
+DISPATCH_OK offer
+CHECK_OK objects=3 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+DISPATCH_OK offer
+CHECK_OK objects=4 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+TFULL_DEDUP_END_MARKER
+DISPATCH_OK init C:/Home/TFTornRepo.hgs
+DISPATCH_OK offer
+DISPATCH_OK export
+DISPATCH_OK offer
+TFULL_TORN_BEGIN
+CHECK_WARN torn_tail offset=420 bytes=40
+CHECK_WARN object_count_mismatch header=6 scanned=3
+CHECK_OK objects=3 format_version=4
+CHECK_REFS_OK
+CHECK_DANGLING_NONE
+commit ts=569918 msg=torn_first
+HISTORY_END shown=1
+TFULL_TORN_END_MARKER
+TFULL_END
