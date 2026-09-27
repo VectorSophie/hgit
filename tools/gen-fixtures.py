@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""gen-fixtures.py <bundle.qcow2> [out_dir] - run tests/full-regression.hc on real
+"""gen-fixtures.py <bundle.qcow2> [out_dir] [--hgitall FILE] - run tests/full-regression.hc on real
 TempleOS (a COPY of the bundle, headless) and write golden fixtures: every repo
 the regression leaves behind (.hgs + .hgs.m, hex-dumped over COM1) plus the
 regression's own serial output (expected.log). The native port's conformance
-tests read these. Reuses build-bundle.py's COM2 push receiver."""
+tests read these. Reuses build-bundle.py's COM2 push receiver. With --hgitall, that file is pushed
+and executed in the guest instead of loading C:/Home/HgitAll.HC from the disk, so
+a candidate build can be verified against real TempleOS without rebuilding the
+bundle image."""
 import os, re, shutil, socket, subprocess, sys, time
 
-base = sys.argv[1]
-out = os.path.abspath(sys.argv[2] if len(sys.argv) > 2 else "fixtures")
+args = sys.argv[1:]
+hgitall = None
+if "--hgitall" in args:
+    i = args.index("--hgitall"); hgitall = args[i + 1]; del args[i:i + 2]
+base = args[0]
+out = os.path.abspath(args[1] if len(args) > 1 else "fixtures")
 here = os.path.dirname(os.path.abspath(__file__))
 work = "/tmp/hgit-fixtures-work"
 os.makedirs(work, exist_ok=True); os.makedirs(out, exist_ok=True)
@@ -72,11 +79,23 @@ try:
     type_line('#include "::/Doc/Comm";')
     type_line('U8 *Db=MAlloc(524288);I64 Di=0;U8 Dc;Bool _D_exit=FALSE;')
     type_line('CommInit8n1(2,115200);CommInit8n1(1,115200);FifoU8Del(comm_ports[2].RX_fifo);comm_ports[2].RX_fifo=FifoU8New(524288);')
-    type_line('I64 sz;U8 *hb=FileRead("C:/Home/HgitAll.HC",&sz);ExePutS(hb);', wait=45)
+    if not hgitall:
+        type_line('I64 sz;U8 *hb=FileRead("C:/Home/HgitAll.HC",&sz);ExePutS(hb);', wait=45)
     type_line('U0 D(){CommPrint(1,"D_OK\\n");while(!_D_exit){if(FifoU8Rem(comm_ports[2].RX_fifo,&Dc)){'
               'if(Dc==4){Db[Di]=0;ExePutS(Db);CommPrint(1,"D_DONE\\n");Di=0;}else if(Di<524287){Db[Di++]=Dc;}}else Sleep(10);}}')
     type_line('D();')
     if not wait_for("D_OK", 60): sys.exit("receiver never came up")
+    if hgitall:
+        cand = open(hgitall, "rb").read()
+        assert len(cand) < 520000, "candidate HgitAll.HC exceeds the 512 KB receiver buffer"
+        print("pushing candidate HgitAll.HC (%d bytes) ..." % len(cand))
+        mark = len(log())
+        c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); c.connect(com2_sock); time.sleep(0.3)
+        for i in range(0, len(cand), 2048):
+            c.sendall(cand[i:i + 2048]); time.sleep(0.15)
+        time.sleep(1.0); c.sendall(b"\x04"); time.sleep(1.0); c.close()
+        if not wait_for("D_DONE", 900): sys.exit("candidate HgitAll.HC never finished loading")
+        time.sleep(30)
     print("pushing %d bytes ..." % len(payload))
     c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); c.connect(com2_sock); time.sleep(0.3)
     for i in range(0, len(payload), 2048):
