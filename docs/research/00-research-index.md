@@ -27,6 +27,7 @@ discipline).
 | [09-packaging-and-releases.md](09-packaging-and-releases.md) | ✅ | TempleOS has no package manager/installer — release artifact is `packaging/HgitAll.HC` itself (already built and verified, `experiments/28-hgit-package/`), attached to a tagged GitHub Release |
 | [10-product-proposal.md](10-product-proposal.md) | ✅ | Started as a preliminary risk register; now the project's live, dated narrative log — M0 through M3's core deliverables (object storage, undo/redo, named paths, ADR 0003's metadata-file fix, stable entity identity, entity-scoped typed relations) are built, wired into real commands, and verified. Risk register table corrected to current status (was stale). |
 | [failed-approaches.md](failed-approaches.md) | ✅ | Living log |
+| [11-storage-and-exchange-1.9.md](11-storage-and-exchange-1.9.md) | ✅ | 1.9.0 campaign final report: objects stored once, tolerant torn-tail reading, `compact`, incremental exchange bundles (ADR 0018/0019/0020) — measured before/after across both hgit and hgit-native, test/QEMU evidence, limitations, follow-up roadmap |
 
 ## What actually happened in this first pass
 
