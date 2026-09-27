@@ -24,6 +24,7 @@
   <a href="#what-hgit-actually-does">Commands</a> ·
   <a href="#the-graph">The graph</a> ·
   <a href="#how-hgit-differs-from-git">vs. Git</a> ·
+  <a href="#experimental-storage-and-exchange-for-high-commit-volume-workflows">Storage/exchange (experimental)</a> ·
   <a href="docs/ARCHITECTURE.md">Architecture</a> ·
   <a href="docs/adr/">ADRs</a>
 </p>
@@ -230,6 +231,33 @@ different answer to the same problem, built for a system (TempleOS)
 where none of Git's own accumulated compatibility debt (packfile
 formats, sharded object directories, POSIX permission bits) applies in
 the first place.
+
+## Experimental: storage and exchange for high-commit-volume workflows
+
+Since 1.9.0, both hgit and [hgit-native](https://github.com/VectorSophie/hgit-native)
+carry a scoped, **experimental** set of storage and exchange changes
+([ADR 0018](docs/adr/0018-storage-and-exchange-release-policy.md),
+[ADR 0019](docs/adr/0019-objects-stored-once.md),
+[ADR 0020](docs/adr/0020-incremental-exchange-bundles.md)): a writer stores
+each distinct object once instead of duplicating it on every commit, an
+interrupted write is recoverable instead of corrupting the rest of the
+archive, and a portable incremental exchange file (`.hgb`/`.hgh`, spec in
+[`BUNDLE.md`](BUNDLE.md)) sends what a replica is missing instead of the whole
+repository. None of it is Git-specific — a store-once writer, a tolerant
+reader, and a manifest-plus-prerequisites exchange file are all techniques
+any content-addressed VCS could adopt.
+
+The motivation is not "faster than Git": Git already solves this at a much
+larger scale, with packfiles, partial clone and its own bundle format. It's
+that everyday usage is shifting toward far more commits per working copy —
+agentic tooling that can produce 50+ commits a day, bigger monorepos, and more
+replicas of one repository to keep in sync — and a version-control tool
+should not treat "write every offer as a fresh whole-file copy" as free just
+because it always has been. hgit is small enough that this is easy to build,
+test end to end on real TempleOS, and verify honestly (see the ADRs for what
+was measured, and what was deliberately left as "not yet justified by
+evidence"). See `docs/STATUS.md` for the exact, scoped shape of this
+exception to the feature freeze.
 
 ## Why a burning bush?
 
