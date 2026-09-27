@@ -1,0 +1,12 @@
+{"kind": "BENCH_BEGIN", "wall": 1790473041.9370074, "files": 5, "fsz": 4096, "commits": 100, "jiffies": 354902, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_OFFER", "wall": 1790473043.4387066, "c": 1, "jiffies": 360, "hgs_bytes": 21497, "read_jiffies": 2, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_READ", "wall": 1790473046.191412, "c": 1, "check_jiffies": 1118, "history_jiffies": 701, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_OFFER", "wall": 1790473050.4457226, "c": 10, "jiffies": 363, "hgs_bytes": 47679, "read_jiffies": 3, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_READ", "wall": 1790473056.7026033, "c": 10, "check_jiffies": 1134, "history_jiffies": 4185, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_OFFER", "wall": 1790473063.2093623, "c": 25, "jiffies": 364, "hgs_bytes": 52410, "read_jiffies": 5, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_READ", "wall": 1790473075.472569, "c": 25, "check_jiffies": 1131, "history_jiffies": 10197, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_OFFER", "wall": 1790473085.9829893, "c": 50, "jiffies": 373, "hgs_bytes": 57885, "read_jiffies": 3, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_READ", "wall": 1790473108.261423, "c": 50, "check_jiffies": 1082, "history_jiffies": 20339, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_OFFER", "wall": 1790473128.281468, "c": 100, "jiffies": 390, "hgs_bytes": 68836, "read_jiffies": 3, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_READ", "wall": 1790473169.5882747, "c": 100, "check_jiffies": 1112, "history_jiffies": 39279, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
+{"kind": "BENCH_DONE", "wall": 1790473169.8386552, "jiffies": 483371, "label": "dedup", "jiffies_per_wall_second": 1004.4358474152906}
