@@ -29,36 +29,46 @@
 // I64s, each the byte offset - relative to archive_buf - of that
 // record's length field, i.e. the same offset ObjectPut's callers used
 // to track by hand).
-U0 IndexBuild(U8 *archive_buf, I64 total_len, U8 *out_hashes,
-              I64 *out_offsets, I64 *out_count)
+// 1.9 (ADR 0019 section 3): every record is bound-checked (RecordEnd)
+// before the scan advances; the scan stops at the first record that does
+// not fit, and *out_consumed is the byte length of the complete records
+// indexed (== total_len unless the file has a torn tail).
+U0 IndexBuildEx(U8 *archive_buf, I64 total_len, U8 *out_hashes,
+                I64 *out_offsets, I64 *out_count, I64 *out_consumed)
 {
-  I64 pos = 0, n = 0;
+  I64 pos = 0, n = 0, end, i;
   while (pos < total_len) {
-    I64 rec_start = pos;
-    U64 len = GetU64LE(archive_buf, pos); pos += 8;
-    pos += len;
-    U8 *stored_hash = archive_buf + pos;
-    I64 i;
+    end = RecordEnd(archive_buf, pos, total_len);
+    if (end < 0) break;
+    U8 *stored_hash = archive_buf + end - 64;
     for (i=0; i<64; i++) out_hashes[n*64+i] = stored_hash[i];
-    out_offsets[n] = rec_start;
-    pos += 64;
+    out_offsets[n] = pos;
+    pos = end;
     n++;
   }
   *out_count = n;
+  *out_consumed = pos;
+}
+
+U0 IndexBuild(U8 *archive_buf, I64 total_len, U8 *out_hashes,
+              I64 *out_offsets, I64 *out_count)
+{
+  I64 consumed;
+  IndexBuildEx(archive_buf, total_len, out_hashes, out_offsets, out_count, &consumed);
 }
 
 // Linear search - fine at hgit's current tiny scale, a real bottleneck
-// once corpora grow (see "Not yet done"). Returns the record's offset
+// once corpora grow (see "Not yet done"). 1.9: HashEq64 exits on the
+// first differing U64 word instead of always comparing all 64 bytes;
+// same result, same first-match-wins order. Returns the record's offset
 // (same convention as IndexBuild's out_offsets) via *offset_out, or
 // FALSE if target_hash isn't present.
 Bool IndexLookup(U8 *index_hashes, I64 *index_offsets, I64 count,
                   U8 *target_hash, I64 *offset_out)
 {
-  I64 i, j;
+  I64 i;
   for (i=0; i<count; i++) {
-    Bool same = TRUE;
-    for (j=0; j<64; j++) if (index_hashes[i*64+j] != target_hash[j]) same = FALSE;
-    if (same) { *offset_out = index_offsets[i]; return TRUE; }
+    if (HashEq64(index_hashes + i*64, target_hash)) { *offset_out = index_offsets[i]; return TRUE; }
   }
   return FALSE;
 }
@@ -71,11 +81,9 @@ Bool IndexLookup(U8 *index_hashes, I64 *index_offsets, I64 count,
 // IndexLookup returns.
 Bool IndexLookupPos(U8 *index_hashes, I64 count, U8 *target_hash, I64 *pos_out)
 {
-  I64 i, j;
+  I64 i;
   for (i=0; i<count; i++) {
-    Bool same = TRUE;
-    for (j=0; j<64; j++) if (index_hashes[i*64+j] != target_hash[j]) same = FALSE;
-    if (same) { *pos_out = i; return TRUE; }
+    if (HashEq64(index_hashes + i*64, target_hash)) { *pos_out = i; return TRUE; }
   }
   return FALSE;
 }

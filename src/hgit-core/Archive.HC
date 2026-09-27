@@ -54,13 +54,43 @@ U0 ArchivePut(U8 *data, I64 len)
   hgit_arc_len += 64;
 }
 
+// 1.9 (ADR 0019): 64-byte hash equality, exiting on the first differing
+// 8-byte word. BLAKE2b output is near-uniform, so a non-match almost
+// always exits after one U64 compare instead of 64 byte compares.
+Bool HashEq64(U8 *a, U8 *b)
+{
+  U64 *qa = a(U64 *);
+  U64 *qb = b(U64 *);
+  I64 i;
+  for (i=0; i<8; i++) if (qa[i] != qb[i]) return FALSE;
+  return TRUE;
+}
+
+// 1.9 (ADR 0019 section 3): offset just past the record whose length
+// field starts at `pos`, or -1 if that record does not fit in the
+// `total_len` bytes of `buf` (a torn tail from an interrupted write).
+// Every record walker bound-checks through this before advancing. `len`
+// is read as I64 on purpose: a garbage length >= 2^63 goes negative and
+// is rejected instead of slipping past an unsigned compare.
+I64 RecordEnd(U8 *buf, I64 pos, I64 total_len)
+{
+  I64 remain = total_len - pos;
+  if (remain < 72) return -1;
+  I64 len = GetU64LE(buf, pos);
+  if (len < 0 || len > remain - 72) return -1;
+  return pos + 72 + len;
+}
+
 // Scans a serialized archive buffer, recomputing and checking each
 // record's stored hash. out_total/out_ok are counts, not indices - this
 // is a verification pass, not an index build (that's the next probe).
-U0 ArchiveVerify(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok)
+// 1.9: stops at the first record that does not fit (ADR 0019 section 3);
+// *out_consumed is the byte length of the complete records walked, so a
+// caller can tell a torn tail (consumed < total_len) from a clean end.
+U0 ArchiveVerifyEx(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok, I64 *out_consumed)
 {
   I64 pos=0, total=0, ok_count=0;
-  while (pos < total_len) {
+  while (pos < total_len && RecordEnd(buf, pos, total_len) >= 0) {
     U64 len = GetU64LE(buf, pos); pos += 8;
     U8 *data = buf + pos; pos += len;
     U8 *stored_hash = buf + pos; pos += 64;
@@ -74,4 +104,11 @@ U0 ArchiveVerify(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok)
   }
   *out_total = total;
   *out_ok = ok_count;
+  *out_consumed = pos;
+}
+
+U0 ArchiveVerify(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok)
+{
+  I64 consumed;
+  ArchiveVerifyEx(buf, total_len, out_total, out_ok, &consumed);
 }

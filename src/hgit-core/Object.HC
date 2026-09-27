@@ -44,6 +44,35 @@ U0 ObjectPut(U8 *archive_buf, I64 *len, U8 type, U8 *data, I64 dlen)
   Free(tagged);
 }
 
+// 1.9 (ADR 0019 section 1): same call shape as ObjectPut, but appends
+// only if no record with this object's hash is already in the buffer -
+// neither one loaded from disk nor one appended earlier by this same
+// command. `archive_buf` must be a whole .HGS buffer (records from byte
+// 16, `*len` the whole length), which is how every writer builds it. The
+// tagged hash is computed once and handed to HgsPutHashed; the scan
+// compares stored hashes a U64 at a time (HashEq64) and stops at a torn
+// tail (RecordEnd). Skipping never reorders what is appended.
+// ponytail: O(records) scan per put; a hash-ordered index if offer's
+// per-put cost ever shows up next to BLAKE2b in the on-platform numbers.
+U0 ObjectPutOnce(U8 *archive_buf, I64 *len, U8 type, U8 *data, I64 dlen)
+{
+  U8 *tagged = MAlloc(dlen+1);
+  U8 h[64];
+  I64 i, pos = 16, end;
+  Bool found = FALSE;
+  tagged[0] = type;
+  for (i=0; i<dlen; i++) tagged[1+i] = data[i];
+  B2Hash512Any(tagged, dlen+1, h);
+  while (!found && pos < *len) {
+    end = RecordEnd(archive_buf, pos, *len);
+    if (end < 0) break;
+    if (HashEq64(archive_buf + end - 64, h)) found = TRUE;
+    pos = end;
+  }
+  if (!found) HgsPutHashed(archive_buf, len, tagged, dlen+1, h);
+  Free(tagged);
+}
+
 // Reads the type tag of the object record whose length field starts at
 // `offset` within archive_buf - i.e. offset is the same value ObjectPut
 // returned via *len *before* that call (the record's start position).

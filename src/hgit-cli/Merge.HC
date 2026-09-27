@@ -531,7 +531,7 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
         for (sti=0; sti<sub_merged_len; sti++) sub_tagged[1+sti] = sub_merged_content[sti];
         U8 sub_hash[64];
         B2Hash512Any(sub_tagged, sub_merged_len+1, sub_hash);
-        ObjectPut(archive, alen, OBJ_TREE, sub_merged_content, sub_merged_len);
+        ObjectPutOnce(archive, alen, OBJ_TREE, sub_merged_content, sub_merged_len);
 
         U64 sub_entity_id;
         if (ours_found) sub_entity_id = ours_entity_id; else sub_entity_id = theirs_entity_id;
@@ -617,7 +617,7 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
           merged_entry_count++;
         }
       } else {
-        ObjectPut(archive, alen, OBJ_CONFLICT, kc_content, kc_len);
+        ObjectPutOnce(archive, alen, OBJ_CONFLICT, kc_content, kc_len);
         for (ci=0; ci<cap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = full_name[ci];
         conflict_names_out[(*conflict_count_out)*256+cap] = 0;
         for (ci=0; ci<64; ci++) conflict_hashes_out[(*conflict_count_out)*64+ci] = kc_object_hash[ci];
@@ -742,7 +742,7 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
             if (theirs_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, theirs_entity_id, theirs_mode);
           }
         } else {
-          ObjectPut(archive, alen, OBJ_CONFLICT, cc_content, cc_len);
+          ObjectPutOnce(archive, alen, OBJ_CONFLICT, cc_content, cc_len);
           for (ci=0; ci<cap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = full_name[ci];
           conflict_names_out[(*conflict_count_out)*256+cap] = 0;
           for (ci=0; ci<64; ci++) conflict_hashes_out[(*conflict_count_out)*64+ci] = cc_object_hash[ci];
@@ -796,7 +796,7 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
   for (i=0; i<merged_tree_len; i++) merged_tree_tagged[1+i] = merged_tree_content[i];
   U8 merged_tree_hash[64];
   B2Hash512Any(merged_tree_tagged, merged_tree_len+1, merged_tree_hash);
-  ObjectPut(archive, &alen, OBJ_TREE, merged_tree_content, merged_tree_len);
+  ObjectPutOnce(archive, &alen, OBJ_TREE, merged_tree_content, merged_tree_len);
 
   Bool merge_has_attrs = (merged_attrs_len > 4);
   U8 merged_attrs_hash[64];
@@ -807,7 +807,7 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
     for (i=0; i<merged_attrs_len; i++) merged_attrs_tagged[1+i] = merged_attrs_content[i];
     B2Hash512Any(merged_attrs_tagged, merged_attrs_len+1, merged_attrs_hash);
     Free(merged_attrs_tagged);
-    ObjectPut(archive, &alen, OBJ_ATTRS, merged_attrs_content, merged_attrs_len);
+    ObjectPutOnce(archive, &alen, OBJ_ATTRS, merged_attrs_content, merged_attrs_len);
   }
 
   U8 merge_parents[128];
@@ -834,17 +834,10 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
   U8 merge_commit_hash[64];
   B2Hash512Any(commit_tagged, clen+1, merge_commit_hash);
-  ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
+  ObjectPutOnce(archive, &alen, OBJ_COMMIT, commit_content, clen);
 
-  I64 max_possible_objects = alen/73 + 1;
-  U8 *final_idx_hashes = MAlloc(max_possible_objects*64 + 64);
-  I64 *final_idx_offsets = MAlloc((max_possible_objects+1)*8);
-  I64 final_idx_count;
-  IndexBuild(archive+16, alen-16, final_idx_hashes, final_idx_offsets, &final_idx_count);
-  Free(final_idx_hashes);
-  Free(final_idx_offsets);
-
-  HgsWriteHeader(archive, rver, final_idx_count);
+  // 1.9 (ADR 0019): exact record count, see Hgs.HC's HgsCountRecords.
+  HgsWriteHeader(archive, rver, HgsCountRecords(archive, alen));
   FileWrite(repo_path, archive, alen);
 
   OpLogAppend(repo_path, ours_head, merge_commit_hash, timestamp);
@@ -1011,14 +1004,8 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
     // are new), then Meta.HC records the in-progress merge so `hgit
     // conflicts`/`hgit resolve`/`hgit merge continue`/`hgit merge
     // abort` can pick it up later, even across a restart.
-    I64 fail_max_objects = alen/73 + 1;
-    U8 *fail_idx_hashes = MAlloc(fail_max_objects*64 + 64);
-    I64 *fail_idx_offsets = MAlloc((fail_max_objects+1)*8);
-    I64 fail_idx_count;
-    IndexBuild(archive+16, alen-16, fail_idx_hashes, fail_idx_offsets, &fail_idx_count);
-    HgsWriteHeader(archive, rver, fail_idx_count);
+    HgsWriteHeader(archive, rver, HgsCountRecords(archive, alen));
     FileWrite(repo_path, archive, alen);
-    Free(fail_idx_hashes); Free(fail_idx_offsets);
 
     MetaMergeStateWrite(repo_path, mc_cur_name, ours_head, theirs_head, other_path_name);
     I64 ci2;

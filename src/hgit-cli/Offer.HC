@@ -329,7 +329,7 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
           for (ci=0; ci<child_tree_content_len; ci++) child_tagged[1+ci] = child_tree_content[ci];
           U8 child_hash[64];
           B2Hash512Any(child_tagged, child_tree_content_len+1, child_hash);
-          ObjectPut(archive, alen, OBJ_TREE, child_tree_content, child_tree_content_len);
+          ObjectPutOnce(archive, alen, OBJ_TREE, child_tree_content, child_tree_content_len);
 
           U64 sub_entity_id;
           if (found_old_sub) sub_entity_id = old_sub_entity_id;
@@ -371,7 +371,7 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
           U8 blob_hash[64];
           B2Hash512Any(blob_tagged, fsize+1, blob_hash);
           Free(blob_tagged);
-          ObjectPut(archive, alen, OBJ_BLOB, fbuf, fsize);
+          ObjectPutOnce(archive, alen, OBJ_BLOB, fbuf, fsize);
 
           U64 entity_id;
           Bool found_old = FALSE;
@@ -634,7 +634,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
       U8 blob_hash[64];
       B2Hash512Any(blob_tagged, fsize+1, blob_hash);
       Free(blob_tagged);
-      ObjectPut(archive, &alen, OBJ_BLOB, fbuf, fsize);
+      ObjectPutOnce(archive, &alen, OBJ_BLOB, fbuf, fsize);
 
       // ADR 0009 (experiments/70-rename-detection/): if this name
       // doesn't match anything in the parent's own tree, check
@@ -697,7 +697,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   for (i=0; i<tree_content_len; i++) tree_tagged[1+i] = tree_content[i];
   U8 tree_hash[64];
   B2Hash512Any(tree_tagged, tree_content_len+1, tree_hash);
-  ObjectPut(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
+  ObjectPutOnce(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
 
   // ADR 0015: only store a real OBJ_ATTRS object (and reference it
   // from the commit) if at least one file actually has a non-default
@@ -711,7 +711,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
     for (i=0; i<attrs_len; i++) attrs_tagged[1+i] = attrs_content[i];
     B2Hash512Any(attrs_tagged, attrs_len+1, attrs_hash);
     Free(attrs_tagged);
-    ObjectPut(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
+    ObjectPutOnce(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
   }
   Free(attrs_content);
 
@@ -727,13 +727,13 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
   U8 commit_hash[64];
   B2Hash512Any(commit_tagged, clen+1, commit_hash);
-  ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
+  ObjectPutOnce(archive, &alen, OBJ_COMMIT, commit_content, clen);
 
-  // Rewrite the repo with the updated header (new total object count:
-  // rcount existing + entry_count blobs + 1 tree + 1 commit + (1 real
-  // OBJ_ATTRS object, only if has_attrs - ADR 0015).
-  I64 attrs_object_count = 0; if (has_attrs) attrs_object_count = 1;
-  HgsWriteHeader(archive, rver, rcount + entry_count + 2 + attrs_object_count);
+  // Rewrite the repo with the updated header. 1.9 (ADR 0019): the count
+  // is the exact number of records now in `archive` - ObjectPutOnce skips
+  // objects already stored, so "rcount + entry_count + 2 (+1 attrs)" no
+  // longer holds.
+  HgsWriteHeader(archive, rver, HgsCountRecords(archive, alen));
   FileWrite(repo_path, archive, alen);
 
   // Log this offer's HEAD transition before moving HEAD, so `undo` can
@@ -895,7 +895,7 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   for (i=0; i<tree_content_len; i++) tree_tagged[1+i] = tree_content[i];
   U8 tree_hash[64];
   B2Hash512Any(tree_tagged, tree_content_len+1, tree_hash);
-  ObjectPut(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
+  ObjectPutOnce(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
 
   // ADR 0015: same "only pay for what you use" real OBJ_ATTRS object,
   // built from whatever TreeBuildRecursive's own recursion accumulated
@@ -909,7 +909,7 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
     for (i=0; i<attrs_len; i++) attrs_tagged[1+i] = attrs_content[i];
     B2Hash512Any(attrs_tagged, attrs_len+1, attrs_hash);
     Free(attrs_tagged);
-    ObjectPut(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
+    ObjectPutOnce(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
   }
   Free(attrs_content);
 
@@ -924,30 +924,12 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
   U8 commit_hash[64];
   B2Hash512Any(commit_tagged, clen+1, commit_hash);
-  ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
+  ObjectPutOnce(archive, &alen, OBJ_COMMIT, commit_content, clen);
 
-  // Object count: unlike the flat loop above (which tracks a simple
-  // per-file entry_count as it goes), TreeBuildRecursive's own
-  // recursion appends a variable, not-known-in-advance number of blob
-  // AND tree objects at arbitrary depth - re-scanning what actually
-  // landed in `archive` via the same IndexBuild every real command
-  // already trusts is simpler and provably correct than threading a
-  // running tally back out through arbitrary recursion depth.
-  // No guessed cap (this project's own hard-won ADR 0007 lesson: a
-  // fixed "surely enough" headroom number is exactly the pattern that
-  // kept causing real crashes) - a real upper bound instead: no object
-  // record is smaller than 73 bytes (8-byte length + 1-byte type +
-  // 0-byte content + 64-byte hash), so `alen` itself bounds how many
-  // objects could possibly fit in it.
-  I64 max_possible_objects = alen/73 + 1;
-  U8 *final_idx_hashes = MAlloc(max_possible_objects*64 + 64);
-  I64 *final_idx_offsets = MAlloc((max_possible_objects+1)*8);
-  I64 final_idx_count;
-  IndexBuild(archive+16, alen-16, final_idx_hashes, final_idx_offsets, &final_idx_count);
-  Free(final_idx_hashes);
-  Free(final_idx_offsets);
-
-  HgsWriteHeader(archive, rver, final_idx_count);
+  // Object count: the exact number of records now in `archive`
+  // (1.9, ADR 0019: HgsCountRecords walks them with the readers' own
+  // bounds check - this used to be an IndexBuild into throwaway buffers).
+  HgsWriteHeader(archive, rver, HgsCountRecords(archive, alen));
   FileWrite(repo_path, archive, alen);
 
   U8 log_prev_head[64];

@@ -108,10 +108,7 @@ Bool TreeFindEntryByHash(U8 *tree_buf, I64 tree_len, U8 *target_hash, U64 *entit
     U8 this_name_len = tree_buf[pos]; pos += 1;
     U8 *this_hash = tree_buf + pos + this_name_len + 1;
     U64 this_entity_id = GetU64LE(tree_buf, pos+this_name_len+1+64);
-    Bool same = TRUE;
-    I64 hi;
-    for (hi=0; hi<64; hi++) if (this_hash[hi] != target_hash[hi]) same = FALSE;
-    if (same) {
+    if (HashEq64(this_hash, target_hash)) {
       *entity_id_out = this_entity_id;
       return TRUE;
     }

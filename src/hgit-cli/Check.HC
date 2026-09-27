@@ -148,9 +148,15 @@ U0 HgitCheck(U8 *repo_path)
     return;
   }
 
-  I64 total, ok;
-  ArchiveVerify(rbuf+16, rsize-16, &total, &ok);
+  I64 total, ok, consumed;
+  ArchiveVerifyEx(rbuf+16, rsize-16, &total, &ok, &consumed);
 
+  // 1.9 (ADR 0019 section 3): bytes after the last complete record are an
+  // interrupted write - reported (file offset, byte count), never read,
+  // never truncated. Every pass below stops at the same point.
+  if (consumed < rsize-16) {
+    CommPrint(1, "CHECK_WARN torn_tail offset=%d bytes=%d\n", 16+consumed, rsize-16-consumed);
+  }
   if (total != rcount) {
     CommPrint(1, "CHECK_WARN object_count_mismatch header=%d scanned=%d\n",
               rcount, total);
@@ -178,7 +184,7 @@ U0 HgitCheck(U8 *repo_path)
 
   I64 broken_refs = 0;
   I64 pos = 16;
-  while (pos < rsize) {
+  while (pos < 16+consumed) {
     U64 rec_len = GetU64LE(rbuf, pos);
     U8 obj_type = rbuf[pos+8];
     U8 *content = rbuf + pos + 9;
@@ -386,14 +392,9 @@ U0 HgitCheck(U8 *repo_path)
   for (ca=0; ca<idx_count; ca++) {
     if (!reachable[ca]) {
       for (cb=0; cb<idx_count; cb++) {
-        Bool dup_of_reachable = reachable[cb];
-        I64 hb;
-        if (dup_of_reachable) {
-          for (hb=0; hb<64; hb++) {
-            if (idx_hashes[ca*64+hb] != idx_hashes[cb*64+hb]) dup_of_reachable = FALSE;
-          }
+        if (reachable[cb] && HashEq64(idx_hashes + ca*64, idx_hashes + cb*64)) {
+          reachable[ca] = TRUE; break;
         }
-        if (dup_of_reachable) { reachable[ca] = TRUE; break; }
       }
     }
   }

@@ -48,6 +48,20 @@ Bool HgsReadHeader(U8 *buf, U16 *version_out, U64 *obj_count_out)
   return TRUE;
 }
 
+// 1.9 (ADR 0019): the append half of HgsPut, with the record's hash
+// supplied by a caller that already computed it (ObjectPutOnce), so
+// BLAKE2b - slow in HolyC - runs once per object, not twice.
+U0 HgsPutHashed(U8 *archive_buf, I64 *len, U8 *data, I64 dlen, U8 *h)
+{
+  I64 i;
+  PutU64LE(archive_buf, *len, dlen);
+  *len += 8;
+  for (i=0; i<dlen; i++) archive_buf[*len+i] = data[i];
+  *len += dlen;
+  for (i=0; i<64; i++) archive_buf[*len+i] = h[i];
+  *len += 64;
+}
+
 // Parameterized object-append (writes into archive_buf/len rather than
 // Archive.HC's ArchivePut's fixed globals - this is the first tested
 // instance of the parameterized version Archive.HC's own comments flag
@@ -56,12 +70,20 @@ Bool HgsReadHeader(U8 *buf, U16 *version_out, U64 *obj_count_out)
 U0 HgsPut(U8 *archive_buf, I64 *len, U8 *data, I64 dlen)
 {
   U8 h[64];
-  I64 i;
   B2Hash512Any(data, dlen, h);
-  PutU64LE(archive_buf, *len, dlen);
-  *len += 8;
-  for (i=0; i<dlen; i++) archive_buf[*len+i] = data[i];
-  *len += dlen;
-  for (i=0; i<64; i++) archive_buf[*len+i] = h[i];
-  *len += 64;
+  HgsPutHashed(archive_buf, len, data, dlen, h);
+}
+
+// 1.9 (ADR 0019 section 2): the exact number of complete records in a
+// whole .HGS buffer (header included, records from byte 16), walked with
+// the same bounds check every reader uses. Writers set the header count
+// from this right before FileWrite, so it never under-declares.
+I64 HgsCountRecords(U8 *archive_buf, I64 alen)
+{
+  I64 pos = 16, n = 0;
+  while (pos < alen && RecordEnd(archive_buf, pos, alen) >= 0) {
+    pos = RecordEnd(archive_buf, pos, alen);
+    n++;
+  }
+  return n;
 }

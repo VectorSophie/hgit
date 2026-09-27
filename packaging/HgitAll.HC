@@ -919,13 +919,43 @@ U0 ArchivePut(U8 *data, I64 len)
   hgit_arc_len += 64;
 }
 
+// 1.9 (ADR 0019): 64-byte hash equality, exiting on the first differing
+// 8-byte word. BLAKE2b output is near-uniform, so a non-match almost
+// always exits after one U64 compare instead of 64 byte compares.
+Bool HashEq64(U8 *a, U8 *b)
+{
+  U64 *qa = a(U64 *);
+  U64 *qb = b(U64 *);
+  I64 i;
+  for (i=0; i<8; i++) if (qa[i] != qb[i]) return FALSE;
+  return TRUE;
+}
+
+// 1.9 (ADR 0019 section 3): offset just past the record whose length
+// field starts at `pos`, or -1 if that record does not fit in the
+// `total_len` bytes of `buf` (a torn tail from an interrupted write).
+// Every record walker bound-checks through this before advancing. `len`
+// is read as I64 on purpose: a garbage length >= 2^63 goes negative and
+// is rejected instead of slipping past an unsigned compare.
+I64 RecordEnd(U8 *buf, I64 pos, I64 total_len)
+{
+  I64 remain = total_len - pos;
+  if (remain < 72) return -1;
+  I64 len = GetU64LE(buf, pos);
+  if (len < 0 || len > remain - 72) return -1;
+  return pos + 72 + len;
+}
+
 // Scans a serialized archive buffer, recomputing and checking each
 // record's stored hash. out_total/out_ok are counts, not indices - this
 // is a verification pass, not an index build (that's the next probe).
-U0 ArchiveVerify(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok)
+// 1.9: stops at the first record that does not fit (ADR 0019 section 3);
+// *out_consumed is the byte length of the complete records walked, so a
+// caller can tell a torn tail (consumed < total_len) from a clean end.
+U0 ArchiveVerifyEx(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok, I64 *out_consumed)
 {
   I64 pos=0, total=0, ok_count=0;
-  while (pos < total_len) {
+  while (pos < total_len && RecordEnd(buf, pos, total_len) >= 0) {
     U64 len = GetU64LE(buf, pos); pos += 8;
     U8 *data = buf + pos; pos += len;
     U8 *stored_hash = buf + pos; pos += 64;
@@ -939,6 +969,13 @@ U0 ArchiveVerify(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok)
   }
   *out_total = total;
   *out_ok = ok_count;
+  *out_consumed = pos;
+}
+
+U0 ArchiveVerify(U8 *buf, I64 total_len, I64 *out_total, I64 *out_ok)
+{
+  I64 consumed;
+  ArchiveVerifyEx(buf, total_len, out_total, out_ok, &consumed);
 }
 // Hgs.HC — .HGS archive file header, per FORMAT.md.
 //
@@ -990,6 +1027,20 @@ Bool HgsReadHeader(U8 *buf, U16 *version_out, U64 *obj_count_out)
   return TRUE;
 }
 
+// 1.9 (ADR 0019): the append half of HgsPut, with the record's hash
+// supplied by a caller that already computed it (ObjectPutOnce), so
+// BLAKE2b - slow in HolyC - runs once per object, not twice.
+U0 HgsPutHashed(U8 *archive_buf, I64 *len, U8 *data, I64 dlen, U8 *h)
+{
+  I64 i;
+  PutU64LE(archive_buf, *len, dlen);
+  *len += 8;
+  for (i=0; i<dlen; i++) archive_buf[*len+i] = data[i];
+  *len += dlen;
+  for (i=0; i<64; i++) archive_buf[*len+i] = h[i];
+  *len += 64;
+}
+
 // Parameterized object-append (writes into archive_buf/len rather than
 // Archive.HC's ArchivePut's fixed globals - this is the first tested
 // instance of the parameterized version Archive.HC's own comments flag
@@ -998,14 +1049,22 @@ Bool HgsReadHeader(U8 *buf, U16 *version_out, U64 *obj_count_out)
 U0 HgsPut(U8 *archive_buf, I64 *len, U8 *data, I64 dlen)
 {
   U8 h[64];
-  I64 i;
   B2Hash512Any(data, dlen, h);
-  PutU64LE(archive_buf, *len, dlen);
-  *len += 8;
-  for (i=0; i<dlen; i++) archive_buf[*len+i] = data[i];
-  *len += dlen;
-  for (i=0; i<64; i++) archive_buf[*len+i] = h[i];
-  *len += 64;
+  HgsPutHashed(archive_buf, len, data, dlen, h);
+}
+
+// 1.9 (ADR 0019 section 2): the exact number of complete records in a
+// whole .HGS buffer (header included, records from byte 16), walked with
+// the same bounds check every reader uses. Writers set the header count
+// from this right before FileWrite, so it never under-declares.
+I64 HgsCountRecords(U8 *archive_buf, I64 alen)
+{
+  I64 pos = 16, n = 0;
+  while (pos < alen && RecordEnd(archive_buf, pos, alen) >= 0) {
+    pos = RecordEnd(archive_buf, pos, alen);
+    n++;
+  }
+  return n;
 }
 // Object.HC — typed objects on top of the .HGS record format.
 //
@@ -1050,6 +1109,35 @@ U0 ObjectPut(U8 *archive_buf, I64 *len, U8 type, U8 *data, I64 dlen)
   tagged[0] = type;
   for (i=0; i<dlen; i++) tagged[1+i] = data[i];
   HgsPut(archive_buf, len, tagged, dlen+1);
+  Free(tagged);
+}
+
+// 1.9 (ADR 0019 section 1): same call shape as ObjectPut, but appends
+// only if no record with this object's hash is already in the buffer -
+// neither one loaded from disk nor one appended earlier by this same
+// command. `archive_buf` must be a whole .HGS buffer (records from byte
+// 16, `*len` the whole length), which is how every writer builds it. The
+// tagged hash is computed once and handed to HgsPutHashed; the scan
+// compares stored hashes a U64 at a time (HashEq64) and stops at a torn
+// tail (RecordEnd). Skipping never reorders what is appended.
+// ponytail: O(records) scan per put; a hash-ordered index if offer's
+// per-put cost ever shows up next to BLAKE2b in the on-platform numbers.
+U0 ObjectPutOnce(U8 *archive_buf, I64 *len, U8 type, U8 *data, I64 dlen)
+{
+  U8 *tagged = MAlloc(dlen+1);
+  U8 h[64];
+  I64 i, pos = 16, end;
+  Bool found = FALSE;
+  tagged[0] = type;
+  for (i=0; i<dlen; i++) tagged[1+i] = data[i];
+  B2Hash512Any(tagged, dlen+1, h);
+  while (!found && pos < *len) {
+    end = RecordEnd(archive_buf, pos, *len);
+    if (end < 0) break;
+    if (HashEq64(archive_buf + end - 64, h)) found = TRUE;
+    pos = end;
+  }
+  if (!found) HgsPutHashed(archive_buf, len, tagged, dlen+1, h);
   Free(tagged);
 }
 
@@ -1288,10 +1376,7 @@ Bool TreeFindEntryByHash(U8 *tree_buf, I64 tree_len, U8 *target_hash, U64 *entit
     U8 this_name_len = tree_buf[pos]; pos += 1;
     U8 *this_hash = tree_buf + pos + this_name_len + 1;
     U64 this_entity_id = GetU64LE(tree_buf, pos+this_name_len+1+64);
-    Bool same = TRUE;
-    I64 hi;
-    for (hi=0; hi<64; hi++) if (this_hash[hi] != target_hash[hi]) same = FALSE;
-    if (same) {
+    if (HashEq64(this_hash, target_hash)) {
       *entity_id_out = this_entity_id;
       return TRUE;
     }
@@ -1521,36 +1606,46 @@ U8 *CommitAttrsHash(U8 *buf)
 // I64s, each the byte offset - relative to archive_buf - of that
 // record's length field, i.e. the same offset ObjectPut's callers used
 // to track by hand).
-U0 IndexBuild(U8 *archive_buf, I64 total_len, U8 *out_hashes,
-              I64 *out_offsets, I64 *out_count)
+// 1.9 (ADR 0019 section 3): every record is bound-checked (RecordEnd)
+// before the scan advances; the scan stops at the first record that does
+// not fit, and *out_consumed is the byte length of the complete records
+// indexed (== total_len unless the file has a torn tail).
+U0 IndexBuildEx(U8 *archive_buf, I64 total_len, U8 *out_hashes,
+                I64 *out_offsets, I64 *out_count, I64 *out_consumed)
 {
-  I64 pos = 0, n = 0;
+  I64 pos = 0, n = 0, end, i;
   while (pos < total_len) {
-    I64 rec_start = pos;
-    U64 len = GetU64LE(archive_buf, pos); pos += 8;
-    pos += len;
-    U8 *stored_hash = archive_buf + pos;
-    I64 i;
+    end = RecordEnd(archive_buf, pos, total_len);
+    if (end < 0) break;
+    U8 *stored_hash = archive_buf + end - 64;
     for (i=0; i<64; i++) out_hashes[n*64+i] = stored_hash[i];
-    out_offsets[n] = rec_start;
-    pos += 64;
+    out_offsets[n] = pos;
+    pos = end;
     n++;
   }
   *out_count = n;
+  *out_consumed = pos;
+}
+
+U0 IndexBuild(U8 *archive_buf, I64 total_len, U8 *out_hashes,
+              I64 *out_offsets, I64 *out_count)
+{
+  I64 consumed;
+  IndexBuildEx(archive_buf, total_len, out_hashes, out_offsets, out_count, &consumed);
 }
 
 // Linear search - fine at hgit's current tiny scale, a real bottleneck
-// once corpora grow (see "Not yet done"). Returns the record's offset
+// once corpora grow (see "Not yet done"). 1.9: HashEq64 exits on the
+// first differing U64 word instead of always comparing all 64 bytes;
+// same result, same first-match-wins order. Returns the record's offset
 // (same convention as IndexBuild's out_offsets) via *offset_out, or
 // FALSE if target_hash isn't present.
 Bool IndexLookup(U8 *index_hashes, I64 *index_offsets, I64 count,
                   U8 *target_hash, I64 *offset_out)
 {
-  I64 i, j;
+  I64 i;
   for (i=0; i<count; i++) {
-    Bool same = TRUE;
-    for (j=0; j<64; j++) if (index_hashes[i*64+j] != target_hash[j]) same = FALSE;
-    if (same) { *offset_out = index_offsets[i]; return TRUE; }
+    if (HashEq64(index_hashes + i*64, target_hash)) { *offset_out = index_offsets[i]; return TRUE; }
   }
   return FALSE;
 }
@@ -1563,11 +1658,9 @@ Bool IndexLookup(U8 *index_hashes, I64 *index_offsets, I64 count,
 // IndexLookup returns.
 Bool IndexLookupPos(U8 *index_hashes, I64 count, U8 *target_hash, I64 *pos_out)
 {
-  I64 i, j;
+  I64 i;
   for (i=0; i<count; i++) {
-    Bool same = TRUE;
-    for (j=0; j<64; j++) if (index_hashes[i*64+j] != target_hash[j]) same = FALSE;
-    if (same) { *pos_out = i; return TRUE; }
+    if (HashEq64(index_hashes + i*64, target_hash)) { *pos_out = i; return TRUE; }
   }
   return FALSE;
 }
@@ -4508,9 +4601,15 @@ U0 HgitCheck(U8 *repo_path)
     return;
   }
 
-  I64 total, ok;
-  ArchiveVerify(rbuf+16, rsize-16, &total, &ok);
+  I64 total, ok, consumed;
+  ArchiveVerifyEx(rbuf+16, rsize-16, &total, &ok, &consumed);
 
+  // 1.9 (ADR 0019 section 3): bytes after the last complete record are an
+  // interrupted write - reported (file offset, byte count), never read,
+  // never truncated. Every pass below stops at the same point.
+  if (consumed < rsize-16) {
+    CommPrint(1, "CHECK_WARN torn_tail offset=%d bytes=%d\n", 16+consumed, rsize-16-consumed);
+  }
   if (total != rcount) {
     CommPrint(1, "CHECK_WARN object_count_mismatch header=%d scanned=%d\n",
               rcount, total);
@@ -4538,7 +4637,7 @@ U0 HgitCheck(U8 *repo_path)
 
   I64 broken_refs = 0;
   I64 pos = 16;
-  while (pos < rsize) {
+  while (pos < 16+consumed) {
     U64 rec_len = GetU64LE(rbuf, pos);
     U8 obj_type = rbuf[pos+8];
     U8 *content = rbuf + pos + 9;
@@ -4746,14 +4845,9 @@ U0 HgitCheck(U8 *repo_path)
   for (ca=0; ca<idx_count; ca++) {
     if (!reachable[ca]) {
       for (cb=0; cb<idx_count; cb++) {
-        Bool dup_of_reachable = reachable[cb];
-        I64 hb;
-        if (dup_of_reachable) {
-          for (hb=0; hb<64; hb++) {
-            if (idx_hashes[ca*64+hb] != idx_hashes[cb*64+hb]) dup_of_reachable = FALSE;
-          }
+        if (reachable[cb] && HashEq64(idx_hashes + ca*64, idx_hashes + cb*64)) {
+          reachable[ca] = TRUE; break;
         }
-        if (dup_of_reachable) { reachable[ca] = TRUE; break; }
       }
     }
   }
@@ -6652,7 +6746,7 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
           for (ci=0; ci<child_tree_content_len; ci++) child_tagged[1+ci] = child_tree_content[ci];
           U8 child_hash[64];
           B2Hash512Any(child_tagged, child_tree_content_len+1, child_hash);
-          ObjectPut(archive, alen, OBJ_TREE, child_tree_content, child_tree_content_len);
+          ObjectPutOnce(archive, alen, OBJ_TREE, child_tree_content, child_tree_content_len);
 
           U64 sub_entity_id;
           if (found_old_sub) sub_entity_id = old_sub_entity_id;
@@ -6694,7 +6788,7 @@ U0 TreeBuildRecursive(U8 *dir_path, U8 *archive, I64 *alen,
           U8 blob_hash[64];
           B2Hash512Any(blob_tagged, fsize+1, blob_hash);
           Free(blob_tagged);
-          ObjectPut(archive, alen, OBJ_BLOB, fbuf, fsize);
+          ObjectPutOnce(archive, alen, OBJ_BLOB, fbuf, fsize);
 
           U64 entity_id;
           Bool found_old = FALSE;
@@ -6957,7 +7051,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
       U8 blob_hash[64];
       B2Hash512Any(blob_tagged, fsize+1, blob_hash);
       Free(blob_tagged);
-      ObjectPut(archive, &alen, OBJ_BLOB, fbuf, fsize);
+      ObjectPutOnce(archive, &alen, OBJ_BLOB, fbuf, fsize);
 
       // ADR 0009 (experiments/70-rename-detection/): if this name
       // doesn't match anything in the parent's own tree, check
@@ -7020,7 +7114,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   for (i=0; i<tree_content_len; i++) tree_tagged[1+i] = tree_content[i];
   U8 tree_hash[64];
   B2Hash512Any(tree_tagged, tree_content_len+1, tree_hash);
-  ObjectPut(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
+  ObjectPutOnce(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
 
   // ADR 0015: only store a real OBJ_ATTRS object (and reference it
   // from the commit) if at least one file actually has a non-default
@@ -7034,7 +7128,7 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
     for (i=0; i<attrs_len; i++) attrs_tagged[1+i] = attrs_content[i];
     B2Hash512Any(attrs_tagged, attrs_len+1, attrs_hash);
     Free(attrs_tagged);
-    ObjectPut(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
+    ObjectPutOnce(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
   }
   Free(attrs_content);
 
@@ -7050,13 +7144,13 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
   U8 commit_hash[64];
   B2Hash512Any(commit_tagged, clen+1, commit_hash);
-  ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
+  ObjectPutOnce(archive, &alen, OBJ_COMMIT, commit_content, clen);
 
-  // Rewrite the repo with the updated header (new total object count:
-  // rcount existing + entry_count blobs + 1 tree + 1 commit + (1 real
-  // OBJ_ATTRS object, only if has_attrs - ADR 0015).
-  I64 attrs_object_count = 0; if (has_attrs) attrs_object_count = 1;
-  HgsWriteHeader(archive, rver, rcount + entry_count + 2 + attrs_object_count);
+  // Rewrite the repo with the updated header. 1.9 (ADR 0019): the count
+  // is the exact number of records now in `archive` - ObjectPutOnce skips
+  // objects already stored, so "rcount + entry_count + 2 (+1 attrs)" no
+  // longer holds.
+  HgsWriteHeader(archive, rver, HgsCountRecords(archive, alen));
   FileWrite(repo_path, archive, alen);
 
   // Log this offer's HEAD transition before moving HEAD, so `undo` can
@@ -7218,7 +7312,7 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   for (i=0; i<tree_content_len; i++) tree_tagged[1+i] = tree_content[i];
   U8 tree_hash[64];
   B2Hash512Any(tree_tagged, tree_content_len+1, tree_hash);
-  ObjectPut(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
+  ObjectPutOnce(archive, &alen, OBJ_TREE, tree_content, tree_content_len);
 
   // ADR 0015: same "only pay for what you use" real OBJ_ATTRS object,
   // built from whatever TreeBuildRecursive's own recursion accumulated
@@ -7232,7 +7326,7 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
     for (i=0; i<attrs_len; i++) attrs_tagged[1+i] = attrs_content[i];
     B2Hash512Any(attrs_tagged, attrs_len+1, attrs_hash);
     Free(attrs_tagged);
-    ObjectPut(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
+    ObjectPutOnce(archive, &alen, OBJ_ATTRS, attrs_content, attrs_len);
   }
   Free(attrs_content);
 
@@ -7247,30 +7341,12 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
   U8 commit_hash[64];
   B2Hash512Any(commit_tagged, clen+1, commit_hash);
-  ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
+  ObjectPutOnce(archive, &alen, OBJ_COMMIT, commit_content, clen);
 
-  // Object count: unlike the flat loop above (which tracks a simple
-  // per-file entry_count as it goes), TreeBuildRecursive's own
-  // recursion appends a variable, not-known-in-advance number of blob
-  // AND tree objects at arbitrary depth - re-scanning what actually
-  // landed in `archive` via the same IndexBuild every real command
-  // already trusts is simpler and provably correct than threading a
-  // running tally back out through arbitrary recursion depth.
-  // No guessed cap (this project's own hard-won ADR 0007 lesson: a
-  // fixed "surely enough" headroom number is exactly the pattern that
-  // kept causing real crashes) - a real upper bound instead: no object
-  // record is smaller than 73 bytes (8-byte length + 1-byte type +
-  // 0-byte content + 64-byte hash), so `alen` itself bounds how many
-  // objects could possibly fit in it.
-  I64 max_possible_objects = alen/73 + 1;
-  U8 *final_idx_hashes = MAlloc(max_possible_objects*64 + 64);
-  I64 *final_idx_offsets = MAlloc((max_possible_objects+1)*8);
-  I64 final_idx_count;
-  IndexBuild(archive+16, alen-16, final_idx_hashes, final_idx_offsets, &final_idx_count);
-  Free(final_idx_hashes);
-  Free(final_idx_offsets);
-
-  HgsWriteHeader(archive, rver, final_idx_count);
+  // Object count: the exact number of records now in `archive`
+  // (1.9, ADR 0019: HgsCountRecords walks them with the readers' own
+  // bounds check - this used to be an IndexBuild into throwaway buffers).
+  HgsWriteHeader(archive, rver, HgsCountRecords(archive, alen));
   FileWrite(repo_path, archive, alen);
 
   U8 log_prev_head[64];
@@ -7824,7 +7900,7 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
         for (sti=0; sti<sub_merged_len; sti++) sub_tagged[1+sti] = sub_merged_content[sti];
         U8 sub_hash[64];
         B2Hash512Any(sub_tagged, sub_merged_len+1, sub_hash);
-        ObjectPut(archive, alen, OBJ_TREE, sub_merged_content, sub_merged_len);
+        ObjectPutOnce(archive, alen, OBJ_TREE, sub_merged_content, sub_merged_len);
 
         U64 sub_entity_id;
         if (ours_found) sub_entity_id = ours_entity_id; else sub_entity_id = theirs_entity_id;
@@ -7910,7 +7986,7 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
           merged_entry_count++;
         }
       } else {
-        ObjectPut(archive, alen, OBJ_CONFLICT, kc_content, kc_len);
+        ObjectPutOnce(archive, alen, OBJ_CONFLICT, kc_content, kc_len);
         for (ci=0; ci<cap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = full_name[ci];
         conflict_names_out[(*conflict_count_out)*256+cap] = 0;
         for (ci=0; ci<64; ci++) conflict_hashes_out[(*conflict_count_out)*64+ci] = kc_object_hash[ci];
@@ -8035,7 +8111,7 @@ Bool MergeTreesRecursive(U8 *rbuf, U8 *idx_hashes, I64 *idx_offsets, I64 idx_cou
             if (theirs_mode != 0) AttrsListEncode(merged_attrs_content_out, merged_attrs_len_out, theirs_entity_id, theirs_mode);
           }
         } else {
-          ObjectPut(archive, alen, OBJ_CONFLICT, cc_content, cc_len);
+          ObjectPutOnce(archive, alen, OBJ_CONFLICT, cc_content, cc_len);
           for (ci=0; ci<cap; ci++) conflict_names_out[(*conflict_count_out)*256+ci] = full_name[ci];
           conflict_names_out[(*conflict_count_out)*256+cap] = 0;
           for (ci=0; ci<64; ci++) conflict_hashes_out[(*conflict_count_out)*64+ci] = cc_object_hash[ci];
@@ -8089,7 +8165,7 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
   for (i=0; i<merged_tree_len; i++) merged_tree_tagged[1+i] = merged_tree_content[i];
   U8 merged_tree_hash[64];
   B2Hash512Any(merged_tree_tagged, merged_tree_len+1, merged_tree_hash);
-  ObjectPut(archive, &alen, OBJ_TREE, merged_tree_content, merged_tree_len);
+  ObjectPutOnce(archive, &alen, OBJ_TREE, merged_tree_content, merged_tree_len);
 
   Bool merge_has_attrs = (merged_attrs_len > 4);
   U8 merged_attrs_hash[64];
@@ -8100,7 +8176,7 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
     for (i=0; i<merged_attrs_len; i++) merged_attrs_tagged[1+i] = merged_attrs_content[i];
     B2Hash512Any(merged_attrs_tagged, merged_attrs_len+1, merged_attrs_hash);
     Free(merged_attrs_tagged);
-    ObjectPut(archive, &alen, OBJ_ATTRS, merged_attrs_content, merged_attrs_len);
+    ObjectPutOnce(archive, &alen, OBJ_ATTRS, merged_attrs_content, merged_attrs_len);
   }
 
   U8 merge_parents[128];
@@ -8127,17 +8203,10 @@ U0 MergeFinishSuccess(U8 *repo_path, U8 *archive, I64 alen, U16 rver,
   for (i=0; i<clen; i++) commit_tagged[1+i] = commit_content[i];
   U8 merge_commit_hash[64];
   B2Hash512Any(commit_tagged, clen+1, merge_commit_hash);
-  ObjectPut(archive, &alen, OBJ_COMMIT, commit_content, clen);
+  ObjectPutOnce(archive, &alen, OBJ_COMMIT, commit_content, clen);
 
-  I64 max_possible_objects = alen/73 + 1;
-  U8 *final_idx_hashes = MAlloc(max_possible_objects*64 + 64);
-  I64 *final_idx_offsets = MAlloc((max_possible_objects+1)*8);
-  I64 final_idx_count;
-  IndexBuild(archive+16, alen-16, final_idx_hashes, final_idx_offsets, &final_idx_count);
-  Free(final_idx_hashes);
-  Free(final_idx_offsets);
-
-  HgsWriteHeader(archive, rver, final_idx_count);
+  // 1.9 (ADR 0019): exact record count, see Hgs.HC's HgsCountRecords.
+  HgsWriteHeader(archive, rver, HgsCountRecords(archive, alen));
   FileWrite(repo_path, archive, alen);
 
   OpLogAppend(repo_path, ours_head, merge_commit_hash, timestamp);
@@ -8304,14 +8373,8 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
     // are new), then Meta.HC records the in-progress merge so `hgit
     // conflicts`/`hgit resolve`/`hgit merge continue`/`hgit merge
     // abort` can pick it up later, even across a restart.
-    I64 fail_max_objects = alen/73 + 1;
-    U8 *fail_idx_hashes = MAlloc(fail_max_objects*64 + 64);
-    I64 *fail_idx_offsets = MAlloc((fail_max_objects+1)*8);
-    I64 fail_idx_count;
-    IndexBuild(archive+16, alen-16, fail_idx_hashes, fail_idx_offsets, &fail_idx_count);
-    HgsWriteHeader(archive, rver, fail_idx_count);
+    HgsWriteHeader(archive, rver, HgsCountRecords(archive, alen));
     FileWrite(repo_path, archive, alen);
-    Free(fail_idx_hashes); Free(fail_idx_offsets);
 
     MetaMergeStateWrite(repo_path, mc_cur_name, ours_head, theirs_head, other_path_name);
     I64 ci2;
