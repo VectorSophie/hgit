@@ -92,6 +92,7 @@ try:
     seen, t0 = 0, time.time()
     while time.time() - t0 < a.timeout:
         L = log()
+        L = L[: L.rfind("\n") + 1]  # complete lines only: never parse a line mid-write
         for m in re.finditer(r"^(BENCH_\w+)(.*)$", L, re.M):
             key = (m.start())
             if key in stamp: continue
