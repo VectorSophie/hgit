@@ -68,6 +68,54 @@ separate per-file caller-side caps (511 bytes), lifted the same way in
 capacity accounting to match, not just a wider buffer). No known
 object-content size limit remains anywhere in this path.
 
+## 1.9 clarifications (ADR 0019, ADR 0018)
+
+Nothing below changes what any existing byte means; `format_version` stays 4.
+It states, as reader/writer *behavior* rather than a byte-layout change, what
+was previously left implicit.
+
+- **A writer stores each object once.** Before appending a record with hash
+  `H`, a writer checks whether a record with hash `H` is already present
+  (including one it appended earlier in the same command) and reuses it
+  instead of duplicating it. This applies to every object type, including
+  `OBJ_CONFLICT`. A **reader** makes no such assumption: a legacy archive that
+  already holds duplicate records of the same hash is valid, and every
+  reference resolves to the record at that hash's *first* occurrence.
+- **The header's object count is a number of records, not of distinct
+  objects**, and it is an upper bound a writer must never under-declare: a
+  writer MUST keep `count >= records present` at every moment the file can be
+  observed on disk, because index buffers on at least one implementation
+  (TempleOS) are sized from it. A reader MUST NOT rely on this count for
+  correctness — it recomputes the real count by scanning records — and treats
+  a mismatch as a warning, not a failure.
+- **A record is complete when its length places its stored hash entirely
+  within the file, and that stored hash matches the recomputed hash of its
+  content.** A tolerant reader walks records from the start and stops at the
+  first record that is not complete by the *length* test above (its declared
+  length would run past the end of the file); everything before that point is
+  committed data, everything from it on is treated as an interrupted write
+  (a "torn tail") and ignored for indexing and lookup purposes. This is
+  distinct from a record whose length fits but whose stored hash does not
+  match its content: that is ordinary corruption of an otherwise well-formed
+  record, reported by `check` as a mismatch, and does not stop the walk —
+  a bit flipped anywhere in the file cannot hide every record after it. A
+  reader never trusts a length field for an allocation before checking it
+  fits the remaining bytes.
+- **A writer that is about to append MUST start from the end of the complete
+  records it can see, never from the raw file size.** Appending after a torn
+  tail would place a new record where the rule above means no tolerant reader
+  will ever reach it — silently unreachable history, which this project
+  treats as a bug wherever it is found, not an acceptable edge case.
+- **Explicit `compact` is the only way to remove existing duplicate records.**
+  It writes a new archive holding every *distinct* object exactly once, in
+  first-occurrence order, with an exact header count; it never removes a
+  distinct object, including one nothing currently reachable points to. There
+  is no automatic compaction and no time-based expiry.
+- **A bundle (`.hgb`/`.hgh`, see [`BUNDLE.md`](BUNDLE.md)) is not this
+  format.** It reuses this document's record framing for the objects it
+  carries, but its own header magic, manifest and footer records are specific
+  to bundles and never appear in a `.hgs` file.
+
 ## Object typing
 
 A record's content may itself begin with a **type tag byte**, prepended
@@ -390,3 +438,11 @@ still read unchanged - every bump so far was additive. `check` also validates
 every `OBJ_CONFLICT` object's shape (`ConflictContentValid`) so a corrupt or
 hostile archive is reported (`conflict_object_malformed`) rather than decoded
 blindly.
+
+**v1.9.0 / ADR 0018, ADR 0019 (no format bump - writer/reader behavior)**:
+`format_version` stays 4, following the same discipline as every entry above:
+a bump is reserved for a change a reader must branch on, and nothing here is
+one. A 1.8.9 reader opens a 1.9-written archive unchanged; the one visible
+difference is that `CHECK_OK objects=N` reports fewer records, because a 1.9
+writer does not duplicate an object it has already stored. See "1.9
+clarifications" above for what changed.

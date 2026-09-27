@@ -1,6 +1,7 @@
 # hgit status
 
-Snapshot as of 2026-09-21. hgit **1.8.9** is complete and feature-frozen. The
+Snapshot as of 2026-09-27. hgit is feature-frozen, with a scoped exception for
+**1.9.0** covering storage and exchange only (ADR 0018) — see below. The
 native port for Windows, macOS and Linux lives in
 [hgit-native](https://github.com/VectorSophie/hgit-native); this repository
 remains the reference implementation and owns the format contract (see below).
@@ -16,16 +17,29 @@ DolDoc history and reconciliation views, `.hgitignore`, and
 ([`FORMAT.md`](../FORMAT.md)). Every command is covered by
 [`tests/full-regression.hc`](../tests/README.md).
 
-## Frozen, with one exception
+## Frozen, with a scoped exception for 1.9.0
 
-No new features. Contract fixes still land here first: a format change or a
-correction to `FORMAT.md` or `fixtures/` is made in this repository, tagged
-(`contract-<version>`), and then picked up by hgit-native through its
-submodule pin.
+No new repository semantics, object types, or record tags. Contract changes
+still land here first: a format change or a correction to `FORMAT.md` or
+`fixtures/` is made in this repository, tagged (`contract-<version>`), and
+then picked up by hgit-native through its submodule pin.
 
-The current contract tag is `contract-1.8.9`. [`fixtures/`](../fixtures/README.md)
-holds repos and expected output generated on real TempleOS by
-`tools/gen-fixtures.py`.
+[ADR 0018](adr/0018-storage-and-exchange-release-policy.md) lifts the freeze
+for **1.9.0 only**, and only for **storage and exchange**: writers that store
+each distinct object once instead of duplicating it on every `offer`/`merge`
+([ADR 0019](adr/0019-objects-stored-once.md)), readers that tolerate an
+interrupted (torn-tail) write instead of corrupting past it, an explicit
+`compact` command, and a portable incremental exchange file, `.hgb`/`.hgh`
+bundles ([ADR 0020](adr/0020-incremental-exchange-bundles.md), spec in
+[`BUNDLE.md`](../BUNDLE.md)). `format_version` stays **4**: nothing a reader
+must branch on changed, only what a writer produces and how tolerant a reader
+is. After 1.9.0 the freeze resumes; later work needs its own ADR.
+
+[`fixtures/`](../fixtures/README.md) holds the current (1.9) golden repos and
+expected output, generated on real TempleOS by `tools/gen-fixtures.py`.
+[`fixtures-1.8.9/`](../fixtures-1.8.9/README.md) preserves the pre-1.9 golden
+set unchanged, so reading a legacy archive with duplicate records stays under
+test. `hgit-native` keeps a legacy-append writer mode for the same reason.
 
 ## Installing
 
@@ -57,6 +71,14 @@ sources exist (`packaging/`); none is published to a community index.
 - **No chunking or compression** in the object store.
 - **Mode-only change on the side a file is deleted from** is not detected as a
   conflict.
+- **Bundles authenticate content, not senders.** A `.hgb` bundle's hashes prove
+  the bytes are unchanged and internally consistent; there is no signature or
+  identity, so a recipient must get a bundle over a channel it trusts (see
+  `BUNDLE.md`). Bundles are native-only in 1.9.0; TempleOS still exchanges
+  whole repositories with `export`/`import`.
+- **No partial or promissory replicas.** Every repository a command opens is
+  complete; 1.9.0 only reduces what has to be *sent*, not what a single copy
+  must *hold*.
 
 ## Where to read more
 
