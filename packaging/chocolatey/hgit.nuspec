@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>hgit</id>
-    <version>1.8.9</version>
+    <version>1.9.0</version>
     <title>hgit</title>
     <authors>VectorSophie</authors>
     <projectUrl>https://github.com/VectorSophie/hgit</projectUrl>
@@ -13,7 +13,7 @@
     <projectSourceUrl>https://github.com/VectorSophie/hgit</projectSourceUrl>
     <bugTrackerUrl>https://github.com/VectorSophie/hgit/issues</bugTrackerUrl>
     <packageSourceUrl>https://github.com/VectorSophie/hgit/tree/main/packaging/chocolatey</packageSourceUrl>
-    <releaseNotes>https://github.com/VectorSophie/hgit/releases/tag/v1.8.9</releaseNotes>
+    <releaseNotes>https://github.com/VectorSophie/hgit/releases/tag/v1.9.0</releaseNotes>
     <tags>hgit vcs templeos holyc qemu</tags>
     <summary>Version control for TempleOS, pre-loaded in a TempleOS VM</summary>
     <description>hgit is a version-control system written in HolyC that runs inside TempleOS. This package ships a TempleOS disk image with hgit already loaded, plus the hgit command (boots it in QEMU) and hgit-type (sends commands to it).</description>
