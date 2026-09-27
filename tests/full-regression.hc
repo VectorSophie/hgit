@@ -419,6 +419,44 @@ U0 HgitFullRegressionTest()
   Hgit("history C:/Home/TFTornCopy.hgs");
   CommPrint(1, "TFULL_TORN_END_MARKER\n");
 
+  // --- 1.9 (ADR 0019 section 3, bug fix): offering again on a torn
+  // repo must not silently orphan the new commit. Before the fix,
+  // `offer` copied the WHOLE previous archive - torn tail included -
+  // into its new buffer and appended the new commit right after the
+  // tear, where no bound-checked reader (IndexBuild/ArchiveVerify) ever
+  // scans far enough to see it. HgsConsumedLen makes `offer` resume
+  // from the last COMPLETE record instead, dropping the torn bytes and
+  // printing OFFER_WARN torn_tail_dropped. This proves the actual bug
+  // is fixed, not just that the warning prints: the new commit's hash
+  // must be found by IndexLookup, `history` must show it, and `check`
+  // must report no CHECK_FAIL. ---
+  CommPrint(1, "TFULL_TORN_OFFER_BEGIN\n");
+  Hgit("offer C:/Home/TFTornCopy.hgs C:/Home/TFTornA.txt torn_third");
+  Hgit("check C:/Home/TFTornCopy.hgs");
+  Hgit("history C:/Home/TFTornCopy.hgs");
+
+  U8 tt_new_head[64];
+  CurrentHeadRead("C:/Home/TFTornCopy.hgs", tt_new_head);
+  U8 tt_new_head_hex[129];
+  HashToHex(tt_new_head, tt_new_head_hex);
+  CommPrint(1, "TFULL_TORN_OFFER_NEW_HEAD %s\n", tt_new_head_hex);
+
+  I64 tt_arch_sz;
+  U8 *tt_arch = FileRead("C:/Home/TFTornCopy.hgs", &tt_arch_sz);
+  U8 *tt_idx_hashes = MAlloc(tt_arch_sz + 64);
+  I64 *tt_idx_offsets = MAlloc(tt_arch_sz + 8);
+  I64 tt_idx_count;
+  IndexBuild(tt_arch+16, tt_arch_sz-16, tt_idx_hashes, tt_idx_offsets, &tt_idx_count);
+  I64 tt_found_offset;
+  Bool tt_found = IndexLookup(tt_idx_hashes, tt_idx_offsets, tt_idx_count,
+                               tt_new_head, &tt_found_offset);
+  if (tt_found) CommPrint(1, "TFULL_TORN_OFFER_LOOKUP found\n");
+  else CommPrint(1, "TFULL_TORN_OFFER_LOOKUP NOT_FOUND\n");
+  Free(tt_arch);
+  Free(tt_idx_hashes);
+  Free(tt_idx_offsets);
+  CommPrint(1, "TFULL_TORN_OFFER_END_MARKER\n");
+
   CommPrint(1, "TFULL_END\n");
 }
 HgitFullRegressionTest;
