@@ -954,10 +954,13 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   // succeeds.
   I64 archive_cap = rsize + MERGE_ARCHIVE_HEADROOM;
   U8 *archive = MAlloc(archive_cap);
-  I64 alen;
   I64 i;
-  for (i=0; i<rsize-16; i++) archive[16+i] = rbuf[16+i];
-  alen = rsize;
+  // ADR 0019 section 3: never append the merge result after a torn
+  // tail - see Offer.HC's HgitOfferWithRelation for the same fix.
+  I64 alen = HgsConsumedLen(rbuf, rsize);
+  if (alen < rsize)
+    CommPrint(1, "MERGE_WARN torn_tail_dropped bytes=%d\n", rsize - alen);
+  for (i=0; i<alen-16; i++) archive[16+i] = rbuf[16+i];
 
   U32 ours_tcount = GetU32LE(ours_tree, 0);
   U32 theirs_tcount = GetU32LE(theirs_tree, 0);
@@ -1329,10 +1332,13 @@ U0 HgitMergeContinue(U8 *repo_path, U64 timestamp)
 
   I64 archive_cap = rsize + MERGE_ARCHIVE_HEADROOM;
   U8 *archive = MAlloc(archive_cap);
-  I64 alen;
   I64 i;
-  for (i=0; i<rsize-16; i++) archive[16+i] = rbuf[16+i];
-  alen = rsize;
+  // ADR 0019 section 3: never append the merge result after a torn
+  // tail - see Offer.HC's HgitOfferWithRelation for the same fix.
+  I64 alen = HgsConsumedLen(rbuf, rsize);
+  if (alen < rsize)
+    CommPrint(1, "MERGE_WARN torn_tail_dropped bytes=%d\n", rsize - alen);
+  for (i=0; i<alen-16; i++) archive[16+i] = rbuf[16+i];
 
   U32 ours_tcount = 0; if (ours_tree != NULL) ours_tcount = GetU32LE(ours_tree, 0);
   U32 theirs_tcount = 0; if (theirs_tree != NULL) theirs_tcount = GetU32LE(theirs_tree, 0);

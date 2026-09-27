@@ -87,3 +87,17 @@ I64 HgsCountRecords(U8 *archive_buf, I64 alen)
   }
   return n;
 }
+
+// 1.9 (ADR 0019 section 3): the byte length of the complete records at
+// the front of a whole .HGS buffer (header included) - == alen unless
+// the file has a torn tail. A writer that is about to append MUST start
+// from this, not from `alen`: appending after a torn tail would place
+// the new record where no bound-checked reader will ever reach it (the
+// scan stops at the tear before it gets there).
+I64 HgsConsumedLen(U8 *archive_buf, I64 alen)
+{
+  I64 pos = 16;
+  while (pos < alen && RecordEnd(archive_buf, pos, alen) >= 0)
+    pos = RecordEnd(archive_buf, pos, alen);
+  return pos;
+}

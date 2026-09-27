@@ -1066,6 +1066,20 @@ I64 HgsCountRecords(U8 *archive_buf, I64 alen)
   }
   return n;
 }
+
+// 1.9 (ADR 0019 section 3): the byte length of the complete records at
+// the front of a whole .HGS buffer (header included) - == alen unless
+// the file has a torn tail. A writer that is about to append MUST start
+// from this, not from `alen`: appending after a torn tail would place
+// the new record where no bound-checked reader will ever reach it (the
+// scan stops at the tear before it gets there).
+I64 HgsConsumedLen(U8 *archive_buf, I64 alen)
+{
+  I64 pos = 16;
+  while (pos < alen && RecordEnd(archive_buf, pos, alen) >= 0)
+    pos = RecordEnd(archive_buf, pos, alen);
+  return pos;
+}
 // Object.HC — typed objects on top of the .HGS record format.
 //
 // Per ADR 0001/0003: the base .HGS record ([length][data][hash], see
@@ -6897,10 +6911,14 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
     return;
   }
   U8 *archive = MAlloc(archive_cap);
-  I64 alen = 16; // header goes here at the end, once we know the count
   I64 i;
-  for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
-  alen = rsize;
+  // ADR 0019 section 3: never carry a torn tail forward - appending
+  // after it would place the new commit where no bound-checked reader
+  // ever reaches it. HgsConsumedLen is the same walk every reader does.
+  I64 alen = HgsConsumedLen(rbuf, rsize);
+  if (alen < rsize)
+    CommPrint(1, "OFFER_WARN torn_tail_dropped bytes=%d\n", rsize - alen);
+  for (i = 0; i < alen-16; i++) archive[16+i] = rbuf[16+i];
 
   // ADR 0015: `.hgitattributes` lives alongside `find_mask`'s own
   // directory portion, same convention `.hgitignore` (ADR 0014)
@@ -7232,10 +7250,13 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
     return;
   }
   U8 *archive = MAlloc(archive_cap);
-  I64 alen;
   I64 i;
-  for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
-  alen = rsize;
+  // ADR 0019 section 3: see HgitOfferWithRelation - never append after a
+  // torn tail.
+  I64 alen = HgsConsumedLen(rbuf, rsize);
+  if (alen < rsize)
+    CommPrint(1, "OFFERTREE_WARN torn_tail_dropped bytes=%d\n", rsize - alen);
+  for (i = 0; i < alen-16; i++) archive[16+i] = rbuf[16+i];
 
   U8 parent_hash[64];
   Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
@@ -7246,7 +7267,7 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   U8 *old_tree_content = NULL;
   I64 old_tree_content_len = 0;
   if (has_parent) {
-    IndexBuild(rbuf+16, rsize-16, old_idx_hashes, old_idx_offsets, &old_idx_count);
+    IndexBuild(rbuf+16, alen-16, old_idx_hashes, old_idx_offsets, &old_idx_count);
     I64 pc_off_rel;
     Bool pc_found = IndexLookup(old_idx_hashes, old_idx_offsets, old_idx_count,
                                  parent_hash, &pc_off_rel);
@@ -8323,10 +8344,13 @@ U0 HgitMerge(U8 *repo_path, U8 *other_path_name, U64 timestamp)
   // succeeds.
   I64 archive_cap = rsize + MERGE_ARCHIVE_HEADROOM;
   U8 *archive = MAlloc(archive_cap);
-  I64 alen;
   I64 i;
-  for (i=0; i<rsize-16; i++) archive[16+i] = rbuf[16+i];
-  alen = rsize;
+  // ADR 0019 section 3: never append the merge result after a torn
+  // tail - see Offer.HC's HgitOfferWithRelation for the same fix.
+  I64 alen = HgsConsumedLen(rbuf, rsize);
+  if (alen < rsize)
+    CommPrint(1, "MERGE_WARN torn_tail_dropped bytes=%d\n", rsize - alen);
+  for (i=0; i<alen-16; i++) archive[16+i] = rbuf[16+i];
 
   U32 ours_tcount = GetU32LE(ours_tree, 0);
   U32 theirs_tcount = GetU32LE(theirs_tree, 0);
@@ -8698,10 +8722,13 @@ U0 HgitMergeContinue(U8 *repo_path, U64 timestamp)
 
   I64 archive_cap = rsize + MERGE_ARCHIVE_HEADROOM;
   U8 *archive = MAlloc(archive_cap);
-  I64 alen;
   I64 i;
-  for (i=0; i<rsize-16; i++) archive[16+i] = rbuf[16+i];
-  alen = rsize;
+  // ADR 0019 section 3: never append the merge result after a torn
+  // tail - see Offer.HC's HgitOfferWithRelation for the same fix.
+  I64 alen = HgsConsumedLen(rbuf, rsize);
+  if (alen < rsize)
+    CommPrint(1, "MERGE_WARN torn_tail_dropped bytes=%d\n", rsize - alen);
+  for (i=0; i<alen-16; i++) archive[16+i] = rbuf[16+i];
 
   U32 ours_tcount = 0; if (ours_tree != NULL) ours_tcount = GetU32LE(ours_tree, 0);
   U32 theirs_tcount = 0; if (theirs_tree != NULL) theirs_tcount = GetU32LE(theirs_tree, 0);

@@ -480,10 +480,14 @@ U0 HgitOfferWithRelation(U8 *repo_path, U8 *find_mask, U8 *message, I64 message_
     return;
   }
   U8 *archive = MAlloc(archive_cap);
-  I64 alen = 16; // header goes here at the end, once we know the count
   I64 i;
-  for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
-  alen = rsize;
+  // ADR 0019 section 3: never carry a torn tail forward - appending
+  // after it would place the new commit where no bound-checked reader
+  // ever reaches it. HgsConsumedLen is the same walk every reader does.
+  I64 alen = HgsConsumedLen(rbuf, rsize);
+  if (alen < rsize)
+    CommPrint(1, "OFFER_WARN torn_tail_dropped bytes=%d\n", rsize - alen);
+  for (i = 0; i < alen-16; i++) archive[16+i] = rbuf[16+i];
 
   // ADR 0015: `.hgitattributes` lives alongside `find_mask`'s own
   // directory portion, same convention `.hgitignore` (ADR 0014)
@@ -815,10 +819,13 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
     return;
   }
   U8 *archive = MAlloc(archive_cap);
-  I64 alen;
   I64 i;
-  for (i = 0; i < rsize-16; i++) archive[16+i] = rbuf[16+i];
-  alen = rsize;
+  // ADR 0019 section 3: see HgitOfferWithRelation - never append after a
+  // torn tail.
+  I64 alen = HgsConsumedLen(rbuf, rsize);
+  if (alen < rsize)
+    CommPrint(1, "OFFERTREE_WARN torn_tail_dropped bytes=%d\n", rsize - alen);
+  for (i = 0; i < alen-16; i++) archive[16+i] = rbuf[16+i];
 
   U8 parent_hash[64];
   Bool has_parent = CurrentHeadRead(repo_path, parent_hash);
@@ -829,7 +836,7 @@ U0 HgitOfferTreeWithRelation(U8 *repo_path, U8 *dir_path, U8 *message, I64 messa
   U8 *old_tree_content = NULL;
   I64 old_tree_content_len = 0;
   if (has_parent) {
-    IndexBuild(rbuf+16, rsize-16, old_idx_hashes, old_idx_offsets, &old_idx_count);
+    IndexBuild(rbuf+16, alen-16, old_idx_hashes, old_idx_offsets, &old_idx_count);
     I64 pc_off_rel;
     Bool pc_found = IndexLookup(old_idx_hashes, old_idx_offsets, old_idx_count,
                                  parent_hash, &pc_off_rel);

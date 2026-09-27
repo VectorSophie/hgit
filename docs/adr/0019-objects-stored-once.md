@@ -68,15 +68,33 @@ writer that appends records in place MUST raise the count before appending.
 After an interruption the count may exceed the records present; `check`
 reports `CHECK_WARN object_count_mismatch`, which is harmless.
 
-### 3. A reader stops at the first incomplete record
+### 3. A reader stops at the first torn record, not at the first corrupt one
 
-A record is *complete* when `8 + len + 64` bytes remain from its start and
-its stored hash equals the hash of its data. A reader walks records until the
-end of the file or the first incomplete record. Everything before the first
-incomplete record is committed data; everything from it on is an
-interrupted write and is ignored. A reader reports the offset and the number
-of ignored bytes, and a read-only reader never truncates. `IndexBuild` (and
-its native equivalents) MUST bound-check each length before advancing.
+"Torn" and "corrupt" are different failures and a reader treats them
+differently.
+
+A record is *torn* when it does not structurally fit: fewer than
+`8 + len + 64` bytes remain from its start (equivalently, `RecordEnd`
+returns "no fit" for it). This is what an interrupted write produces - the
+length and hash fields for the in-flight record are missing or partial, so
+there is no full record there to read at all. A reader (`IndexBuild`,
+`ArchiveVerify` and every native equivalent) walks records until the end of
+the file or the first torn record, and MUST bound-check each length before
+advancing. Everything before the first torn record is committed data;
+everything from it on is an interrupted write and is ignored. A reader
+reports the offset and the number of ignored bytes, and a read-only reader
+never truncates. A writer about to append MUST resume from this point (the
+consumed length), never from the raw file length, or its new record lands
+where no bound-checked reader will ever reach it.
+
+A record is *corrupt* when it fits structurally but its stored hash does not
+equal the hash of its data - ordinary bit-rot or media damage deep in an
+otherwise well-formed record. A reader does NOT stop at a corrupt record: a
+single flipped bit must not hide every record after it. `ArchiveVerifyEx`
+keeps walking and counting both `out_total` and `out_ok`, and `hgit check`
+reports the difference as `CHECK_FAIL ... corrupt=N` - a diagnostic on
+already-committed data, unrelated to `CHECK_WARN torn_tail`, which fires only
+on a structural stop.
 
 ### 4. No `format_version` bump
 
